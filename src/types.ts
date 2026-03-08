@@ -32,7 +32,7 @@ export interface TreeEvents {
   'strategy:decision': { composite: BTreeNode; strategy: string; decision: unknown };
 }
 
-export interface TypedEventEmitter<TEvents extends Record<string, unknown>> {
+export interface TypedEventEmitter<TEvents extends { [K in keyof TEvents]: unknown }> {
   on<K extends keyof TEvents & string>(event: K, listener: (data: TEvents[K]) => void): void;
   off<K extends keyof TEvents & string>(event: K, listener: (data: TEvents[K]) => void): void;
   emit<K extends keyof TEvents & string>(event: K, data: TEvents[K]): void;
