@@ -36,6 +36,9 @@ Your background determines the fastest path through these docs.
 - [Blackboard and Events](guide-blackboard-and-events.md) -- State management with MapBlackboard and observability via the event emitter.
 - [Agent Integration](guide-agent-integration.md) -- AgentNode modes, agent strategies, and MCP tool configuration.
 - [Scheduler](guide-scheduler.md) -- TreeScheduler: interval, cron, and one-shot scheduling.
+- [Error Handling and Resilience](guide-error-handling.md) -- Error containment, retry/timeout stacking, abort signals, and scheduler error recovery.
+- [Testing Behavior Trees](guide-testing.md) -- Test contexts, helper functions, event verification, and multi-tick test patterns.
+- [Advanced Patterns](guide-advanced-patterns.md) -- Custom nodes, custom strategies, multi-tick resumption internals, parallel policies, and advanced YAML.
 
 ### Examples
 
