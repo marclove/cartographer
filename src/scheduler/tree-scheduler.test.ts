@@ -3,6 +3,7 @@ import { TreeScheduler } from './tree-scheduler.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { NodeStatus } from '../types.js';
 import { ActionNode } from '../nodes/action.js';
+import { SequenceNode } from '../composites/sequence.js';
 
 function createTree(status: NodeStatus | (() => NodeStatus)): BehaviorTree {
   const fn = typeof status === 'function' ? status : () => status;
@@ -210,6 +211,59 @@ describe('TreeScheduler', () => {
 
     expect(errorSpy).toHaveBeenCalledOnce();
     expect(scheduler.runCount).toBe(2);
+  });
+
+  it('multi-tick pipeline resumes RUNNING sequence children', async () => {
+    let healthChecks = 0;
+    const tickCounts = { deploy: 0, health: 0, notify: 0 };
+
+    const root = new SequenceNode({
+      name: 'deploy-pipeline',
+      children: [
+        new ActionNode({
+          name: 'start-deploy',
+          action: () => { tickCounts.deploy++; return NodeStatus.SUCCESS; },
+        }),
+        new ActionNode({
+          name: 'wait-for-healthy',
+          action: () => {
+            tickCounts.health++;
+            healthChecks++;
+            return healthChecks >= 3 ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
+          },
+        }),
+        new ActionNode({
+          name: 'notify-slack',
+          action: () => { tickCounts.notify++; return NodeStatus.SUCCESS; },
+        }),
+      ],
+    });
+
+    const tree = new BehaviorTree({ name: 'deploy', root });
+
+    const scheduler = new TreeScheduler({
+      tree,
+      schedule: { type: 'interval', ms: 100 },
+      resetBetweenTicks: false,
+      stopOnStatus: NodeStatus.SUCCESS,
+    });
+
+    const startPromise = scheduler.start();
+
+    // Tick 1: deploy SUCCESS, health RUNNING
+    await vi.advanceTimersByTimeAsync(100);
+    // Tick 2: health RUNNING
+    await vi.advanceTimersByTimeAsync(100);
+    // Tick 3: health SUCCESS, notify SUCCESS → tree SUCCESS → scheduler stops
+    await vi.advanceTimersByTimeAsync(100);
+
+    await startPromise;
+
+    expect(tickCounts.deploy).toBe(1);
+    expect(tickCounts.health).toBe(3);
+    expect(tickCounts.notify).toBe(1);
+    expect(scheduler.lastStatus).toBe(NodeStatus.SUCCESS);
+    expect(scheduler.isRunning).toBe(false);
   });
 
   it('stops on error when onError is "stop"', async () => {

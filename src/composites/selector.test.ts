@@ -51,6 +51,83 @@ describe('SelectorNode', () => {
     expect(await node.tick(createContext())).toBe(NodeStatus.RUNNING);
   });
 
+  it('resumes from RUNNING child on next tick', async () => {
+    let retryCalls = 0;
+    const tickCounts = { fast: 0, slow: 0, fallback: 0 };
+
+    const fast: BTreeNode = {
+      id: 'fast', name: 'fast',
+      tick: async () => { tickCounts.fast++; return NodeStatus.FAILURE; },
+      reset: () => {}, abort: () => {},
+    };
+    const slow: BTreeNode = {
+      id: 'slow', name: 'slow',
+      tick: async () => {
+        tickCounts.slow++;
+        retryCalls++;
+        return retryCalls >= 3 ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
+      },
+      reset: () => {}, abort: () => {},
+    };
+    const fallback: BTreeNode = {
+      id: 'fallback', name: 'fallback',
+      tick: async () => { tickCounts.fallback++; return NodeStatus.SUCCESS; },
+      reset: () => {}, abort: () => {},
+    };
+
+    const node = new SelectorNode({ name: 'sel', children: [fast, slow, fallback] });
+    const ctx = createContext();
+
+    // Tick 1: fast fails, slow returns RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    // Tick 2: resumes at slow, still RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    // Tick 3: resumes at slow, succeeds
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+
+    expect(tickCounts.fast).toBe(1);
+    expect(tickCounts.slow).toBe(3);
+    expect(tickCounts.fallback).toBe(0);
+  });
+
+  it('resets runningChildId on SUCCESS', async () => {
+    let call = 0;
+    const tickCounts = { a: 0, b: 0 };
+
+    const a: BTreeNode = {
+      id: 'a', name: 'a',
+      tick: async () => { tickCounts.a++; return NodeStatus.FAILURE; },
+      reset: () => {}, abort: () => {},
+    };
+    const b: BTreeNode = {
+      id: 'b', name: 'b',
+      tick: async () => {
+        tickCounts.b++;
+        call++;
+        if (call === 1) return NodeStatus.RUNNING;
+        if (call === 2) return NodeStatus.SUCCESS;
+        return NodeStatus.FAILURE;
+      },
+      reset: () => {}, abort: () => {},
+    };
+
+    const node = new SelectorNode({ name: 'sel', children: [a, b] });
+    const ctx = createContext();
+
+    // Tick 1: a FAILURE, b RUNNING (saved)
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    expect(tickCounts.a).toBe(1);
+
+    // Tick 2: resumes at b, b SUCCESS → runningChildId cleared
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(tickCounts.a).toBe(1); // a was skipped
+
+    // Tick 3: starts from child 0 again since runningChildId was cleared
+    // a FAILURE, b FAILURE → selector FAILURE
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
+    expect(tickCounts.a).toBe(2); // a ticked again
+  });
+
   it('does not tick children after SUCCESS', async () => {
     const tickSpy = vi.fn(async () => NodeStatus.FAILURE);
     const secondChild: BTreeNode = {
