@@ -236,7 +236,7 @@ tree.events.on('agent:response', ({ node, cost }) => {
 
 ## Worked Example: Classification Pipeline
 
-This example combines both modes in a single tree. A cheap structured call classifies a support ticket, then conditional routing decides whether to escalate to an agentic handler.
+This example combines both modes in a single tree. A cheap structured call classifies a support ticket, then conditional routing decides whether to escalate to an agentic handler. For a complete, runnable version of this pattern with Zod schemas, billing analysis, and escalation handling, see the [content pipeline example](../examples/README.md#content-pipeline).
 
 ```typescript
 import { TreeBuilder, NodeStatus, AgentNode } from 'cartographer';
@@ -293,3 +293,4 @@ const tree = new TreeBuilder('classification-pipeline')
 - [Composites and Strategies](guide-composites.md) -- Selector, sequence, parallel, and the strategy pattern.
 - [Decorator Nodes](guide-decorators.md) -- Inverter, retry, guard, timeout, and more.
 - [Building Trees](guide-building-trees.md) -- TreeBuilder, nesting, and construction patterns.
+- [Examples](../examples/README.md) -- complete runnable programs demonstrating both agent modes in realistic scenarios.

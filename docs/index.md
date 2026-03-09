@@ -11,6 +11,8 @@ Cartographer (`cartographer`, v0.1.0) lets you compose AI agents, deterministic 
 - **Multi-agent coordination** -- Run several AgentNodes in parallel or sequence, each with its own tools and system prompt, coordinated by composite nodes.
 - **Classification and routing** -- Use condition nodes and selectors to route inputs through different processing branches based on structured or LLM-driven evaluation.
 
+The [`examples/`](../examples/) directory contains two runnable programs that exercise these patterns end-to-end with real Claude API calls. See the [Examples README](../examples/README.md) for details.
+
 ## Where to Start
 
 Your background determines the fastest path through these docs.
@@ -34,6 +36,10 @@ Your background determines the fastest path through these docs.
 - [Blackboard and Events](guide-blackboard-and-events.md) -- State management with MapBlackboard and observability via the event emitter.
 - [Agent Integration](guide-agent-integration.md) -- AgentNode modes, agent strategies, and MCP tool configuration.
 - [Scheduler](guide-scheduler.md) -- TreeScheduler: interval, cron, and one-shot scheduling.
+
+### Examples
+
+- [Examples README](../examples/README.md) -- Two runnable programs demonstrating the framework end-to-end: a support ticket triage pipeline and a scheduled health monitor with incident management.
 
 ### API Reference
 

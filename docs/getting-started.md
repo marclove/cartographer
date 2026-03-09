@@ -85,3 +85,4 @@ Both approaches produce identical trees. The builder is convenient for most case
 - [Core Concepts](concepts.md) -- understand the execution model, blackboard, and node lifecycle.
 - [Building Trees](guide-building-trees.md) -- deeper coverage of `TreeBuilder`, nesting, and composition patterns.
 - [Node Reference](guide-nodes.md) -- catalog of built-in node types (actions, conditions, sequences, selectors, decorators).
+- [Examples](../examples/README.md) -- two complete, runnable programs that exercise the framework end-to-end with real Claude API calls.
