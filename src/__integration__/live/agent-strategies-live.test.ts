@@ -5,7 +5,7 @@ import { ParallelNode } from '../../composites/parallel.js';
 import { AgentParallelStrategy } from '../../strategies/agent-parallel.js';
 import { createContext, collectEvents } from '../helpers.js';
 
-describe('Agent Strategies Integration (Live API)', { timeout: 30_000 }, () => {
+describe('Agent Strategies Integration (Live API)', { timeout: 60_000 }, () => {
   it('AgentParallelStrategy end-to-end with live API', async () => {
     const ctx = createContext();
     const strategyEvents = collectEvents(ctx, 'strategy:decision');
