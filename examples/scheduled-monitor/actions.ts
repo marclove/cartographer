@@ -1,0 +1,134 @@
+import { NodeStatus } from '../../src/index.js';
+import type { TreeContext } from '../../src/index.js';
+import type { HealthAssessment, HealthRecord } from './schemas.js';
+
+const SERVICES = ['api', 'database', 'queue'];
+const HISTORY_WINDOW = 10;
+
+/**
+ * Creates a health check action for a specific service.
+ * Always returns SUCCESS — the action records health data on the blackboard
+ * rather than failing the tree on unhealthy responses.
+ */
+export function createHealthCheck(serviceName: string, baseUrl: string) {
+  return async (ctx: TreeContext): Promise<NodeStatus> => {
+    const start = Date.now();
+    try {
+      const res = await fetch(`${baseUrl}/${serviceName}`);
+      const latencyMs = Date.now() - start;
+      ctx.blackboard.set<HealthRecord>(`health:${serviceName}`, {
+        healthy: res.ok,
+        statusCode: res.status,
+        latencyMs,
+        timestamp: new Date().toISOString(),
+      });
+    } catch {
+      ctx.blackboard.set<HealthRecord>(`health:${serviceName}`, {
+        healthy: false,
+        statusCode: 0,
+        latencyMs: Date.now() - start,
+        timestamp: new Date().toISOString(),
+      });
+    }
+    return NodeStatus.SUCCESS;
+  };
+}
+
+/**
+ * Maintains a rolling window of health records per service.
+ * Called after all health checks complete.
+ */
+export function updateHistory(ctx: TreeContext): NodeStatus {
+  for (const service of SERVICES) {
+    const current = ctx.blackboard.get<HealthRecord>(`health:${service}`);
+    if (!current) continue;
+
+    const historyKey = `history:${service}`;
+    const history = ctx.blackboard.get<HealthRecord[]>(historyKey) ?? [];
+    history.push(current);
+    if (history.length > HISTORY_WINDOW) {
+      history.shift();
+    }
+    ctx.blackboard.set(historyKey, history);
+  }
+  return NodeStatus.SUCCESS;
+}
+
+/**
+ * Increments the tick counter. Used for throttling status updates.
+ */
+export function incrementTickCount(ctx: TreeContext): NodeStatus {
+  const count = ctx.blackboard.get<number>('monitor:tickCount') ?? 0;
+  ctx.blackboard.set('monitor:tickCount', count + 1);
+  return NodeStatus.SUCCESS;
+}
+
+// --- Conditions ---
+
+export function isOutage(ctx: TreeContext): boolean {
+  const assessment = ctx.blackboard.get<HealthAssessment>('assess-health:output');
+  return assessment?.status === 'outage';
+}
+
+export function wasDownNowHealthy(ctx: TreeContext): boolean {
+  const assessment = ctx.blackboard.get<HealthAssessment>('assess-health:output');
+  const hasActiveIncident = ctx.blackboard.has('incident:startTime');
+  return assessment?.status === 'healthy' && hasActiveIncident;
+}
+
+export function noActiveIncident(ctx: TreeContext): boolean {
+  return !ctx.blackboard.has('incident:startTime');
+}
+
+/**
+ * Guard condition: allows a status update only if enough ticks have
+ * passed since the last update. Prevents flooding during sustained outages.
+ */
+export function enoughTimeSinceLastUpdate(ctx: TreeContext): boolean {
+  const lastUpdateTick = ctx.blackboard.get<number>('incident:lastUpdateTick') ?? 0;
+  const currentTick = ctx.blackboard.get<number>('monitor:tickCount') ?? 0;
+  return currentTick - lastUpdateTick >= 3;
+}
+
+// --- Incident lifecycle actions ---
+
+/**
+ * Records that the current tick is part of an active incident.
+ * Creates the incident on the first call; updates on subsequent calls.
+ */
+export function recordIncidentTick(ctx: TreeContext): NodeStatus {
+  if (!ctx.blackboard.has('incident:startTime')) {
+    ctx.blackboard.set('incident:startTime', new Date().toISOString());
+    ctx.blackboard.set('incident:updates', []);
+  }
+
+  // Track status update outputs for the prompt context
+  const statusUpdate = ctx.blackboard.get<{ update: string }>('draft-status-update:output');
+  if (statusUpdate) {
+    const updates = ctx.blackboard.get<string[]>('incident:updates') ?? [];
+    updates.push(statusUpdate.update);
+    ctx.blackboard.set('incident:updates', updates);
+    ctx.blackboard.set('incident:lastUpdateTick', ctx.blackboard.get<number>('monitor:tickCount') ?? 0);
+  }
+
+  return NodeStatus.SUCCESS;
+}
+
+/**
+ * Clears all incident state from the blackboard after recovery.
+ */
+export function clearIncidentState(ctx: TreeContext): NodeStatus {
+  ctx.blackboard.delete('incident:startTime');
+  ctx.blackboard.delete('incident:updates');
+  ctx.blackboard.delete('incident:lastUpdateTick');
+  return NodeStatus.SUCCESS;
+}
+
+/**
+ * Fallback action for healthy ticks. Logs a brief status line.
+ */
+export function logHealthy(ctx: TreeContext): NodeStatus {
+  const tick = ctx.blackboard.get<number>('monitor:tickCount') ?? 0;
+  console.log(`  [Tick ${tick}] All services healthy`);
+  return NodeStatus.SUCCESS;
+}
