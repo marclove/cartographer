@@ -33,8 +33,11 @@ interface TreeConfig {
 
 export class TreeLoader {
   static fromYAML(yamlString: string, registry: TreeRegistry): BehaviorTree {
-    const config = YAML.parse(yamlString) as TreeConfig;
-    return TreeLoader.fromConfig(config, registry);
+    const config = YAML.parse(yamlString);
+    if (!config || typeof config !== 'object' || !config.root) {
+      throw new Error('Invalid tree config: must have a "root" node');
+    }
+    return TreeLoader.fromConfig(config as TreeConfig, registry);
   }
 
   static fromConfig(config: TreeConfig, registry: TreeRegistry): BehaviorTree {
@@ -44,17 +47,21 @@ export class TreeLoader {
 
   private static buildNode(config: NodeConfig, registry: TreeRegistry): BTreeNode {
     switch (config.type) {
-      case 'action':
+      case 'action': {
+        if (!config.ref) throw new Error(`Action node "${config.name}" is missing required "ref"`);
         return new ActionNode({
           name: config.name,
-          action: registry.getAction(config.ref!),
+          action: registry.getAction(config.ref),
         });
+      }
 
-      case 'condition':
+      case 'condition': {
+        if (!config.ref) throw new Error(`Condition node "${config.name}" is missing required "ref"`);
         return new ConditionNode({
           name: config.name,
-          condition: registry.getCondition(config.ref!),
+          condition: registry.getCondition(config.ref),
         });
+      }
 
       case 'agent':
         return new AgentNode({
@@ -101,53 +108,68 @@ export class TreeLoader {
             : undefined,
         });
 
-      case 'inverter':
+      case 'inverter': {
+        if (!config.child) throw new Error(`Inverter node "${config.name}" is missing required "child"`);
         return new InverterNode({
           name: config.name,
-          child: TreeLoader.buildNode(config.child!, registry),
+          child: TreeLoader.buildNode(config.child, registry),
         });
+      }
 
-      case 'repeat':
+      case 'repeat': {
+        if (!config.child) throw new Error(`Repeat node "${config.name}" is missing required "child"`);
         return new RepeatNode({
           name: config.name,
-          child: TreeLoader.buildNode(config.child!, registry),
+          child: TreeLoader.buildNode(config.child, registry),
           count: config.count as number | undefined,
           untilStatus: config.untilStatus as any,
         });
+      }
 
-      case 'retry':
+      case 'retry': {
+        if (!config.child) throw new Error(`Retry node "${config.name}" is missing required "child"`);
         return new RetryNode({
           name: config.name,
-          child: TreeLoader.buildNode(config.child!, registry),
+          child: TreeLoader.buildNode(config.child, registry),
           maxAttempts: config.maxAttempts as number,
           delayMs: config.delayMs as number | undefined,
         });
+      }
 
-      case 'alwaysSucceed':
+      case 'alwaysSucceed': {
+        if (!config.child) throw new Error(`AlwaysSucceed node "${config.name}" is missing required "child"`);
         return new AlwaysSucceedNode({
           name: config.name,
-          child: TreeLoader.buildNode(config.child!, registry),
+          child: TreeLoader.buildNode(config.child, registry),
         });
+      }
 
-      case 'alwaysFail':
+      case 'alwaysFail': {
+        if (!config.child) throw new Error(`AlwaysFail node "${config.name}" is missing required "child"`);
         return new AlwaysFailNode({
           name: config.name,
-          child: TreeLoader.buildNode(config.child!, registry),
+          child: TreeLoader.buildNode(config.child, registry),
         });
+      }
 
-      case 'timeout':
+      case 'timeout': {
+        if (!config.child) throw new Error(`Timeout node "${config.name}" is missing required "child"`);
         return new TimeoutNode({
           name: config.name,
-          child: TreeLoader.buildNode(config.child!, registry),
+          child: TreeLoader.buildNode(config.child, registry),
           timeoutMs: config.timeoutMs as number,
         });
+      }
 
-      case 'guard':
+      case 'guard': {
+        if (!config.child) throw new Error(`Guard node "${config.name}" is missing required "child"`);
+        if (!config.conditionRef) throw new Error(`Guard node "${config.name}" is missing required "conditionRef"`);
         return new GuardNode({
           name: config.name,
-          child: TreeLoader.buildNode(config.child!, registry),
+          child: TreeLoader.buildNode(config.child, registry),
           condition: registry.getCondition(config.conditionRef as string),
         });
+      }
 
       default:
         throw new Error(`Unknown node type: ${config.type}`);
