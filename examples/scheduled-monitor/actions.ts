@@ -133,10 +133,13 @@ export function clearIncidentState(ctx: TreeContext): NodeStatus {
 }
 
 /**
- * Fallback action for healthy ticks. Logs a brief status line.
+ * Fallback action when no outage or recovery is active.
+ * Logs the actual assessment status, which may be healthy or degraded.
  */
 export function logHealthy(ctx: TreeContext): NodeStatus {
   const tick = ctx.blackboard.get<number>('monitor:tickCount') ?? 0;
-  console.log(`  [Tick ${tick}] All services healthy`);
+  const assessment = ctx.blackboard.get<HealthAssessment>('assess-health:output');
+  const status = assessment?.status ?? 'unknown';
+  console.log(`  [Tick ${tick}] No incident (assessment: ${status})`);
   return NodeStatus.SUCCESS;
 }
