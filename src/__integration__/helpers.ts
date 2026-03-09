@@ -2,6 +2,7 @@ import { MapBlackboard } from '../core/blackboard.js';
 import { EventEmitter } from '../core/event-emitter.js';
 import { NodeStatus } from '../types.js';
 import type { TreeContext, TreeEvents } from '../types.js';
+import { BaseNode } from '../nodes/base.js';
 
 export function createContext(initial?: Record<string, unknown>): TreeContext {
   return {
@@ -47,4 +48,38 @@ export function collectEvents<K extends keyof TreeEvents & string>(
   const collected: TreeEvents[K][] = [];
   ctx.events.on(eventName, (data) => collected.push(data));
   return collected;
+}
+
+export class AbortTrackingNode extends BaseNode {
+  aborted = false;
+  private status: NodeStatus;
+
+  constructor(name: string, status: NodeStatus = NodeStatus.RUNNING) {
+    super(name);
+    this.status = status;
+  }
+
+  protected async execute(): Promise<NodeStatus> {
+    return this.status;
+  }
+
+  abort(): void {
+    super.abort();
+    this.aborted = true;
+  }
+}
+
+export function countingAction(name: string, statuses: NodeStatus[]) {
+  let ticks = 0;
+  return {
+    config: {
+      name,
+      action: () => {
+        const status = statuses[Math.min(ticks, statuses.length - 1)];
+        ticks++;
+        return status;
+      },
+    },
+    getTicks: () => ticks,
+  };
 }
