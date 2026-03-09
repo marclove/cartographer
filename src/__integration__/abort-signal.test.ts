@@ -9,7 +9,7 @@ import { BehaviorTree } from '../core/behavior-tree.js';
 import { createContext, AbortTrackingNode } from './helpers.js';
 
 describe('Abort Signal Integration', () => {
-  it('aborts sequence mid-RUNNING — abort prevents second child from ticking', async () => {
+  it('sequence resumes at RUNNING child after abort — second child is never reached', async () => {
     let secondChildTicks = 0;
 
     const first = new ActionNode({

@@ -59,7 +59,7 @@ export class AbortTrackingNode extends BaseNode {
     this.status = status;
   }
 
-  protected async execute(): Promise<NodeStatus> {
+  protected async execute(_context: TreeContext): Promise<NodeStatus> {
     return this.status;
   }
 
