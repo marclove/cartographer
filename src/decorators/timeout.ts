@@ -14,14 +14,16 @@ export class TimeoutNode extends BaseNode {
 
   protected async execute(context: TreeContext): Promise<NodeStatus> {
     let timedOut = false;
+    let timerId: ReturnType<typeof setTimeout>;
     const timeoutPromise = new Promise<NodeStatus>((resolve) => {
-      setTimeout(() => {
+      timerId = setTimeout(() => {
         timedOut = true;
         resolve(NodeStatus.FAILURE);
       }, this.timeoutMs);
     });
 
     const result = await Promise.race([this.child.tick(context), timeoutPromise]);
+    clearTimeout(timerId!);
 
     if (timedOut) {
       this.child.abort();
