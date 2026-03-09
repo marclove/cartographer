@@ -43,6 +43,7 @@ export class SequenceNode extends BaseNode {
 
   reset(): void {
     this.runningChildId = null;
+    this.strategy.reset?.();
     for (const child of this.children) {
       child.reset();
     }

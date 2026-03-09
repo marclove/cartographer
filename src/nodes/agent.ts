@@ -7,13 +7,22 @@ import { createBlackboardMcpServer } from '../agent/blackboard-mcp.js';
 
 export class AgentNode extends BaseNode {
   private config: AgentNodeConfig;
+  private cachedStatus: NodeStatus | null = null;
 
   constructor(config: AgentNodeConfig) {
     super(config.name);
     this.config = config;
   }
 
+  reset(): void {
+    this.cachedStatus = null;
+  }
+
   protected async execute(context: TreeContext): Promise<NodeStatus> {
+    if (this.config.cache && this.cachedStatus !== null) {
+      return this.cachedStatus;
+    }
+
     const prompt = typeof this.config.prompt === 'function'
       ? this.config.prompt(context)
       : this.config.prompt;
@@ -24,11 +33,15 @@ export class AgentNode extends BaseNode {
       mode: this.config.mode,
     });
 
-    if (this.config.mode === 'structured') {
-      return this.executeStructured(prompt, context);
-    } else {
-      return this.executeAgentic(prompt, context);
+    const status = this.config.mode === 'structured'
+      ? await this.executeStructured(prompt, context)
+      : await this.executeAgentic(prompt, context);
+
+    if (this.config.cache) {
+      this.cachedStatus = status;
     }
+
+    return status;
   }
 
   private async executeStructured(prompt: string, context: TreeContext): Promise<NodeStatus> {

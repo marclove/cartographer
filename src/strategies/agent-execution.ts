@@ -8,9 +8,19 @@ const OrderingSchema = z.object({
 });
 
 export class AgentExecutionStrategy implements ExecutionStrategy {
+  private cachedOrder: BTreeNode[] | null = null;
+
   constructor(private config: AgentStrategyConfig) {}
 
+  reset(): void {
+    this.cachedOrder = null;
+  }
+
   async order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]> {
+    if (this.config.cache && this.cachedOrder !== null) {
+      return this.cachedOrder;
+    }
+
     const prompt = buildStrategyPrompt(this.config, children, context);
     const result = await queryStructured(prompt, OrderingSchema, this.config);
 
@@ -30,9 +40,11 @@ export class AgentExecutionStrategy implements ExecutionStrategy {
       .filter((c): c is BTreeNode => c !== undefined);
 
     if (reordered.length === 0) {
+      if (this.config.cache) this.cachedOrder = children;
       return children;
     }
 
+    if (this.config.cache) this.cachedOrder = reordered;
     return reordered;
   }
 }

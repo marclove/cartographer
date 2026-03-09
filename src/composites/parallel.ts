@@ -41,6 +41,7 @@ export class ParallelNode extends BaseNode {
   }
 
   reset(): void {
+    this.strategy.reset?.();
     for (const child of this.children) {
       child.reset();
     }

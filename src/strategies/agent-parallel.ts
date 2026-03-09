@@ -12,9 +12,19 @@ const PolicySchema = z.object({
 });
 
 export class AgentParallelStrategy implements ParallelStrategy {
+  private cachedPolicy: ParallelPolicy | null = null;
+
   constructor(private config: AgentStrategyConfig) {}
 
+  reset(): void {
+    this.cachedPolicy = null;
+  }
+
   async policy(children: BTreeNode[], context: TreeContext): Promise<ParallelPolicy> {
+    if (this.config.cache && this.cachedPolicy !== null) {
+      return this.cachedPolicy;
+    }
+
     const prompt = buildStrategyPrompt(this.config, children, context);
     const result = await queryStructured(prompt, PolicySchema, this.config);
 
@@ -28,6 +38,7 @@ export class AgentParallelStrategy implements ParallelStrategy {
       decision: result,
     });
 
+    if (this.config.cache) this.cachedPolicy = result.policy;
     return result.policy;
   }
 }

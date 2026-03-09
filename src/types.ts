@@ -61,10 +61,12 @@ export interface BTreeNode {
 
 export interface SelectionStrategy {
   order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]>;
+  reset?(): void;
 }
 
 export interface ExecutionStrategy {
   order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]>;
+  reset?(): void;
 }
 
 export interface ParallelPolicy {
@@ -75,6 +77,7 @@ export interface ParallelPolicy {
 
 export interface ParallelStrategy {
   policy(children: BTreeNode[], context: TreeContext): Promise<ParallelPolicy>;
+  reset?(): void;
 }
 
 // --- Agent Strategy Config ---
@@ -84,6 +87,7 @@ export interface AgentStrategyConfig {
   model?: 'sonnet' | 'opus' | 'haiku';
   effort?: 'low' | 'medium' | 'high' | 'max';
   childDescriptions?: Record<string, string>;
+  cache?: boolean;
 }
 
 // --- Node Configs ---
@@ -119,6 +123,7 @@ export interface AgentNodeConfig {
   model?: 'sonnet' | 'opus' | 'haiku';
   effort?: 'low' | 'medium' | 'high' | 'max';
   blackboardNamespace?: string;
+  cache?: boolean;
 }
 
 // --- Composite Configs ---
