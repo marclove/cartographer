@@ -185,8 +185,9 @@ describe('TreeScheduler', () => {
   });
 
   it('continues on error when onError is "continue"', async () => {
+    const tree = createTree(NodeStatus.SUCCESS);
     let callCount = 0;
-    const tree = createTree(() => {
+    vi.spyOn(tree, 'tick').mockImplementation(async () => {
       callCount++;
       if (callCount === 1) throw new Error('boom');
       return NodeStatus.SUCCESS;
@@ -212,7 +213,10 @@ describe('TreeScheduler', () => {
   });
 
   it('stops on error when onError is "stop"', async () => {
-    const tree = createTree(() => { throw new Error('boom'); });
+    const tree = createTree(NodeStatus.SUCCESS);
+    vi.spyOn(tree, 'tick').mockImplementation(async () => {
+      throw new Error('boom');
+    });
 
     const scheduler = new TreeScheduler({
       tree,

@@ -31,6 +31,7 @@ export class TreeScheduler {
   }
 
   async start(): Promise<void> {
+    if (this._isRunning) return;
     this._isRunning = true;
     this.stopRequested = false;
 
@@ -49,6 +50,7 @@ export class TreeScheduler {
   }
 
   async stop(): Promise<void> {
+    if (!this._isRunning) return;
     this.stopRequested = true;
     if (this.currentTimer) {
       clearTimeout(this.currentTimer);
@@ -103,23 +105,9 @@ export class TreeScheduler {
     this.events.emit('tick:start', { runCount, timestamp: new Date() });
     const start = performance.now();
 
-    // Listen for node-level errors that may be caught by the tree internally
-    let capturedError: Error | undefined;
-    const errorListener = (data: { error: Error }) => {
-      capturedError = data.error;
-    };
-    this.config.tree.events.on('node:error', errorListener);
-
     try {
       const status = await this.config.tree.tick();
       const durationMs = performance.now() - start;
-
-      this.config.tree.events.off('node:error', errorListener);
-
-      // If an error was captured from a node, handle it through the error path
-      if (capturedError) {
-        return this.handleError(capturedError, runCount);
-      }
 
       this._lastStatus = status;
       this.events.emit('tick:complete', { runCount, status, durationMs });
@@ -136,35 +124,30 @@ export class TreeScheduler {
 
       return false;
     } catch (error) {
-      this.config.tree.events.off('node:error', errorListener);
-      return this.handleError(error as Error, runCount);
+      this.events.emit('tick:error', { runCount, error: error as Error });
+
+      const onError = this.config.onError ?? 'stop';
+      let decision: 'stop' | 'continue';
+
+      if (typeof onError === 'function') {
+        decision = onError(error as Error, runCount);
+      } else {
+        decision = onError;
+      }
+
+      if (decision === 'stop') {
+        this.emitStop('error');
+        return true;
+      }
+
+      // continue — check maxRuns
+      if (this.config.maxRuns !== undefined && this._runCount >= this.config.maxRuns) {
+        this.emitStop('maxRuns');
+        return true;
+      }
+
+      return false;
     }
-  }
-
-  private handleError(error: Error, runCount: number): boolean {
-    this.events.emit('tick:error', { runCount, error });
-
-    const onError = this.config.onError ?? 'stop';
-    let decision: 'stop' | 'continue';
-
-    if (typeof onError === 'function') {
-      decision = onError(error, runCount);
-    } else {
-      decision = onError;
-    }
-
-    if (decision === 'stop') {
-      this.emitStop('error');
-      return true;
-    }
-
-    // continue — check maxRuns
-    if (this.config.maxRuns !== undefined && this._runCount >= this.config.maxRuns) {
-      this.emitStop('maxRuns');
-      return true;
-    }
-
-    return false;
   }
 
   private waitMs(ms: number): Promise<void> {
