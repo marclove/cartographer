@@ -33,6 +33,7 @@ export { MapBlackboard } from './core/blackboard.js';
 export { EventEmitter } from './core/event-emitter.js';
 
 // Leaf nodes
+export { BaseNode } from './nodes/base.js';
 export { ActionNode } from './nodes/action.js';
 export { ConditionNode } from './nodes/condition.js';
 export { AgentNode } from './nodes/agent.js';
