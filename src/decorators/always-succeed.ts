@@ -2,6 +2,17 @@ import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
 import type { DecoratorConfig, TreeContext } from '../types.js';
 
+/**
+ * A decorator that forces its child to always return SUCCESS.
+ *
+ * Executes the child node normally but replaces any FAILURE result with SUCCESS.
+ * RUNNING is passed through unchanged, so the child can still span multiple ticks
+ * before producing its (overridden) result.
+ *
+ * Common uses: making an optional step in a Sequence non-blocking (the sequence
+ * continues even if the step fails), or suppressing expected errors from cleanup
+ * actions that may or may not have work to do.
+ */
 export class AlwaysSucceedNode extends BaseNode {
   private child: DecoratorConfig['child'];
 

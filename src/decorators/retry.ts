@@ -2,6 +2,24 @@ import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
 import type { RetryConfig, TreeContext } from '../types.js';
 
+/**
+ * A decorator that re-ticks its child up to `maxAttempts` times until it stops
+ * returning FAILURE.
+ *
+ * On each attempt the child is ticked. Any result other than FAILURE — i.e.
+ * SUCCESS or RUNNING — is returned immediately and the retry loop stops. On
+ * FAILURE, an optional `delayMs` pause is inserted before the next attempt
+ * (the delay is skipped after the final attempt). If every attempt fails,
+ * FAILURE is returned.
+ *
+ * Like `RepeatNode`, the attempt counter is local to a single `execute` call.
+ * If the child returns RUNNING, the node surfaces that status and the full
+ * attempt sequence restarts from zero on the next tick.
+ *
+ * Common uses: transient network calls that may fail intermittently, LLM
+ * requests where an occasional error is expected, or any action where a brief
+ * back-off before retrying is appropriate.
+ */
 export class RetryNode extends BaseNode {
   private child: RetryConfig['child'];
   private maxAttempts: number;
