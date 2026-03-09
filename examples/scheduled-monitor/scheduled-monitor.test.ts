@@ -25,14 +25,14 @@ describe('scheduled-monitor example', { timeout: 120_000 }, () => {
       }
     });
 
-    // Tick 3 times manually (no scheduler, avoids timing dependencies).
+    // Tick 5 times manually (no scheduler, avoids timing dependencies).
     // Server failure profile for 'api':
     //   Request 1:   200 (healthy)
     //   Requests 2–4: 503 (hard outage)
-    //   Requests 5+: 200 (recovered)
-    // By tick 2 the assessment agent sees the 503 and classifies as degraded/outage,
-    // triggering the incident report path.
-    const TICK_COUNT = 3;
+    //   Requests 5+:  200 (recovered)
+    // This exercises the full incident lifecycle: healthy baseline → outage
+    // detection → ongoing incident → potential recovery.
+    const TICK_COUNT = 5;
     const statuses: NodeStatus[] = [];
     for (let i = 0; i < TICK_COUNT; i++) {
       const status = await tree.tick();

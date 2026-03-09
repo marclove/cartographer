@@ -73,7 +73,7 @@ export function buildHealthMonitor(baseUrl: string) {
       // if the agent times out — stale assessment is better than
       // no response at all.
       b.alwaysSucceed('assess-with-fallback', (b) => {
-        b.timeout('assess-timeout', { timeoutMs: 10_000 }, (b) => {
+        b.timeout('assess-timeout', { timeoutMs: 30_000 }, (b) => {
           b.agent('assess-health', {
             mode: 'structured',
             prompt: assessHealthPrompt,
