@@ -56,9 +56,9 @@ Includes a local HTTP server that simulates three services with different failur
 - Structured agents for health assessment, incident reports, status updates, and resolution summaries
 - Scheduler events for live dashboard output
 
-**Cost:** Approximately $0.05–0.15 per run (10 ticks, haiku for assessments, sonnet for incident reports/resolutions).
+**Cost:** Approximately $0.05–0.15 per run (8 ticks, haiku for assessments, sonnet for incident reports/resolutions).
 
-**Runtime:** ~2.5 minutes (10 ticks at 15-second intervals).
+**Runtime:** ~2 minutes (8 ticks at 10-second intervals).
 
 ## Testing
 

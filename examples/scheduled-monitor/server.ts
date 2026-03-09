@@ -12,9 +12,9 @@ export interface TestServer {
  * failure profiles. Each service tracks its own request count and
  * exhibits deterministic behavior:
  *
- * - /api      — Goes down (503) on requests 4–6, recovers after.
- * - /database — Gradually degrades (increasing latency) from request 7+.
- * - /queue    — Flaps (alternates 200/500) from request 5+.
+ * - /api      — Goes down (503) on requests 2–4, recovers after.
+ * - /database — Gradually degrades (increasing latency) from request 5+.
+ * - /queue    — Flaps (alternates 200/500) from request 3+.
  *
  * Deterministic profiles ensure the example produces interesting state
  * transitions: healthy → outage → recovery, with degradation and flapping
@@ -67,22 +67,22 @@ function getServiceBehavior(
 ): { status: number; latency: number } {
   switch (service) {
     case 'api':
-      // Hard outage on requests 4–6
-      if (requestCount >= 4 && requestCount <= 6) {
+      // Hard outage on requests 2–4
+      if (requestCount >= 2 && requestCount <= 4) {
         return { status: 503, latency: 50 };
       }
       return { status: 200, latency: 20 };
 
     case 'database':
-      // Gradual latency degradation from request 7+
-      if (requestCount >= 7) {
-        return { status: 200, latency: 200 + (requestCount - 7) * 100 };
+      // Gradual latency degradation from request 5+
+      if (requestCount >= 5) {
+        return { status: 200, latency: 200 + (requestCount - 5) * 100 };
       }
       return { status: 200, latency: 30 };
 
     case 'queue':
-      // Flaps between up and down from request 5+
-      if (requestCount >= 5 && requestCount % 2 === 0) {
+      // Flaps between up and down from request 3+
+      if (requestCount >= 3 && requestCount % 2 === 0) {
         return { status: 500, latency: 10 };
       }
       return { status: 200, latency: 15 };

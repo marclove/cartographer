@@ -28,13 +28,13 @@ async function main() {
 
   const scheduler = new TreeScheduler({
     tree,
-    schedule: { type: 'interval', ms: 15_000 },
+    schedule: { type: 'interval', ms: 10_000 },
     resetBetweenTicks: false,
-    maxRuns: 10,
+    maxRuns: 8,
     onError: 'continue',
   });
 
-  console.log('=== Health Monitor (10 ticks, 15s interval) ===\n');
+  console.log('=== Health Monitor (8 ticks, 10s interval) ===\n');
 
   scheduler.events.on('tick:complete', (event: SchedulerEvents['tick:complete']) => {
     const tick = event.runCount;
