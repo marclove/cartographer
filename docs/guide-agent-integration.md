@@ -42,7 +42,7 @@ Both modes share these behaviors:
 
 ## Structured Mode
 
-Single-turn interaction. Default effort: `'low'`. `maxTurns` is set to 1 internally.
+Single-turn interaction. Default effort: `'low'`. When no `outputSchema` is provided, `maxTurns` is set to 1 internally. When `outputSchema` is provided, turns are uncapped so the SDK can complete structured output formatting.
 
 Best for: classification, extraction, formatting, data transformation.
 
