@@ -82,3 +82,16 @@ Like `sequentialAction` but exposes tick count externally via `getTicks()` for a
 ## Mocking Strategy
 
 For `agent-strategies.test.ts` tests 1-4, mock `queryStructured` from `../agent/sdk-helpers.js` using `vi.mock`. This tests whether strategy classes correctly interpret SDK responses (reordering, policy application, caching) without making API calls. The SDK integration itself is validated by the live test (test 5) and by `agent-agentic-mode.test.ts`.
+
+## Implementation Plan
+
+Step-by-step implementation in `docs/plans/implementation/`:
+
+| File | Description |
+|------|-------------|
+| `018-test-helpers.md` | Add `AbortTrackingNode` and `countingAction` to helpers |
+| `019-abort-signal-tests.md` | 5 abort/signal propagation tests |
+| `020-scheduler-resilience-tests.md` | 5 scheduler error recovery tests |
+| `021-running-state-tests.md` | 5 RUNNING state management tests |
+| `022-agent-agentic-mode-tests.md` | 4 live API agentic mode tests |
+| `023-agent-strategies-tests.md` | 4 mocked + 1 live strategy tests |
