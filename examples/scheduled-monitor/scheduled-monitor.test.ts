@@ -39,6 +39,11 @@ describe('scheduled-monitor example', { timeout: 120_000 }, () => {
     expect(apiHistory).toBeDefined();
     expect(apiHistory!.length).toBe(5);
 
+    // Tick 4 hits the API's outage window (requests 4–6 return 503).
+    // At least one history record for api should be unhealthy.
+    const hasUnhealthyRecord = apiHistory!.some((r) => !r.healthy);
+    expect(hasUnhealthyRecord).toBe(true);
+
     // Assessment agent should have produced output
     const assessment = tree.blackboard.get<HealthAssessment>('assess-health:output');
     expect(assessment).toBeDefined();

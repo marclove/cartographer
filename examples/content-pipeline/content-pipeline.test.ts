@@ -13,10 +13,11 @@ describe('content-pipeline example', { timeout: 120_000 }, () => {
     // Pipeline should complete successfully
     expect(status).toBe(NodeStatus.SUCCESS);
 
-    // Classification should exist with expected shape
+    // Classification should exist with expected shape.
+    // The sample ticket is a billing complaint, so the classifier should route billing.
     const classification = blackboard['classify:output'] as Record<string, unknown>;
     expect(classification).toBeDefined();
-    expect(classification.category).toBeDefined();
+    expect(classification.category).toBe('billing');
     expect(classification.urgency).toBeDefined();
 
     // Triage report should be consolidated

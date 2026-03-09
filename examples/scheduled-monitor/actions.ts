@@ -99,16 +99,22 @@ export function enoughTimeSinceLastUpdate(ctx: TreeContext): boolean {
 export function recordIncidentTick(ctx: TreeContext): NodeStatus {
   if (!ctx.blackboard.has('incident:startTime')) {
     ctx.blackboard.set('incident:startTime', new Date().toISOString());
+    ctx.blackboard.set('incident:createdOnTick', ctx.blackboard.get<number>('monitor:tickCount') ?? 0);
     ctx.blackboard.set('incident:updates', []);
   }
 
-  // Track status update outputs for the prompt context
+  // Track status update outputs for the prompt context.
+  // Guard against re-consuming the same stale output on subsequent ticks by
+  // comparing against the last accumulated update text.
   const statusUpdate = ctx.blackboard.get<{ update: string }>('draft-status-update:output');
   if (statusUpdate) {
     const updates = ctx.blackboard.get<string[]>('incident:updates') ?? [];
-    updates.push(statusUpdate.update);
-    ctx.blackboard.set('incident:updates', updates);
-    ctx.blackboard.set('incident:lastUpdateTick', ctx.blackboard.get<number>('monitor:tickCount') ?? 0);
+    const lastAccumulated = updates[updates.length - 1];
+    if (statusUpdate.update !== lastAccumulated) {
+      updates.push(statusUpdate.update);
+      ctx.blackboard.set('incident:updates', updates);
+      ctx.blackboard.set('incident:lastUpdateTick', ctx.blackboard.get<number>('monitor:tickCount') ?? 0);
+    }
   }
 
   return NodeStatus.SUCCESS;
@@ -119,8 +125,10 @@ export function recordIncidentTick(ctx: TreeContext): NodeStatus {
  */
 export function clearIncidentState(ctx: TreeContext): NodeStatus {
   ctx.blackboard.delete('incident:startTime');
+  ctx.blackboard.delete('incident:createdOnTick');
   ctx.blackboard.delete('incident:updates');
   ctx.blackboard.delete('incident:lastUpdateTick');
+  ctx.blackboard.delete('draft-incident-report:output');
   return NodeStatus.SUCCESS;
 }
 
