@@ -12,13 +12,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run build            # Compile TypeScript to dist/
 npm run test             # Run unit tests (vitest run --project unit)
 npm run test:integration # Run integration tests (vitest run --project integration)
-npm run test:all         # Run all tests (unit + integration)
+npm run test:live        # Run live API tests (vitest run --project live, requires ANTHROPIC_API_KEY)
+npm run test:all         # Run all tests (unit + integration + live)
 npm run test:watch       # Watch unit tests
 npm run typecheck        # Type-check without emitting
 npx vitest run src/nodes/action.test.ts  # Run a single test file
 ```
 
-Integration tests in `src/__integration__/` are separated into deterministic tests (always run) and Agent SDK tests (require `ANTHROPIC_API_KEY`).
+Tests are organized into three vitest projects: `unit` (src/**/*.test.ts), `integration` (src/__integration__/**/*.test.ts, deterministic), and `live` (src/__integration__/live/**/*.test.ts, requires `ANTHROPIC_API_KEY`).
 
 ## Architecture
 

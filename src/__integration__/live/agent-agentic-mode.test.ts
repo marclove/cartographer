@@ -1,13 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod/v4';
-import { NodeStatus } from '../types.js';
-import { AgentNode } from '../nodes/agent.js';
-import { TreeBuilder } from '../builder/tree-builder.js';
-import { createContext, collectEvents } from './helpers.js';
+import { NodeStatus } from '../../types.js';
+import { AgentNode } from '../../nodes/agent.js';
+import { TreeBuilder } from '../../builder/tree-builder.js';
+import { createContext, collectEvents } from '../helpers.js';
 
-const HAS_KEY = !!process.env.ANTHROPIC_API_KEY;
-
-describe.skipIf(!HAS_KEY)('Agent Agentic Mode Integration', { timeout: 30_000 }, () => {
+describe('Agent Agentic Mode Integration', { timeout: 30_000 }, () => {
   it('agentic mode with blackboard MCP tool use', async () => {
     const ctx = createContext({
       items: ['apple', 'banana', 'cherry'],

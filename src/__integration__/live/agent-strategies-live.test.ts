@@ -1,14 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { NodeStatus } from '../types.js';
-import { ActionNode } from '../nodes/action.js';
-import { ParallelNode } from '../composites/parallel.js';
-import { AgentParallelStrategy } from '../strategies/agent-parallel.js';
-import { createContext, collectEvents } from './helpers.js';
+import { NodeStatus } from '../../types.js';
+import { ActionNode } from '../../nodes/action.js';
+import { ParallelNode } from '../../composites/parallel.js';
+import { AgentParallelStrategy } from '../../strategies/agent-parallel.js';
+import { createContext, collectEvents } from '../helpers.js';
 
-// --- Live API test ---
-const HAS_KEY = !!process.env.ANTHROPIC_API_KEY;
-
-describe.skipIf(!HAS_KEY)('Agent Strategies Integration (Live API)', { timeout: 30_000 }, () => {
+describe('Agent Strategies Integration (Live API)', { timeout: 30_000 }, () => {
   it('AgentParallelStrategy end-to-end with live API', async () => {
     const ctx = createContext();
     const strategyEvents = collectEvents(ctx, 'strategy:decision');
