@@ -97,10 +97,16 @@ export function enoughTimeSinceLastUpdate(ctx: TreeContext): boolean {
  * Creates the incident on the first call; updates on subsequent calls.
  */
 export function recordIncidentTick(ctx: TreeContext): NodeStatus {
+  const tick = ctx.blackboard.get<number>('monitor:tickCount') ?? 0;
+  const assessment = ctx.blackboard.get<HealthAssessment>('assess-health:output');
+
   if (!ctx.blackboard.has('incident:startTime')) {
     ctx.blackboard.set('incident:startTime', new Date().toISOString());
-    ctx.blackboard.set('incident:createdOnTick', ctx.blackboard.get<number>('monitor:tickCount') ?? 0);
+    ctx.blackboard.set('incident:createdOnTick', tick);
     ctx.blackboard.set('incident:updates', []);
+    console.log(`  [Tick ${tick}] Incident opened (assessment: ${assessment?.status})`);
+  } else {
+    console.log(`  [Tick ${tick}] Incident ongoing (assessment: ${assessment?.status})`);
   }
 
   // Track status update outputs for the prompt context.
@@ -124,6 +130,8 @@ export function recordIncidentTick(ctx: TreeContext): NodeStatus {
  * Clears all incident state from the blackboard after recovery.
  */
 export function clearIncidentState(ctx: TreeContext): NodeStatus {
+  const tick = ctx.blackboard.get<number>('monitor:tickCount') ?? 0;
+  console.log(`  [Tick ${tick}] Incident resolved`);
   ctx.blackboard.delete('incident:startTime');
   ctx.blackboard.delete('incident:createdOnTick');
   ctx.blackboard.delete('incident:updates');
