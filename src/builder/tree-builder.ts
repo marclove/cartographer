@@ -43,7 +43,7 @@ export class CompositeBuilder {
     const { strategy, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
     const builder = new CompositeBuilder();
     configureFn?.(builder);
-    this.children.push(new SelectorNode({ name, children: builder.getChildren(), strategy }));
+    this.children.push(new SelectorNode({ name, children: builder.getChildren(), strategy: strategy as SelectionStrategy | undefined }));
     return this;
   }
 
@@ -51,7 +51,7 @@ export class CompositeBuilder {
     const { strategy, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
     const builder = new CompositeBuilder();
     configureFn?.(builder);
-    this.children.push(new SequenceNode({ name, children: builder.getChildren(), strategy }));
+    this.children.push(new SequenceNode({ name, children: builder.getChildren(), strategy: strategy as ExecutionStrategy | undefined }));
     return this;
   }
 
@@ -59,7 +59,7 @@ export class CompositeBuilder {
     const { strategy, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
     const builder = new CompositeBuilder();
     configureFn?.(builder);
-    this.children.push(new ParallelNode({ name, children: builder.getChildren(), strategy }));
+    this.children.push(new ParallelNode({ name, children: builder.getChildren(), strategy: strategy as ParallelStrategy | undefined }));
     return this;
   }
 
@@ -113,7 +113,7 @@ export class CompositeBuilder {
   }
 
   getChildren(): BTreeNode[] {
-    return this.children;
+    return [...this.children];
   }
 }
 
@@ -135,6 +135,79 @@ export class SingleChildBuilder {
     return this;
   }
 
+  selector(name: string, optionsOrConfigure?: { strategy?: SelectionStrategy } | ((b: CompositeBuilder) => void), configure?: (b: CompositeBuilder) => void): this {
+    const { strategy, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
+    const builder = new CompositeBuilder();
+    configureFn?.(builder);
+    this.child = new SelectorNode({ name, children: builder.getChildren(), strategy: strategy as SelectionStrategy | undefined });
+    return this;
+  }
+
+  sequence(name: string, optionsOrConfigure?: { strategy?: ExecutionStrategy } | ((b: CompositeBuilder) => void), configure?: (b: CompositeBuilder) => void): this {
+    const { strategy, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
+    const builder = new CompositeBuilder();
+    configureFn?.(builder);
+    this.child = new SequenceNode({ name, children: builder.getChildren(), strategy: strategy as ExecutionStrategy | undefined });
+    return this;
+  }
+
+  parallel(name: string, optionsOrConfigure?: { strategy?: ParallelStrategy } | ((b: CompositeBuilder) => void), configure?: (b: CompositeBuilder) => void): this {
+    const { strategy, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
+    const builder = new CompositeBuilder();
+    configureFn?.(builder);
+    this.child = new ParallelNode({ name, children: builder.getChildren(), strategy: strategy as ParallelStrategy | undefined });
+    return this;
+  }
+
+  inverter(name: string, configure: (b: SingleChildBuilder) => void): this {
+    const builder = new SingleChildBuilder();
+    configure(builder);
+    this.child = new InverterNode({ name, child: builder.getChild() });
+    return this;
+  }
+
+  repeat(name: string, options: { count?: number; untilStatus?: NodeStatus }, configure: (b: SingleChildBuilder) => void): this {
+    const builder = new SingleChildBuilder();
+    configure(builder);
+    this.child = new RepeatNode({ name, child: builder.getChild(), ...options });
+    return this;
+  }
+
+  retry(name: string, options: { maxAttempts: number; delayMs?: number }, configure: (b: SingleChildBuilder) => void): this {
+    const builder = new SingleChildBuilder();
+    configure(builder);
+    this.child = new RetryNode({ name, child: builder.getChild(), ...options });
+    return this;
+  }
+
+  alwaysSucceed(name: string, configure: (b: SingleChildBuilder) => void): this {
+    const builder = new SingleChildBuilder();
+    configure(builder);
+    this.child = new AlwaysSucceedNode({ name, child: builder.getChild() });
+    return this;
+  }
+
+  alwaysFail(name: string, configure: (b: SingleChildBuilder) => void): this {
+    const builder = new SingleChildBuilder();
+    configure(builder);
+    this.child = new AlwaysFailNode({ name, child: builder.getChild() });
+    return this;
+  }
+
+  timeout(name: string, options: { timeoutMs: number }, configure: (b: SingleChildBuilder) => void): this {
+    const builder = new SingleChildBuilder();
+    configure(builder);
+    this.child = new TimeoutNode({ name, child: builder.getChild(), ...options });
+    return this;
+  }
+
+  guard(name: string, options: { condition: ConditionFn }, configure: (b: SingleChildBuilder) => void): this {
+    const builder = new SingleChildBuilder();
+    configure(builder);
+    this.child = new GuardNode({ name, child: builder.getChild(), condition: options.condition });
+    return this;
+  }
+
   getChild(): BTreeNode {
     if (!this.child) {
       throw new Error('Decorator must have exactly one child node');
@@ -146,7 +219,7 @@ export class SingleChildBuilder {
 function parseCompositeArgs(
   optionsOrConfigure?: Record<string, unknown> | ((b: CompositeBuilder) => void),
   configure?: (b: CompositeBuilder) => void,
-): { strategy?: any; configureFn?: (b: CompositeBuilder) => void } {
+): { strategy?: unknown; configureFn?: (b: CompositeBuilder) => void } {
   if (typeof optionsOrConfigure === 'function') {
     return { configureFn: optionsOrConfigure };
   }
