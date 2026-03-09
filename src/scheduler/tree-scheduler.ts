@@ -13,6 +13,7 @@ export class TreeScheduler {
   private stopRequested = false;
   private currentTimer?: ReturnType<typeof setTimeout>;
   private currentTimerResolve?: () => void;
+  private _stopEmitted = false;
 
   constructor(config: SchedulerConfig) {
     this.config = config;
@@ -34,6 +35,7 @@ export class TreeScheduler {
     if (this._isRunning) return;
     this._isRunning = true;
     this.stopRequested = false;
+    this._stopEmitted = false;
 
     try {
       if (this.config.schedule.type === 'once') {
@@ -161,6 +163,8 @@ export class TreeScheduler {
   }
 
   private emitStop(reason: 'manual' | 'maxRuns' | 'stopOnStatus' | 'error'): void {
+    if (this._stopEmitted) return;
+    this._stopEmitted = true;
     this.events.emit('scheduler:stop', { reason });
   }
 }
