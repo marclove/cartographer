@@ -24,6 +24,12 @@ export default defineConfig({
           include: ['src/__integration__/live/**/*.test.ts'],
         },
       },
+      {
+        test: {
+          name: 'examples',
+          include: ['examples/**/*.test.ts'],
+        },
+      },
     ],
   },
 });
