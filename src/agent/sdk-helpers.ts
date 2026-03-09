@@ -7,27 +7,29 @@ export async function queryStructured<T extends z.ZodType>(
   schema: T,
   config: AgentStrategyConfig,
 ): Promise<z.infer<T> | null> {
-  async function* generateMessages() {
-    yield {
-      type: 'user' as const,
-      message: { role: 'user' as const, content: prompt },
-    };
-  }
-
   try {
+    const { $schema, ...jsonSchema } = z.toJSONSchema(schema) as Record<string, unknown>;
     for await (const message of query({
-      prompt: generateMessages(),
+      prompt,
       options: {
-        outputFormat: { type: 'json_schema', schema: z.toJSONSchema(schema) },
+        outputFormat: { type: 'json_schema', schema: jsonSchema },
         model: config.model ?? 'sonnet',
         effort: config.effort ?? 'low',
-        maxTurns: 1,
       },
     } as any)) {
       const msg = message as any;
       if (msg.type === 'result') {
-        if (msg.subtype === 'success' && msg.structured_output) {
-          return msg.structured_output as z.infer<T>;
+        if (msg.subtype === 'success') {
+          if (msg.structured_output) {
+            return msg.structured_output as z.infer<T>;
+          }
+          if (typeof msg.result === 'string') {
+            try {
+              return JSON.parse(msg.result) as z.infer<T>;
+            } catch {
+              return null;
+            }
+          }
         }
         return null;
       }

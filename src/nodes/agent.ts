@@ -55,14 +55,16 @@ export class AgentNode extends BaseNode {
       allowedTools: ['mcp__blackboard__*'],
       model: this.config.model,
       effort: this.config.effort ?? 'low',
-      maxTurns: 1,
     };
 
     if (this.config.outputSchema) {
+      const { $schema, ...schema } = z.toJSONSchema(this.config.outputSchema) as Record<string, unknown>;
       options.outputFormat = {
         type: 'json_schema',
-        schema: z.toJSONSchema(this.config.outputSchema),
+        schema,
       };
+    } else {
+      options.maxTurns = 1;
     }
 
     for await (const message of query({ prompt, options } as any)) {
@@ -70,7 +72,14 @@ export class AgentNode extends BaseNode {
 
       if (msg.type === 'result') {
         if (msg.subtype === 'success') {
-          const output = msg.structured_output ?? msg.result;
+          let output = msg.structured_output;
+          if (output === undefined && typeof msg.result === 'string') {
+            try {
+              output = JSON.parse(msg.result);
+            } catch {
+              output = msg.result;
+            }
+          }
 
           context.events.emit('agent:response', {
             node: this,
