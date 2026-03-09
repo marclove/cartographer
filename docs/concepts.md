@@ -37,7 +37,7 @@ NodeStatus.FAILURE   -- "I couldn't do it."
 NodeStatus.RUNNING   -- "I'm still working on it."
 ```
 
-The `RUNNING` status is what makes behavior trees suitable for asynchronous and long-running work. A node that calls an API, waits for a user response, or delegates to an AI agent can return `RUNNING` to signal that it is not yet finished.
+The `RUNNING` status is what makes behavior trees suitable for asynchronous and long-running work. A node that calls an API, waits for a user response, or delegates to an AI agent can return `RUNNING` to signal that it is not yet finished. When a child returns `RUNNING`, its parent composite (Sequence or Selector) remembers which child was running and resumes from that child on the next tick, skipping siblings that already completed. This means the tree can make incremental progress across multiple ticks without re-executing work that already succeeded.
 
 ---
 
@@ -71,9 +71,9 @@ Composite nodes have one or more children and define how those children are tick
 
 Cartographer provides three composite node types:
 
-- **SelectorNode** -- Ticks children in order until one returns `SUCCESS` or `RUNNING`. If all children return `FAILURE`, the selector returns `FAILURE`. Think of it as an OR gate: "try each option until one works."
+- **SelectorNode** -- Ticks children in order until one returns `SUCCESS` or `RUNNING`. If all children return `FAILURE`, the selector returns `FAILURE`. Think of it as an OR gate: "try each option until one works." When a child returns `RUNNING`, the selector remembers that child and resumes from it on the next tick.
 
-- **SequenceNode** -- Ticks children in order until one returns `FAILURE` or `RUNNING`. If all children return `SUCCESS`, the sequence returns `SUCCESS`. Think of it as an AND gate: "do all steps in order; stop if any step fails."
+- **SequenceNode** -- Ticks children in order until one returns `FAILURE` or `RUNNING`. If all children return `SUCCESS`, the sequence returns `SUCCESS`. Think of it as an AND gate: "do all steps in order; stop if any step fails." When a child returns `RUNNING`, the sequence remembers that child and resumes from it on the next tick, skipping children that already succeeded.
 
 - **ParallelNode** -- Ticks all children concurrently using `Promise.all`. A configurable policy determines how many successes or failures are needed to produce the final result. Useful for running independent tasks simultaneously.
 

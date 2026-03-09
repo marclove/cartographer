@@ -99,6 +99,8 @@ Stops when the tree returns a specific status.
 
 Default: `true`. When enabled, calls `tree.reset()` before each tick (except the first). Set to `false` for stateful trees that should maintain state across ticks.
 
+This setting is important for multi-tick workflows where nodes return `RUNNING`. When `resetBetweenTicks` is `false`, Sequence and Selector nodes remember which child was running and resume from that child on the next tick, skipping already-completed siblings. When `true`, the running child position is cleared and the composite starts from the beginning each tick.
+
 ### onError
 
 Controls behavior when `tree.tick()` throws. Default: `'stop'`.
@@ -197,6 +199,59 @@ scheduler.start();
 // Later...
 await scheduler.stop();
 ```
+
+---
+
+## Example: Multi-Tick Deploy Pipeline
+
+This example demonstrates a long-running workflow that spans multiple scheduler ticks. The health check node returns `RUNNING` while waiting for the service to become healthy. Because `resetBetweenTicks` is `false`, the Sequence remembers that `start-deploy` already succeeded and resumes directly at `wait-for-healthy` on each subsequent tick.
+
+```typescript
+import { TreeBuilder, TreeScheduler, NodeStatus } from 'cartographer';
+
+const tree = new TreeBuilder('deploy-pipeline')
+  .sequence('deploy', (b) => {
+    b.action('start-deploy', async (ctx) => {
+      await triggerDeploy(ctx.blackboard.get<string>('service')!);
+      return NodeStatus.SUCCESS;
+    });
+
+    b.action('wait-for-healthy', async (ctx) => {
+      const healthy = await checkHealthEndpoint(ctx.blackboard.get<string>('service')!);
+      return healthy ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
+    });
+
+    b.action('notify-slack', async (ctx) => {
+      await postToSlack('Deploy complete');
+      return NodeStatus.SUCCESS;
+    });
+  })
+  .build();
+
+const scheduler = new TreeScheduler({
+  tree,
+  schedule: { type: 'interval', ms: 10_000 },
+  resetBetweenTicks: false,           // preserve running child position
+  stopOnStatus: NodeStatus.SUCCESS,   // stop when pipeline completes
+});
+
+scheduler.events.on('tick:complete', ({ runCount, status }) => {
+  console.log(`Tick ${runCount}: ${status}`);
+});
+
+await scheduler.start();
+```
+
+Execution trace:
+
+```
+Tick 1: start-deploy → SUCCESS, wait-for-healthy → RUNNING (saved)
+Tick 2: resume at wait-for-healthy → RUNNING
+Tick 3: resume at wait-for-healthy → SUCCESS, notify-slack → SUCCESS
+Tree returns SUCCESS, scheduler stops.
+```
+
+`start-deploy` runs exactly once. No idempotency guards are needed because the Sequence skips completed children when resuming.
 
 ---
 

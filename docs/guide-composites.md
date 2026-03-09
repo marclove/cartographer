@@ -21,10 +21,13 @@ interface SelectorConfig {
 ### Behavior
 
 1. Obtains the child list from `strategy.order()` (default: original insertion order).
-2. Ticks each child in sequence.
-3. First child returning `SUCCESS` — selector returns `SUCCESS`.
-4. First child returning `RUNNING` — selector returns `RUNNING`.
-5. All children return `FAILURE` — selector returns `FAILURE`.
+2. If a child returned `RUNNING` on a previous tick, resumes from that child (skipping already-completed siblings).
+3. Ticks each child starting from the resume point.
+4. First child returning `SUCCESS` — selector returns `SUCCESS`.
+5. First child returning `RUNNING` — selector saves the child's position and returns `RUNNING`.
+6. All children return `FAILURE` — selector returns `FAILURE`.
+
+The resume behavior uses the child's unique `id`, so it works correctly even if a strategy reorders children between ticks.
 
 ### Example
 
@@ -60,10 +63,13 @@ interface SequenceConfig {
 ### Behavior
 
 1. Obtains the child list from `strategy.order()` (default: original insertion order).
-2. Ticks each child in sequence.
-3. First child returning `FAILURE` — sequence returns `FAILURE`.
-4. First child returning `RUNNING` — sequence returns `RUNNING`.
-5. All children return `SUCCESS` — sequence returns `SUCCESS`.
+2. If a child returned `RUNNING` on a previous tick, resumes from that child (skipping already-completed siblings).
+3. Ticks each child starting from the resume point.
+4. First child returning `FAILURE` — sequence returns `FAILURE`.
+5. First child returning `RUNNING` — sequence saves the child's position and returns `RUNNING`.
+6. All children return `SUCCESS` — sequence returns `SUCCESS`.
+
+The resume behavior uses the child's unique `id`, so it works correctly even if a strategy reorders children between ticks.
 
 ---
 
@@ -110,16 +116,21 @@ Three strategy interfaces correspond to the three composite types:
 ```typescript
 interface SelectionStrategy {
   order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]>;
+  reset?(): void;
 }
 
 interface ExecutionStrategy {
   order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]>;
+  reset?(): void;
 }
 
 interface ParallelStrategy {
   policy(children: BTreeNode[], context: TreeContext): Promise<ParallelPolicy>;
+  reset?(): void;
 }
 ```
+
+The optional `reset()` method is called by composites during their own `reset()`. Strategies that hold cached state (such as agent strategies with `cache: true`) use this to clear their caches when the tree resets.
 
 ### Default Strategies
 
@@ -137,6 +148,7 @@ interface AgentStrategyConfig {
   model?: 'sonnet' | 'opus' | 'haiku';
   effort?: 'low' | 'medium' | 'high' | 'max';
   childDescriptions?: Record<string, string>;
+  cache?: boolean;
 }
 ```
 
@@ -147,6 +159,18 @@ interface AgentStrategyConfig {
 All agent strategies use `buildStrategyPrompt`, which includes child descriptions and current blackboard state in the prompt sent to Claude. On agent failure, each strategy falls back to default behavior (original order for selection/execution, all-must-succeed for parallel).
 
 When an agent strategy produces a result, it emits a `strategy:decision` event on the tree's event bus with the strategy name and decision payload.
+
+#### Caching Strategy Results
+
+When `cache: true` is set on the config, the agent strategy calls Claude once and reuses the result on subsequent ticks. This avoids redundant API calls in multi-tick workflows where the ordering or policy decision does not change between ticks. The cache is cleared when the composite's `reset()` is called.
+
+```typescript
+const strategy = new AgentExecutionStrategy({
+  prompt: 'Order these deployment steps for the current environment',
+  model: 'haiku',
+  cache: true,  // Claude is called once; result reused across ticks
+});
+```
 
 **Example with agent strategy:**
 

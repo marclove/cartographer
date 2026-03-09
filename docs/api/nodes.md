@@ -173,6 +173,7 @@ new AgentNode(config: AgentNodeConfig)
 | `model` | `'sonnet' \| 'opus' \| 'haiku'` | No | -- | Claude model to use. |
 | `effort` | `'low' \| 'medium' \| 'high' \| 'max'` | No | `'low'` (structured) / `'high'` (agentic) | Effort level passed to the SDK. |
 | `blackboardNamespace` | `string` | No | -- | When set, the auto-attached blackboard MCP server operates on a scoped namespace instead of the full blackboard. |
+| `cache` | `boolean` | No | `false` | When `true`, the node calls Claude once and returns the cached status on subsequent ticks. Cleared on `reset()`. |
 
 ### Behavior
 

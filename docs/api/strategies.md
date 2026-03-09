@@ -11,10 +11,11 @@ import type { SelectionStrategy } from 'cartographer';
 
 interface SelectionStrategy {
   order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]>;
+  reset?(): void;
 }
 ```
 
-Used by `SelectorNode`. Returns children in the order they should be tried.
+Used by `SelectorNode`. Returns children in the order they should be tried. The optional `reset()` method is called by the composite during its own `reset()` to clear any cached state.
 
 ### ExecutionStrategy
 
@@ -23,10 +24,11 @@ import type { ExecutionStrategy } from 'cartographer';
 
 interface ExecutionStrategy {
   order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]>;
+  reset?(): void;
 }
 ```
 
-Used by `SequenceNode`. Returns children in execution order.
+Used by `SequenceNode`. Returns children in execution order. The optional `reset()` method is called by the composite during its own `reset()` to clear any cached state.
 
 ### ParallelStrategy
 
@@ -35,10 +37,11 @@ import type { ParallelStrategy } from 'cartographer';
 
 interface ParallelStrategy {
   policy(children: BTreeNode[], context: TreeContext): Promise<ParallelPolicy>;
+  reset?(): void;
 }
 ```
 
-Used by `ParallelNode`. Returns the success/failure policy.
+Used by `ParallelNode`. Returns the success/failure policy. The optional `reset()` method is called by the composite during its own `reset()` to clear any cached state.
 
 ### ParallelPolicy
 
@@ -62,6 +65,7 @@ interface AgentStrategyConfig {
   model?: 'sonnet' | 'opus' | 'haiku';
   effort?: 'low' | 'medium' | 'high' | 'max';
   childDescriptions?: Record<string, string>;
+  cache?: boolean;
 }
 ```
 
@@ -71,6 +75,7 @@ interface AgentStrategyConfig {
 | `model` | `'sonnet' \| 'opus' \| 'haiku'` | No | `'sonnet'` | Claude model |
 | `effort` | `'low' \| 'medium' \| 'high' \| 'max'` | No | `'low'` | Effort level |
 | `childDescriptions` | `Record<string, string>` | No | — | Maps child name to human description |
+| `cache` | `boolean` | No | `false` | When `true`, the strategy calls Claude once and reuses the result on subsequent invocations. Cleared on `reset()`. |
 
 ## Default Strategies
 

@@ -23,14 +23,14 @@ import { SelectorNode } from 'cartographer';
 ### Behavior
 
 1. Gets ordered children from `strategy.order(children, context)`.
-2. Ticks each child in order.
+2. If a child returned `RUNNING` on a previous tick, resumes from that child (identified by `id`).
 3. First `SUCCESS` — returns `SUCCESS`.
-4. First `RUNNING` — returns `RUNNING`.
+4. First `RUNNING` — saves child position and returns `RUNNING`.
 5. All `FAILURE` — returns `FAILURE`.
 
 ### Inherited Methods
 
-Methods inherited from `BaseNode`: `tick()`, `reset()` (resets all children), `abort()` (aborts all children).
+Methods inherited from `BaseNode`: `tick()`, `reset()` (clears running child state, calls `strategy.reset?.()`, resets all children), `abort()` (aborts all children).
 
 ### Example
 
@@ -62,14 +62,14 @@ import { SequenceNode } from 'cartographer';
 ### Behavior
 
 1. Gets ordered children from `strategy.order(children, context)`.
-2. Ticks each child in order.
+2. If a child returned `RUNNING` on a previous tick, resumes from that child (identified by `id`).
 3. First `FAILURE` — returns `FAILURE`.
-4. First `RUNNING` — returns `RUNNING`.
+4. First `RUNNING` — saves child position and returns `RUNNING`.
 5. All `SUCCESS` — returns `SUCCESS`.
 
 ### Inherited Methods
 
-Methods inherited from `BaseNode`: `tick()`, `reset()` (resets all children), `abort()` (aborts all children).
+Methods inherited from `BaseNode`: `tick()`, `reset()` (clears running child state, calls `strategy.reset?.()`, resets all children), `abort()` (aborts all children).
 
 ### Example
 
@@ -118,7 +118,7 @@ import { ParallelNode } from 'cartographer';
 
 ### Inherited Methods
 
-Methods inherited from `BaseNode`: `tick()`, `reset()` (resets all children), `abort()` (aborts all children).
+Methods inherited from `BaseNode`: `tick()`, `reset()` (calls `strategy.reset?.()`, resets all children), `abort()` (aborts all children).
 
 ### Example
 
