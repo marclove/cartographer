@@ -15,7 +15,7 @@ import {
   createHealthCheck,
   updateHistory,
   incrementTickCount,
-  isOutage,
+  isUnhealthy,
   wasDownNowHealthy,
   noActiveIncident,
   enoughTimeSinceLastUpdate,
@@ -38,7 +38,7 @@ import {
  *   ├── alwaysSucceed → timeout(10s) → agent "assess-health" (structured, haiku)
  *   ├── selector "respond-to-assessment"
  *   │   ├── sequence "outage-path"
- *   │   │   ├── condition "is-outage"
+ *   │   │   ├── condition "is-unhealthy"
  *   │   │   ├── selector "outage-actions"
  *   │   │   │   ├── sequence "new-outage"
  *   │   │   │   │   ├── condition "no-active-incident"
@@ -88,7 +88,7 @@ export function buildHealthMonitor(baseUrl: string) {
       b.selector('respond-to-assessment', (b) => {
         // Outage path
         b.sequence('outage-path', (b) => {
-          b.condition('is-outage', isOutage);
+          b.condition('is-unhealthy', isUnhealthy);
           b.selector('outage-actions', (b) => {
             // New outage: draft initial incident report
             b.sequence('new-outage', (b) => {

@@ -65,9 +65,9 @@ export function incrementTickCount(ctx: TreeContext): NodeStatus {
 
 // --- Conditions ---
 
-export function isOutage(ctx: TreeContext): boolean {
+export function isUnhealthy(ctx: TreeContext): boolean {
   const assessment = ctx.blackboard.get<HealthAssessment>('assess-health:output');
-  return assessment?.status === 'outage';
+  return assessment?.status === 'degraded' || assessment?.status === 'outage';
 }
 
 export function wasDownNowHealthy(ctx: TreeContext): boolean {

@@ -52,7 +52,7 @@ Includes a local HTTP server that simulates three services with different failur
 - Timeout decorator around the assessment agent
 - AlwaysSucceed decorator for graceful timeout fallback
 - Guard decorator for throttling status updates
-- Selector-based routing (outage, recovery, healthy paths)
+- Selector-based routing (unhealthy, recovery, healthy paths)
 - Structured agents for health assessment, incident reports, status updates, and resolution summaries
 - Scheduler events for live dashboard output
 
