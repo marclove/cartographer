@@ -53,19 +53,31 @@ await scheduler.start();
 
 ### Interval
 
-Waits `ms` milliseconds between each tick. The first tick happens after the initial delay, not immediately.
+Waits `ms` milliseconds, ticks the tree, waits again, and repeats. The first tick happens after the initial delay, not immediately.
+
+The loop is sequential: the scheduler awaits each tick to completion before starting the next wait period. Ticks never run concurrently. If a tick takes longer than `ms`, the effective period between tick *starts* is `ms + tickDuration` rather than a fixed `ms`. For example, with `ms: 10_000` and a tick that takes 25 seconds, ticks start 35 seconds apart:
+
+```
+t=0s    wait starts (10s)
+t=10s   tick starts (takes 25s)
+t=35s   tick finishes → wait starts (10s)
+t=45s   tick starts
+...
+```
+
+Think of `ms` as a minimum pause between ticks rather than a fixed period.
 
 ```typescript
 const scheduler = new TreeScheduler({
   tree,
-  schedule: { type: 'interval', ms: 30000 }, // Every 30 seconds
+  schedule: { type: 'interval', ms: 30000 }, // 30s pause between ticks
 });
 await scheduler.start(); // Runs until stopped or maxRuns/stopOnStatus
 ```
 
 ### Cron
 
-Uses cron expressions (parsed by `cron-parser`).
+Uses cron expressions (parsed by `cron-parser`). The next occurrence is recomputed after each tick, so if a tick runs past the next scheduled slot, the scheduler advances to the following future occurrence rather than trying to "catch up" missed slots.
 
 ```typescript
 const scheduler = new TreeScheduler({
