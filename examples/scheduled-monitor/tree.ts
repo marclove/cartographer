@@ -42,13 +42,13 @@ import {
  *   │   │   ├── selector "outage-actions"
  *   │   │   │   ├── sequence "new-outage"
  *   │   │   │   │   ├── condition "no-active-incident"
- *   │   │   │   │   └── agent "draft-incident-report" (structured, sonnet)
+ *   │   │   │   │   └── agent "draft-incident-report" (structured, haiku)
  *   │   │   │   ├── guard(enoughTimeSinceLastUpdate) → agent "draft-status-update" (structured, haiku)
  *   │   │   │   └── action "skip-update"
  *   │   │   └── action "record-incident-tick"
  *   │   ├── sequence "recovery-path"
  *   │   │   ├── condition "was-down-now-healthy"
- *   │   │   ├── agent "draft-resolution" (structured, sonnet)
+ *   │   │   ├── agent "draft-resolution" (structured, haiku)
  *   │   │   └── action "clear-incident"
  *   │   └── action "log-healthy"
  *
@@ -73,7 +73,7 @@ export function buildHealthMonitor(baseUrl: string) {
       // if the agent times out — stale assessment is better than
       // no response at all.
       b.alwaysSucceed('assess-with-fallback', (b) => {
-        b.timeout('assess-timeout', { timeoutMs: 30_000 }, (b) => {
+        b.timeout('assess-timeout', { timeoutMs: 15_000 }, (b) => {
           b.agent('assess-health', {
             mode: 'structured',
             prompt: assessHealthPrompt,
@@ -96,7 +96,7 @@ export function buildHealthMonitor(baseUrl: string) {
               b.agent('draft-incident-report', {
                 mode: 'structured',
                 prompt: draftIncidentReportPrompt,
-                model: 'sonnet',
+                model: 'haiku',
                 outputSchema: IncidentReportSchema,
               });
             });
@@ -121,7 +121,7 @@ export function buildHealthMonitor(baseUrl: string) {
           b.agent('draft-resolution', {
             mode: 'structured',
             prompt: draftResolutionPrompt,
-            model: 'sonnet',
+            model: 'haiku',
             outputSchema: ResolutionSummarySchema,
           });
           b.action('clear-incident', clearIncidentState);
