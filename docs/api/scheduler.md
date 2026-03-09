@@ -13,7 +13,7 @@ interface SchedulerConfig {
   tree: { tick(): Promise<NodeStatus>; reset(): void; readonly events: TypedEventEmitter<TreeEvents> };
   schedule:
     | { type: 'cron'; expression: string }
-    | { type: 'interval'; ms: number }
+    | { type: 'interval'; delayMs: number }
     | { type: 'once' };
   maxRuns?: number;
   stopOnStatus?: NodeStatus;
@@ -25,7 +25,7 @@ interface SchedulerConfig {
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `tree` | `object` | Yes | — | Object with `tick()`, `reset()`, and `events` (typically a `BehaviorTree` instance) |
-| `schedule` | `object` | Yes | — | Schedule type: `once`, `interval` (with `ms`), or `cron` (with `expression`) |
+| `schedule` | `object` | Yes | — | Schedule type: `once`, `interval` (with `delayMs`), or `cron` (with `expression`) |
 | `maxRuns` | `number` | No | — | Stop after N ticks |
 | `stopOnStatus` | `NodeStatus` | No | — | Stop when tree returns this status |
 | `resetBetweenTicks` | `boolean` | No | `true` | Call `tree.reset()` before each tick (except first) |
@@ -69,10 +69,10 @@ interface SchedulerEvents {
 { type: 'once' }
 ```
 
-**Interval:** Waits `ms` milliseconds, then ticks. Repeats. First tick happens after initial delay.
+**Interval:** Waits `delayMs` milliseconds, then ticks. Repeats. First tick happens after initial delay.
 
 ```typescript
-{ type: 'interval', ms: 60000 }
+{ type: 'interval', delayMs: 60000 }
 ```
 
 **Cron:** Uses cron expressions (via `cron-parser`). Waits until next cron time, then ticks.
@@ -88,7 +88,7 @@ import { TreeScheduler, NodeStatus } from 'cartographer';
 
 const scheduler = new TreeScheduler({
   tree,
-  schedule: { type: 'interval', ms: 5000 },
+  schedule: { type: 'interval', delayMs: 5000 },
   maxRuns: 10,
   stopOnStatus: NodeStatus.FAILURE,
   onError: 'continue',

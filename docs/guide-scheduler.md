@@ -25,7 +25,7 @@ interface SchedulerConfig {
   };
   schedule:
     | { type: 'cron'; expression: string }
-    | { type: 'interval'; ms: number }
+    | { type: 'interval'; delayMs: number }
     | { type: 'once' };
   maxRuns?: number;
   stopOnStatus?: NodeStatus;
@@ -53,9 +53,9 @@ await scheduler.start();
 
 ### Interval
 
-Waits `ms` milliseconds, ticks the tree, waits again, and repeats. The first tick happens after the initial delay, not immediately.
+Waits `delayMs` milliseconds, ticks the tree, waits again, and repeats. The first tick happens after the initial delay, not immediately.
 
-The loop is sequential: the scheduler awaits each tick to completion before starting the next wait period. Ticks never run concurrently. If a tick takes longer than `ms`, the effective period between tick *starts* is `ms + tickDuration` rather than a fixed `ms`. For example, with `ms: 10_000` and a tick that takes 25 seconds, ticks start 35 seconds apart:
+The loop is sequential: the scheduler awaits each tick to completion before starting the next wait period. Ticks never run concurrently. If a tick takes longer than `delayMs`, the effective period between tick *starts* is `delayMs + tickDuration` rather than a fixed `delayMs`. For example, with `delayMs: 10_000` and a tick that takes 25 seconds, ticks start 35 seconds apart:
 
 ```
 t=0s    wait starts (10s)
@@ -65,12 +65,12 @@ t=45s   tick starts
 ...
 ```
 
-Think of `ms` as a minimum pause between ticks rather than a fixed period.
+Think of `delayMs` as a minimum pause between ticks rather than a fixed period.
 
 ```typescript
 const scheduler = new TreeScheduler({
   tree,
-  schedule: { type: 'interval', ms: 30000 }, // 30s pause between ticks
+  schedule: { type: 'interval', delayMs: 30000 }, // 30s pause between ticks
 });
 await scheduler.start(); // Runs until stopped or maxRuns/stopOnStatus
 ```
@@ -193,7 +193,7 @@ tree.blackboard.set('healthUrl', 'https://api.example.com/health');
 
 const scheduler = new TreeScheduler({
   tree,
-  schedule: { type: 'interval', ms: 60000 },
+  schedule: { type: 'interval', delayMs: 60000 },
   onError: 'continue',
 });
 
@@ -242,7 +242,7 @@ const tree = new TreeBuilder('deploy-pipeline')
 
 const scheduler = new TreeScheduler({
   tree,
-  schedule: { type: 'interval', ms: 10_000 },
+  schedule: { type: 'interval', delayMs: 10_000 },
   resetBetweenTicks: false,           // preserve running child position
   stopOnStatus: NodeStatus.SUCCESS,   // stop when pipeline completes
 });

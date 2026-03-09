@@ -28,7 +28,7 @@ async function main() {
 
   const scheduler = new TreeScheduler({
     tree,
-    schedule: { type: 'interval', ms: 10_000 },
+    schedule: { type: 'interval', delayMs: 10_000 },
     resetBetweenTicks: false,
     maxRuns: 8,
     onError: 'continue',

@@ -103,7 +103,7 @@ describe('Abort Signal Integration', () => {
 
     const scheduler = new TreeScheduler({
       tree,
-      schedule: { type: 'interval', ms: 10 },
+      schedule: { type: 'interval', delayMs: 10 },
     });
 
     const stopEvents: unknown[] = [];

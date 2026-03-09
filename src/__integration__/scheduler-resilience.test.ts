@@ -35,7 +35,7 @@ describe('Scheduler Resilience', () => {
 
     const scheduler = new TreeScheduler({
       tree,
-      schedule: { type: 'interval', ms: 10 },
+      schedule: { type: 'interval', delayMs: 10 },
       onError: 'continue',
       maxRuns: 3,
     });
@@ -66,7 +66,7 @@ describe('Scheduler Resilience', () => {
 
     const scheduler = new TreeScheduler({
       tree,
-      schedule: { type: 'interval', ms: 10 },
+      schedule: { type: 'interval', delayMs: 10 },
       onError: (error, runCount) => {
         callbackArgs.push({ error, runCount });
         return runCount < 3 ? 'continue' : 'stop';
@@ -103,7 +103,7 @@ describe('Scheduler Resilience', () => {
 
     const scheduler = new TreeScheduler({
       tree,
-      schedule: { type: 'interval', ms: 10 },
+      schedule: { type: 'interval', delayMs: 10 },
       maxRuns: 5,
       stopOnStatus: NodeStatus.SUCCESS,
     });
@@ -140,7 +140,7 @@ describe('Scheduler Resilience', () => {
 
     const schedulerA = new TreeScheduler({
       tree: treeA,
-      schedule: { type: 'interval', ms: 10 },
+      schedule: { type: 'interval', delayMs: 10 },
       resetBetweenTicks: true,
       maxRuns: 3,
     });
@@ -177,7 +177,7 @@ describe('Scheduler Resilience', () => {
 
     const schedulerB = new TreeScheduler({
       tree: treeB,
-      schedule: { type: 'interval', ms: 10 },
+      schedule: { type: 'interval', delayMs: 10 },
       resetBetweenTicks: false,
       stopOnStatus: NodeStatus.SUCCESS,
     });

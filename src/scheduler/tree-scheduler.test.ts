@@ -44,7 +44,7 @@ describe('TreeScheduler', () => {
 
     const scheduler = new TreeScheduler({
       tree,
-      schedule: { type: 'interval', ms: 100 },
+      schedule: { type: 'interval', delayMs: 100 },
     });
 
     const startPromise = scheduler.start();
@@ -66,7 +66,7 @@ describe('TreeScheduler', () => {
 
     const scheduler = new TreeScheduler({
       tree,
-      schedule: { type: 'interval', ms: 50 },
+      schedule: { type: 'interval', delayMs: 50 },
       maxRuns: 3,
     });
 
@@ -92,7 +92,7 @@ describe('TreeScheduler', () => {
 
     const scheduler = new TreeScheduler({
       tree,
-      schedule: { type: 'interval', ms: 50 },
+      schedule: { type: 'interval', delayMs: 50 },
       stopOnStatus: NodeStatus.SUCCESS,
     });
 
@@ -153,7 +153,7 @@ describe('TreeScheduler', () => {
 
     const scheduler = new TreeScheduler({
       tree,
-      schedule: { type: 'interval', ms: 50 },
+      schedule: { type: 'interval', delayMs: 50 },
       maxRuns: 2,
     });
 
@@ -172,7 +172,7 @@ describe('TreeScheduler', () => {
 
     const scheduler = new TreeScheduler({
       tree,
-      schedule: { type: 'interval', ms: 50 },
+      schedule: { type: 'interval', delayMs: 50 },
       maxRuns: 2,
       resetBetweenTicks: false,
     });
@@ -196,7 +196,7 @@ describe('TreeScheduler', () => {
 
     const scheduler = new TreeScheduler({
       tree,
-      schedule: { type: 'interval', ms: 50 },
+      schedule: { type: 'interval', delayMs: 50 },
       maxRuns: 2,
       onError: 'continue',
     });
@@ -243,7 +243,7 @@ describe('TreeScheduler', () => {
 
     const scheduler = new TreeScheduler({
       tree,
-      schedule: { type: 'interval', ms: 100 },
+      schedule: { type: 'interval', delayMs: 100 },
       resetBetweenTicks: false,
       stopOnStatus: NodeStatus.SUCCESS,
     });
@@ -274,7 +274,7 @@ describe('TreeScheduler', () => {
 
     const scheduler = new TreeScheduler({
       tree,
-      schedule: { type: 'interval', ms: 50 },
+      schedule: { type: 'interval', delayMs: 50 },
       onError: 'stop',
     });
 

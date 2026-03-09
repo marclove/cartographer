@@ -93,7 +93,7 @@ describe('Deterministic Integration Tests', () => {
 
     const scheduler = new TreeScheduler({
       tree,
-      schedule: { type: 'interval', ms: 10 },
+      schedule: { type: 'interval', delayMs: 10 },
       resetBetweenTicks: false,
       stopOnStatus: NodeStatus.SUCCESS,
     });

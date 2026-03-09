@@ -12,7 +12,7 @@ import { EventEmitter } from '../core/event-emitter.js';
  *
  * **Schedule types:**
  * - `'once'` — Tick the tree exactly one time, then stop.
- * - `'interval'` — Wait `ms` milliseconds, tick, wait again, repeat.
+ * - `'interval'` — Wait `delayMs` milliseconds, tick, wait again, repeat.
  *   The first tick occurs after the first wait (not immediately).
  * - `'cron'` — Parse a cron expression, wait until the next scheduled time,
  *   tick, then wait for the following occurrence.
@@ -46,7 +46,7 @@ import { EventEmitter } from '../core/event-emitter.js';
  * ```ts
  * const scheduler = new TreeScheduler({
  *   tree: myBehaviorTree,
- *   schedule: { type: 'interval', ms: 5_000 },
+ *   schedule: { type: 'interval', delayMs: 5_000 },
  *   maxRuns: 10,
  *   stopOnStatus: NodeStatus.SUCCESS,
  * });
@@ -167,7 +167,7 @@ export class TreeScheduler {
         // equivalent to maxRuns: 1.
         this.emitStop('maxRuns');
       } else if (this.config.schedule.type === 'interval') {
-        await this.runInterval(this.config.schedule.ms);
+        await this.runInterval(this.config.schedule.delayMs);
       } else if (this.config.schedule.type === 'cron') {
         await this.runCron(this.config.schedule.expression);
       }
@@ -202,15 +202,15 @@ export class TreeScheduler {
   }
 
   /**
-   * Loop that waits `ms` milliseconds before each tick.
+   * Loop that waits `delayMs` milliseconds before each tick.
    *
    * The first tick occurs after the first wait period — there is no
    * immediate tick at `t=0`. Continues until a stopping condition is
    * met or `stop()` is called.
    */
-  private async runInterval(ms: number): Promise<void> {
+  private async runInterval(delayMs: number): Promise<void> {
     while (!this.stopRequested) {
-      await this.waitMs(ms);
+      await this.waitMs(delayMs);
 
       if (this.stopRequested) break;
 

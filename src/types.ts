@@ -856,7 +856,7 @@ export interface BehaviorTreeConfig {
  *
  * The scheduler supports three schedule types:
  * - `'cron'` — Run on a cron expression (e.g., `'0 * * * *'` for hourly).
- * - `'interval'` — Run every `ms` milliseconds.
+ * - `'interval'` — Wait `delayMs` milliseconds between ticks.
  * - `'once'` — Run a single time, then stop.
  *
  * The scheduler can automatically stop based on run count, tree result
@@ -867,7 +867,7 @@ export interface BehaviorTreeConfig {
  * ```ts
  * const config: SchedulerConfig = {
  *   tree: myBehaviorTree,
- *   schedule: { type: 'interval', ms: 60_000 },
+ *   schedule: { type: 'interval', delayMs: 60_000 },
  *   maxRuns: 10,
  *   stopOnStatus: NodeStatus.SUCCESS,
  *   onError: (error, runCount) => {
@@ -887,7 +887,7 @@ export interface SchedulerConfig {
   /** When and how often to tick the tree. */
   schedule:
     | { type: 'cron'; expression: string }
-    | { type: 'interval'; ms: number }
+    | { type: 'interval'; delayMs: number }
     | { type: 'once' };
 
   /** Maximum number of ticks before the scheduler stops. */
