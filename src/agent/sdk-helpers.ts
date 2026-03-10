@@ -1,6 +1,6 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod/v4';
-import type { BTreeNode, TreeContext, AgentStrategyConfig } from '../types.js';
+import type { BTreeNode, TreeContext, TreeEvents, TypedEventEmitter, AgentStrategyConfig } from '../types.js';
 
 /**
  * Call the Claude SDK with a structured JSON schema output requirement and
@@ -55,6 +55,7 @@ export async function queryStructured<T extends z.ZodType>(
   prompt: string,
   schema: T,
   config: AgentStrategyConfig,
+  onMessage?: (msg: unknown) => void,
 ): Promise<z.infer<T> | null> {
   try {
     // Strip the $schema meta-property — the Claude SDK does not accept it.
@@ -68,6 +69,7 @@ export async function queryStructured<T extends z.ZodType>(
       },
     } as any)) {
       const msg = message as any;
+      onMessage?.(msg);
       if (msg.type === 'result') {
         if (msg.subtype === 'success') {
           // Prefer the SDK's pre-parsed structured_output field.
@@ -98,14 +100,130 @@ export async function queryStructured<T extends z.ZodType>(
 }
 
 /**
+ * Emit granular observability events for a raw SDK message.
+ *
+ * Handles assistant content blocks (thinking, text, tool_use), streaming
+ * deltas, system messages, tool progress, rate limits, and the catch-all
+ * `agent:message`. Does NOT emit lifecycle events (`agent:response`,
+ * `agent:error`) — those are handled separately by the caller.
+ */
+export function emitMessageEvents(
+  msg: any,
+  node: BTreeNode,
+  events: TypedEventEmitter<TreeEvents>,
+): void {
+  // Catch-all: emit every raw SDK message for power users.
+  events.emit('agent:message', { node, message: msg });
+
+  // Assistant messages carry content blocks: thinking, text, tool_use.
+  if (msg.type === 'assistant' && msg.message?.content) {
+    for (const block of msg.message.content) {
+      if (block.type === 'thinking') {
+        events.emit('agent:thinking', { node, thinking: block.thinking });
+      } else if (block.type === 'text') {
+        events.emit('agent:text', { node, text: block.text });
+      } else if (block.type === 'tool_use') {
+        events.emit('agent:tool_use', { node, tool: block.name, input: block.input });
+      }
+    }
+  }
+
+  // Raw streaming deltas.
+  if (msg.type === 'stream_event') {
+    events.emit('agent:stream', { node, event: msg.event });
+  }
+
+  // Tool execution progress.
+  if (msg.type === 'tool_progress') {
+    events.emit('agent:tool_progress', {
+      node,
+      toolUseId: msg.tool_use_id,
+      toolName: msg.tool_name,
+      elapsedSeconds: msg.elapsed_time_seconds,
+    });
+  }
+
+  // System messages: init, status changes.
+  if (msg.type === 'system') {
+    if (msg.subtype === 'init') {
+      events.emit('agent:init', {
+        node,
+        sessionId: msg.session_id,
+        model: msg.model,
+        tools: msg.tools,
+        mcpServers: msg.mcp_servers,
+      });
+    } else if (msg.subtype === 'status') {
+      events.emit('agent:status', { node, status: msg.status });
+    }
+  }
+
+  // Rate limit warnings.
+  if (msg.type === 'rate_limit_event') {
+    events.emit('agent:rate_limit', { node, info: msg.rate_limit_info });
+  }
+}
+
+/**
+ * Create a message handler for strategy SDK calls that emits both
+ * per-message observability events and lifecycle events (`agent:response`,
+ * `agent:error`) on result messages.
+ *
+ * Intended for use as the `onMessage` callback to {@link queryStructured}.
+ */
+export function createStrategyMessageHandler(
+  node: BTreeNode,
+  events: TypedEventEmitter<TreeEvents>,
+): (msg: unknown) => void {
+  return (msg: unknown) => {
+    const m = msg as any;
+    emitMessageEvents(m, node, events);
+
+    if (m.type === 'result') {
+      if (m.subtype === 'success') {
+        // Prefer structured_output; fall back to JSON-parsing result.
+        let output = m.structured_output;
+        if (output === undefined && typeof m.result === 'string') {
+          try {
+            output = JSON.parse(m.result);
+          } catch {
+            output = m.result;
+          }
+        }
+        events.emit('agent:response', {
+          node,
+          result: output,
+          cost: m.total_cost_usd,
+        });
+      } else {
+        events.emit('agent:error', {
+          node,
+          subtype: m.subtype,
+          errors: m.errors,
+          permissionDenials: m.permission_denials,
+          cost: m.total_cost_usd,
+        });
+      }
+    }
+  };
+}
+
+/**
  * Build the full prompt string that agent strategies send to Claude.
  *
- * Combines the caller's prompt (static string or dynamic function) with a
- * structured context block that tells Claude which children are available
- * and what the current blackboard contains. This composite prompt is what
- * Claude actually receives when strategies call {@link queryStructured}.
+ * Combines the caller's base prompt with two contextual sections — the
+ * list of available child nodes and a snapshot of the current blackboard
+ * state — so Claude has everything it needs to make an informed decision.
+ * This composite prompt is what Claude actually receives when strategies
+ * call {@link queryStructured}.
+ *
+ * **Prompt resolution:** The `config.prompt` value can be either a static
+ * string or a function `(children, context) => string` for dynamic prompt
+ * construction. In both cases, the child and blackboard sections are
+ * appended automatically — you do not need to include them yourself.
  *
  * The returned string has the following structure:
+ *
  * ```
  * {resolved basePrompt}
  *
@@ -117,20 +235,26 @@ export async function queryStructured<T extends z.ZodType>(
  * ```
  *
  * **Child descriptions:** Each child entry includes a `description` field.
- * If `config.childDescriptions` contains an entry for the child's name, that
- * description is used; otherwise the child's name is used as the description.
+ * If `config.childDescriptions` contains an entry for the child's name,
+ * that description is used; otherwise the child's name is used as the
+ * description. Providing meaningful descriptions helps Claude distinguish
+ * between children that have similar names.
  *
- * **Blackboard state:** All keys from `context.blackboard.keys()` are read
- * and serialised as a JSON object. For scoped blackboards, only keys visible
- * within that scope are included.
+ * **Blackboard state:** All keys from `context.blackboard.keys()` are
+ * read and serialised as a JSON object. For scoped blackboards (created
+ * via `ScopedBlackboard`), only keys visible within that scope are
+ * included — parent or sibling scopes are not leaked.
  *
- * @param config - The strategy config, providing the prompt and optional
- *   `childDescriptions`.
- * @param children - The child nodes whose names and descriptions are included.
- * @param context - The tree context, used to read the current blackboard state.
+ * @param config - The strategy config, providing the base prompt and
+ *   optional `childDescriptions` map.
+ * @param children - The child nodes whose names and descriptions are
+ *   included in the prompt's "Available children" section.
+ * @param context - The tree context, used to read the current blackboard
+ *   state and (when `prompt` is a function) passed to the prompt builder.
  * @returns The composite prompt string ready to send to Claude.
  *
  * @example
+ * **Static prompt with child descriptions:**
  * ```ts
  * const prompt = buildStrategyPrompt(
  *   {
@@ -144,7 +268,7 @@ export async function queryStructured<T extends z.ZodType>(
  *   context,
  * );
  *
- * // prompt:
+ * // Returns:
  * // "Choose the best data retrieval strategy
  * //
  * // Available children:
@@ -155,6 +279,21 @@ export async function queryStructured<T extends z.ZodType>(
  * //
  * // Blackboard state:
  * // { "userId": "abc123", "latencyBudgetMs": 100 }"
+ * ```
+ *
+ * @example
+ * **Dynamic prompt built from context:**
+ * ```ts
+ * const prompt = buildStrategyPrompt(
+ *   {
+ *     prompt: (children, ctx) => {
+ *       const intent = ctx.blackboard.get<string>('intent');
+ *       return `For a "${intent}" request, choose which of these ${children.length} strategies to try first`;
+ *     },
+ *   },
+ *   [quickReply, deepResearch, fallback],
+ *   context,
+ * );
  * ```
  */
 export function buildStrategyPrompt(

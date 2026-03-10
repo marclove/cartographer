@@ -1,6 +1,6 @@
 import { z } from 'zod/v4';
 import type { ExecutionStrategy, BTreeNode, TreeContext, AgentStrategyConfig } from '../types.js';
-import { queryStructured, buildStrategyPrompt } from '../agent/sdk-helpers.js';
+import { queryStructured, buildStrategyPrompt, createStrategyMessageHandler } from '../agent/sdk-helpers.js';
 
 /**
  * The schema Claude must conform to when returning an ordering decision.
@@ -124,7 +124,11 @@ export class AgentExecutionStrategy implements ExecutionStrategy {
     }
 
     const prompt = buildStrategyPrompt(this.config, children, context);
-    const result = await queryStructured(prompt, OrderingSchema, this.config);
+    const nodeProxy = children[0] ?? ({ id: '', name: '' } as any);
+    context.events.emit('agent:prompt', { node: nodeProxy, prompt, mode: 'structured' });
+
+    const handler = createStrategyMessageHandler(nodeProxy, context.events);
+    const result = await queryStructured(prompt, OrderingSchema, this.config, handler);
 
     // SDK call failed — fall back to original order so the sequence can proceed.
     if (!result) {

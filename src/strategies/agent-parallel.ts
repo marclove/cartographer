@@ -1,6 +1,6 @@
 import { z } from 'zod/v4';
 import type { ParallelStrategy, ParallelPolicy, BTreeNode, TreeContext, AgentStrategyConfig } from '../types.js';
-import { queryStructured, buildStrategyPrompt } from '../agent/sdk-helpers.js';
+import { queryStructured, buildStrategyPrompt, createStrategyMessageHandler } from '../agent/sdk-helpers.js';
 
 /**
  * The schema Claude must conform to when returning a policy decision.
@@ -121,7 +121,11 @@ export class AgentParallelStrategy implements ParallelStrategy {
     }
 
     const prompt = buildStrategyPrompt(this.config, children, context);
-    const result = await queryStructured(prompt, PolicySchema, this.config);
+    const nodeProxy = children[0] ?? ({ id: '', name: '' } as any);
+    context.events.emit('agent:prompt', { node: nodeProxy, prompt, mode: 'structured' });
+
+    const handler = createStrategyMessageHandler(nodeProxy, context.events);
+    const result = await queryStructured(prompt, PolicySchema, this.config, handler);
 
     // SDK call failed — fall back to the strictest default (all must succeed)
     // so the parallel node remains safe and predictable.

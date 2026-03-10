@@ -4,6 +4,7 @@ import type { BTreeNode, TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
 import { MapBlackboard } from '../core/blackboard.js';
 import type { TreeEvents } from '../types.js';
+import { emitMessageEvents } from '../agent/sdk-helpers.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -128,6 +129,131 @@ describe('AgentSelectionStrategy', () => {
     await strategy.order([mockNode('a')], ctx);
     expect(mockQuery).toHaveBeenCalled();
   });
+
+  it('emits agent:prompt before the SDK call', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'result',
+        subtype: 'success',
+        structured_output: { ordering: ['a'], reasoning: 'ok' },
+        total_cost_usd: 0.01,
+      },
+    ]) as any);
+
+    const strategy = new AgentSelectionStrategy({ prompt: 'Pick' });
+    const ctx = createContext();
+    const spy = vi.fn();
+    ctx.events.on('agent:prompt', spy);
+    await strategy.order([mockNode('a')], ctx);
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'structured' }),
+    );
+    expect(spy.mock.calls[0][0].prompt).toContain('Pick');
+  });
+
+  it('emits agent:response on successful result', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'result',
+        subtype: 'success',
+        structured_output: { ordering: ['a'], reasoning: 'ok' },
+        total_cost_usd: 0.05,
+      },
+    ]) as any);
+
+    const strategy = new AgentSelectionStrategy({ prompt: 'Pick' });
+    const ctx = createContext();
+    const spy = vi.fn();
+    ctx.events.on('agent:response', spy);
+    await strategy.order([mockNode('a')], ctx);
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        result: { ordering: ['a'], reasoning: 'ok' },
+        cost: 0.05,
+      }),
+    );
+  });
+
+  it('emits agent:error on non-success result subtypes', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'result',
+        subtype: 'error_during_execution',
+        errors: ['something broke'],
+        total_cost_usd: 0.02,
+      },
+    ]) as any);
+
+    const strategy = new AgentSelectionStrategy({ prompt: 'Pick' });
+    const ctx = createContext();
+    const spy = vi.fn();
+    ctx.events.on('agent:error', spy);
+    await strategy.order([mockNode('a')], ctx);
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subtype: 'error_during_execution',
+        errors: ['something broke'],
+        cost: 0.02,
+      }),
+    );
+  });
+
+  it('emits agent:thinking and agent:text for intermediate messages', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'thinking', thinking: 'Let me consider...' },
+            { type: 'text', text: 'I think option A' },
+          ],
+        },
+      },
+      {
+        type: 'result',
+        subtype: 'success',
+        structured_output: { ordering: ['a'], reasoning: 'ok' },
+        total_cost_usd: 0.01,
+      },
+    ]) as any);
+
+    const strategy = new AgentSelectionStrategy({ prompt: 'Pick' });
+    const ctx = createContext();
+    const thinkingSpy = vi.fn();
+    const textSpy = vi.fn();
+    const messageSpy = vi.fn();
+    ctx.events.on('agent:thinking', thinkingSpy);
+    ctx.events.on('agent:text', textSpy);
+    ctx.events.on('agent:message', messageSpy);
+    await strategy.order([mockNode('a')], ctx);
+
+    expect(thinkingSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ thinking: 'Let me consider...' }),
+    );
+    expect(textSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'I think option A' }),
+    );
+    // Two messages: assistant + result
+    expect(messageSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not emit agent:response on fallback (null return)', async () => {
+    mockQuery.mockImplementation(() => {
+      throw new Error('SDK crash');
+    });
+
+    const strategy = new AgentSelectionStrategy({ prompt: 'Pick' });
+    const ctx = createContext();
+    const responseSpy = vi.fn();
+    const errorSpy = vi.fn();
+    ctx.events.on('agent:response', responseSpy);
+    ctx.events.on('agent:error', errorSpy);
+    await strategy.order([mockNode('a')], ctx);
+
+    expect(responseSpy).not.toHaveBeenCalled();
+    // SDK exception means the callback never fires, so no agent:error either
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('AgentExecutionStrategy', () => {
@@ -159,6 +285,32 @@ describe('AgentExecutionStrategy', () => {
     const result = await strategy.order(children, createContext());
     expect(result.map((n) => n.name)).toEqual(['a', 'b']);
   });
+
+  it('emits agent:prompt and agent:response events', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'result',
+        subtype: 'success',
+        structured_output: { ordering: ['a'], reasoning: 'ok' },
+        total_cost_usd: 0.03,
+      },
+    ]) as any);
+
+    const strategy = new AgentExecutionStrategy({ prompt: 'Order' });
+    const ctx = createContext();
+    const promptSpy = vi.fn();
+    const responseSpy = vi.fn();
+    ctx.events.on('agent:prompt', promptSpy);
+    ctx.events.on('agent:response', responseSpy);
+    await strategy.order([mockNode('a')], ctx);
+
+    expect(promptSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'structured' }),
+    );
+    expect(responseSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ cost: 0.03 }),
+    );
+  });
 });
 
 describe('AgentParallelStrategy', () => {
@@ -189,5 +341,183 @@ describe('AgentParallelStrategy', () => {
     const children = [mockNode('a'), mockNode('b')];
     const result = await strategy.policy(children, createContext());
     expect(result).toEqual({ successCount: 2 });
+  });
+
+  it('emits agent:prompt and agent:response events', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'result',
+        subtype: 'success',
+        structured_output: { policy: { successCount: 1 }, reasoning: 'ok' },
+        total_cost_usd: 0.04,
+      },
+    ]) as any);
+
+    const strategy = new AgentParallelStrategy({ prompt: 'Set policy' });
+    const ctx = createContext();
+    const promptSpy = vi.fn();
+    const responseSpy = vi.fn();
+    ctx.events.on('agent:prompt', promptSpy);
+    ctx.events.on('agent:response', responseSpy);
+    await strategy.policy([mockNode('a')], ctx);
+
+    expect(promptSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'structured' }),
+    );
+    expect(responseSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ cost: 0.04 }),
+    );
+  });
+
+  it('emits agent:error on non-success result', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'result',
+        subtype: 'error_during_execution',
+        errors: ['timeout'],
+        total_cost_usd: 0.01,
+      },
+    ]) as any);
+
+    const strategy = new AgentParallelStrategy({ prompt: 'Set policy' });
+    const ctx = createContext();
+    const spy = vi.fn();
+    ctx.events.on('agent:error', spy);
+    await strategy.policy([mockNode('a')], ctx);
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subtype: 'error_during_execution',
+        errors: ['timeout'],
+      }),
+    );
+  });
+});
+
+describe('emitMessageEvents', () => {
+  it('emits agent:message for every message', () => {
+    const events = new EventEmitter<TreeEvents>();
+    const node = mockNode('test');
+    const spy = vi.fn();
+    events.on('agent:message', spy);
+
+    const msg = { type: 'unknown', data: 'foo' };
+    emitMessageEvents(msg, node, events);
+
+    expect(spy).toHaveBeenCalledWith({ node, message: msg });
+  });
+
+  it('emits agent:thinking for thinking content blocks', () => {
+    const events = new EventEmitter<TreeEvents>();
+    const node = mockNode('test');
+    const spy = vi.fn();
+    events.on('agent:thinking', spy);
+
+    emitMessageEvents(
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'hmm' }] } },
+      node,
+      events,
+    );
+
+    expect(spy).toHaveBeenCalledWith({ node, thinking: 'hmm' });
+  });
+
+  it('emits agent:text for text content blocks', () => {
+    const events = new EventEmitter<TreeEvents>();
+    const node = mockNode('test');
+    const spy = vi.fn();
+    events.on('agent:text', spy);
+
+    emitMessageEvents(
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'hello' }] } },
+      node,
+      events,
+    );
+
+    expect(spy).toHaveBeenCalledWith({ node, text: 'hello' });
+  });
+
+  it('emits agent:tool_use for tool_use content blocks', () => {
+    const events = new EventEmitter<TreeEvents>();
+    const node = mockNode('test');
+    const spy = vi.fn();
+    events.on('agent:tool_use', spy);
+
+    emitMessageEvents(
+      { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'search', input: { q: 'test' } }] } },
+      node,
+      events,
+    );
+
+    expect(spy).toHaveBeenCalledWith({ node, tool: 'search', input: { q: 'test' } });
+  });
+
+  it('emits agent:stream for stream_event messages', () => {
+    const events = new EventEmitter<TreeEvents>();
+    const node = mockNode('test');
+    const spy = vi.fn();
+    events.on('agent:stream', spy);
+
+    emitMessageEvents({ type: 'stream_event', event: { delta: 'tok' } }, node, events);
+
+    expect(spy).toHaveBeenCalledWith({ node, event: { delta: 'tok' } });
+  });
+
+  it('emits agent:init for system init messages', () => {
+    const events = new EventEmitter<TreeEvents>();
+    const node = mockNode('test');
+    const spy = vi.fn();
+    events.on('agent:init', spy);
+
+    emitMessageEvents(
+      { type: 'system', subtype: 'init', session_id: 's1', model: 'sonnet', tools: [], mcp_servers: [] },
+      node,
+      events,
+    );
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ node, sessionId: 's1', model: 'sonnet' }),
+    );
+  });
+
+  it('emits agent:status for system status messages', () => {
+    const events = new EventEmitter<TreeEvents>();
+    const node = mockNode('test');
+    const spy = vi.fn();
+    events.on('agent:status', spy);
+
+    emitMessageEvents({ type: 'system', subtype: 'status', status: 'running' }, node, events);
+
+    expect(spy).toHaveBeenCalledWith({ node, status: 'running' });
+  });
+
+  it('emits agent:rate_limit for rate_limit_event messages', () => {
+    const events = new EventEmitter<TreeEvents>();
+    const node = mockNode('test');
+    const spy = vi.fn();
+    events.on('agent:rate_limit', spy);
+
+    emitMessageEvents(
+      { type: 'rate_limit_event', rate_limit_info: { retry_after: 5 } },
+      node,
+      events,
+    );
+
+    expect(spy).toHaveBeenCalledWith({ node, info: { retry_after: 5 } });
+  });
+
+  it('emits agent:tool_progress for tool_progress messages', () => {
+    const events = new EventEmitter<TreeEvents>();
+    const node = mockNode('test');
+    const spy = vi.fn();
+    events.on('agent:tool_progress', spy);
+
+    emitMessageEvents(
+      { type: 'tool_progress', tool_use_id: 'tu1', tool_name: 'search', elapsed_time_seconds: 2.5 },
+      node,
+      events,
+    );
+
+    expect(spy).toHaveBeenCalledWith({ node, toolUseId: 'tu1', toolName: 'search', elapsedSeconds: 2.5 });
   });
 });

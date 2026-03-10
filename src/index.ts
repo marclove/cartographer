@@ -74,6 +74,7 @@ export { TreeScheduler } from './scheduler/tree-scheduler.js';
 
 // Agent integration
 export { createBlackboardMcpServer } from './agent/blackboard-mcp.js';
+export { emitMessageEvents, createStrategyMessageHandler } from './agent/sdk-helpers.js';
 
 // Logging
 export { createTreeLogger } from './tree-logger.js';

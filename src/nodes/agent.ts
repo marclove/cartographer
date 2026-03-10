@@ -4,6 +4,7 @@ import { BaseNode } from './base.js';
 import { NodeStatus } from '../types.js';
 import type { AgentNodeConfig, TreeContext } from '../types.js';
 import { createBlackboardMcpServer } from '../agent/blackboard-mcp.js';
+import { emitMessageEvents } from '../agent/sdk-helpers.js';
 
 /**
  * A leaf node that calls the Claude SDK when ticked.
@@ -164,7 +165,7 @@ export class AgentNode extends BaseNode {
 
     const status = this.config.mode === 'structured'
       ? await this.executeStructured(prompt, context)
-      : await this.executeAgentic(prompt, context);
+      : await this.executeUnstructured(prompt, context);
 
     if (this.config.cache) {
       this.cachedStatus = status;
@@ -221,7 +222,7 @@ export class AgentNode extends BaseNode {
     for await (const message of query({ prompt, options } as any)) {
       const msg = message as any;
 
-      this.emitMessageEvents(msg, context);
+      this.emitNodeMessageEvents(msg, context);
 
       if (msg.type === 'result') {
         if (msg.subtype === 'success') {
@@ -284,7 +285,7 @@ export class AgentNode extends BaseNode {
    *
    * Returns `FAILURE` if the message stream ends without producing a result.
    */
-  private async executeAgentic(prompt: string, context: TreeContext): Promise<NodeStatus> {
+  private async executeUnstructured(prompt: string, context: TreeContext): Promise<NodeStatus> {
     const blackboardServer = createBlackboardMcpServer(
       context.blackboard,
       this.config.blackboardNamespace,
@@ -316,7 +317,7 @@ export class AgentNode extends BaseNode {
     for await (const message of query({ prompt, options } as any)) {
       const msg = message as any;
 
-      this.emitMessageEvents(msg, context);
+      this.emitNodeMessageEvents(msg, context);
 
       if (msg.type === 'result') {
         const result = msg.result;
@@ -353,80 +354,10 @@ export class AgentNode extends BaseNode {
   /**
    * Emit granular observability events for a raw SDK message.
    *
-   * Called for every message yielded by `query()` in both structured and
-   * agentic modes. Handles assistant content blocks (thinking, text,
-   * tool_use), streaming deltas, system messages, tool progress, rate
-   * limits, and the catch-all `agent:message`.
+   * Delegates to the shared {@link emitMessageEvents} utility, passing
+   * `this` as the node reference.
    */
-  private emitMessageEvents(msg: any, context: TreeContext): void {
-    // Catch-all: emit every raw SDK message for power users.
-    context.events.emit('agent:message', { node: this, message: msg });
-
-    // Assistant messages carry content blocks: thinking, text, tool_use.
-    if (msg.type === 'assistant' && msg.message?.content) {
-      for (const block of msg.message.content) {
-        if (block.type === 'thinking') {
-          context.events.emit('agent:thinking', {
-            node: this,
-            thinking: block.thinking,
-          });
-        } else if (block.type === 'text') {
-          context.events.emit('agent:text', {
-            node: this,
-            text: block.text,
-          });
-        } else if (block.type === 'tool_use') {
-          context.events.emit('agent:tool_use', {
-            node: this,
-            tool: block.name,
-            input: block.input,
-          });
-        }
-      }
-    }
-
-    // Raw streaming deltas — enables real-time token-by-token UI updates.
-    if (msg.type === 'stream_event') {
-      context.events.emit('agent:stream', {
-        node: this,
-        event: msg.event,
-      });
-    }
-
-    // Tool execution progress with elapsed time.
-    if (msg.type === 'tool_progress') {
-      context.events.emit('agent:tool_progress', {
-        node: this,
-        toolUseId: msg.tool_use_id,
-        toolName: msg.tool_name,
-        elapsedSeconds: msg.elapsed_time_seconds,
-      });
-    }
-
-    // System messages: init, status changes.
-    if (msg.type === 'system') {
-      if (msg.subtype === 'init') {
-        context.events.emit('agent:init', {
-          node: this,
-          sessionId: msg.session_id,
-          model: msg.model,
-          tools: msg.tools,
-          mcpServers: msg.mcp_servers,
-        });
-      } else if (msg.subtype === 'status') {
-        context.events.emit('agent:status', {
-          node: this,
-          status: msg.status,
-        });
-      }
-    }
-
-    // Rate limit warnings.
-    if (msg.type === 'rate_limit_event') {
-      context.events.emit('agent:rate_limit', {
-        node: this,
-        info: msg.rate_limit_info,
-      });
-    }
+  private emitNodeMessageEvents(msg: any, context: TreeContext): void {
+    emitMessageEvents(msg, this, context.events);
   }
 }
