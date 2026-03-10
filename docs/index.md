@@ -33,7 +33,7 @@ Your background determines the fastest path through these docs.
 - [Nodes](guide-nodes.md) -- Leaf nodes: ActionNode, ConditionNode, and an introduction to AgentNode.
 - [Composites](guide-composites.md) -- SelectorNode, SequenceNode, and ParallelNode with completion strategies.
 - [Decorators](guide-decorators.md) -- All seven decorator nodes with examples.
-- [Blackboard and Events](guide-blackboard-and-events.md) -- State management with MapBlackboard and observability via the event emitter.
+- [Blackboard and Events](guide-blackboard-and-events.md) -- State management with MapBlackboard, observability via the event emitter, and structured NDJSON logging.
 - [Agent Integration](guide-agent-integration.md) -- AgentNode modes, agent strategies, and MCP tool configuration.
 - [Scheduler](guide-scheduler.md) -- TreeScheduler: interval, cron, and one-shot scheduling.
 - [Error Handling and Resilience](guide-error-handling.md) -- Error containment, retry/timeout stacking, abort signals, and scheduler error recovery.

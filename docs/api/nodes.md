@@ -180,8 +180,8 @@ new AgentNode(config: AgentNodeConfig)
 - A blackboard MCP server is automatically attached, exposing three tools to the agent: `blackboard_read`, `blackboard_write`, and `blackboard_keys`.
 - On success, the result is written to the blackboard at key `{name}:output`.
 - **Structured mode**: single turn (`maxTurns: 1`). If `outputSchema` is provided, it is converted to JSON Schema via `zod` and passed as the output format. If `mapResult` is provided, its return value determines the node status.
-- **Agentic mode**: multi-turn. Custom `mcpServers` and `allowedTools` are merged with the blackboard server config. Each tool-use block emits an `agent:tool_use` event.
-- Events emitted: `agent:prompt` before the SDK call, `agent:response` after completion, `agent:tool_use` per tool-use block (agentic mode only).
+- **Agentic mode**: multi-turn. Custom `mcpServers` and `allowedTools` are merged with the blackboard server config.
+- Both modes emit the full set of agent observability events: `agent:prompt`, `agent:thinking`, `agent:text`, `agent:tool_use`, `agent:response`, `agent:error`, `agent:stream`, `agent:message`, `agent:tool_progress`, `agent:init`, `agent:status`, and `agent:rate_limit`. See [TreeEvents](core.md#treeevents-interface) for payload details.
 
 ### Example
 

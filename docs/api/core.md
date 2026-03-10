@@ -182,7 +182,16 @@ Event map defining every event a tree can emit.
 | `node:exit` | `{ node: BTreeNode; status: NodeStatus; context: TreeContext; durationMs: number }` |
 | `node:error` | `{ node: BTreeNode; error: Error; context: TreeContext }` |
 | `agent:prompt` | `{ node: BTreeNode; prompt: string; mode: 'structured' \| 'agentic' }` |
-| `agent:response` | `{ node: BTreeNode; result: unknown; cost?: number }` |
+| `agent:thinking` | `{ node: BTreeNode; thinking: string }` |
+| `agent:text` | `{ node: BTreeNode; text: string }` |
 | `agent:tool_use` | `{ node: BTreeNode; tool: string; input: unknown }` |
+| `agent:response` | `{ node: BTreeNode; result: unknown; cost?: number }` |
+| `agent:error` | `{ node: BTreeNode; subtype: string; errors?: string[]; permissionDenials?: unknown; cost?: number }` |
+| `agent:stream` | `{ node: BTreeNode; event: unknown }` |
+| `agent:message` | `{ node: BTreeNode; message: unknown }` |
+| `agent:tool_progress` | `{ node: BTreeNode; toolUseId: string; toolName: string; elapsedSeconds: number }` |
+| `agent:init` | `{ node: BTreeNode; sessionId: string; model?: string; tools?: unknown; mcpServers?: unknown }` |
+| `agent:status` | `{ node: BTreeNode; status: string }` |
+| `agent:rate_limit` | `{ node: BTreeNode; info: unknown }` |
 | `blackboard:write` | `{ key: string; value: unknown; source: string }` |
 | `strategy:decision` | `{ composite: BTreeNode; strategy: string; decision: unknown }` |

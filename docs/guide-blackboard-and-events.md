@@ -85,7 +85,7 @@ import type { TypedEventEmitter, TreeEvents } from 'cartographer';
 
 ## Event Reference
 
-Cartographer emits eight event types during tree execution.
+Cartographer emits events during tree execution, organized into four categories: node lifecycle, agent activity, data flow, and strategy decisions.
 
 ### `node:enter`
 
@@ -119,20 +119,92 @@ Fired before an `AgentNode` calls the Claude SDK.
 { node: BTreeNode; prompt: string; mode: 'structured' | 'agentic' }
 ```
 
+### `agent:thinking`
+
+Fired when the SDK produces a thinking block (chain-of-thought reasoning). Only emitted when extended thinking is enabled for the model.
+
+```typescript
+{ node: BTreeNode; thinking: string }
+```
+
+### `agent:text`
+
+Fired when the SDK produces a text content block in an assistant message.
+
+```typescript
+{ node: BTreeNode; text: string }
+```
+
+### `agent:tool_use`
+
+Fired for each tool call in both structured and agentic mode.
+
+```typescript
+{ node: BTreeNode; tool: string; input: unknown }
+```
+
 ### `agent:response`
 
-Fired when an `AgentNode` receives a result from Claude.
+Fired when an `AgentNode` receives a successful result from Claude.
 
 ```typescript
 { node: BTreeNode; result: unknown; cost?: number }
 ```
 
-### `agent:tool_use`
+### `agent:error`
 
-Fired when an agentic-mode `AgentNode` processes a tool use block.
+Fired when the SDK returns an error result (e.g., max turns exceeded, budget exhausted, execution error).
 
 ```typescript
-{ node: BTreeNode; tool: string; input: unknown }
+{ node: BTreeNode; subtype: string; errors?: string[]; permissionDenials?: unknown; cost?: number }
+```
+
+### `agent:stream`
+
+Fired for each raw streaming delta event (text, thinking, input_json). High-frequency — useful for real-time token-by-token UI updates.
+
+```typescript
+{ node: BTreeNode; event: unknown }
+```
+
+### `agent:message`
+
+Fired for every raw SDK message. A catch-all that enables custom processing without framework filtering. Also high-frequency.
+
+```typescript
+{ node: BTreeNode; message: unknown }
+```
+
+### `agent:tool_progress`
+
+Fired when the SDK reports tool execution progress with elapsed time.
+
+```typescript
+{ node: BTreeNode; toolUseId: string; toolName: string; elapsedSeconds: number }
+```
+
+### `agent:init`
+
+Fired when the SDK emits a session init message with model, tools, and config details.
+
+```typescript
+{ node: BTreeNode; sessionId: string; model?: string; tools?: unknown; mcpServers?: unknown }
+```
+
+### `agent:status`
+
+Fired when the SDK emits a status change during execution.
+
+```typescript
+{ node: BTreeNode; status: string }
+```
+
+### `agent:rate_limit`
+
+Fired when the SDK reports a rate limit event.
+
+```typescript
+{ node: BTreeNode; info: unknown }
 ```
 
 ### `blackboard:write`
@@ -210,6 +282,56 @@ for (const [name, times] of Object.entries(durations)) {
   console.log(`${name}: avg ${avg.toFixed(1)}ms over ${times.length} ticks`);
 }
 ```
+
+---
+
+## Structured Logging with createTreeLogger
+
+`createTreeLogger` is a utility that attaches to the tree's event emitter and appends structured log entries to a file in NDJSON format (one JSON object per line). This makes it easy to capture a full trace of tree execution for debugging, auditing, or analysis.
+
+```typescript
+import { BehaviorTree, createTreeLogger } from 'cartographer';
+
+const tree = new BehaviorTree({ name: 'my-tree', root, blackboard });
+
+const stopLogging = createTreeLogger(tree.events, { filePath: './logs/run.log' });
+await tree.tick();
+stopLogging(); // remove listeners when done
+```
+
+The logger captures all meaningful events — node lifecycle, agent activity, strategy decisions — while intentionally excluding the two high-frequency events (`agent:stream` and `agent:message`) that would dominate the log. The log directory is created automatically if it does not exist.
+
+Each log line is a JSON object with a `ts` (ISO timestamp) and `event` field, plus event-specific data:
+
+```jsonl
+{"ts":"2026-03-10T07:00:00.000Z","event":"node:enter","node":"classify"}
+{"ts":"2026-03-10T07:00:00.123Z","event":"agent:prompt","node":"classify","mode":"structured","prompt":"..."}
+{"ts":"2026-03-10T07:00:01.456Z","event":"agent:response","node":"classify","result":{...},"cost":0.0012}
+{"ts":"2026-03-10T07:00:01.457Z","event":"node:exit","node":"classify","status":"success","durationMs":1457}
+```
+
+You can inspect logs with `jq`:
+
+```sh
+# Pretty-print the full log
+cat run.log | jq .
+
+# Filter to agent tool calls only
+cat run.log | jq 'select(.event == "agent:tool_use")'
+
+# Tail a running log in real time
+tail -f run.log | jq .
+```
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `filePath` | `string` | (required) | Path to the log file. Created if it does not exist. |
+| `logBlackboard` | `boolean` | `false` | Include `blackboard:write` events. Off by default because blackboard writes can be very frequent. |
+| `logStrategy` | `boolean` | `true` | Include `strategy:decision` events. |
+
+The function returns a cleanup callback that removes all listeners. Call it when the tree is done to prevent memory leaks.
 
 ---
 

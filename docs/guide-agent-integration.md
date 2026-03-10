@@ -36,7 +36,7 @@ Both modes share these behaviors:
 
 - Auto-write results to `{name}:output` on the blackboard.
 - Auto-attach a blackboard MCP server (read/write/keys tools).
-- Emit `agent:prompt` before calling Claude and `agent:response` after.
+- Emit comprehensive observability events throughout execution (see [Events](guide-blackboard-and-events.md#event-reference)).
 
 ---
 
@@ -102,7 +102,8 @@ Topic: ${ctx.blackboard.get<string>('topic')}`,
 
 Agentic mode details:
 
-- Emits `agent:tool_use` for each tool use block in assistant messages.
+- Emits `agent:tool_use` for each tool use block in assistant messages (also emitted in structured mode).
+- Emits `agent:error` when the SDK returns an error result (max turns, budget, execution error).
 - Merges user-provided `mcpServers` with the auto-attached blackboard server.
 - Merges user-provided `allowedTools` with `mcp__blackboard__*`.
 - Returns `SUCCESS` if the agent result subtype is `'success'`, `FAILURE` otherwise.
@@ -213,11 +214,15 @@ Control costs with:
 - `maxBudgetUsd` on AgentNode (agentic mode only).
 - `effort: 'low'` for simple tasks.
 - `model: 'haiku'` for fast, inexpensive operations.
-- Track spending via `agent:response` events (includes a `cost` field).
+- Track spending via `agent:response` and `agent:error` events (both include a `cost` field).
 
 ```typescript
 tree.events.on('agent:response', ({ node, cost }) => {
   console.log(`${node.name}: $${cost?.toFixed(4)}`);
+});
+
+tree.events.on('agent:error', ({ node, subtype, cost }) => {
+  console.log(`${node.name} failed (${subtype}): $${cost?.toFixed(4)}`);
 });
 ```
 

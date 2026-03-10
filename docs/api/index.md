@@ -44,6 +44,7 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `BehaviorTreeConfig` | Top-level tree configuration |
 | `SchedulerConfig` | Configuration for `TreeScheduler` |
 | `SchedulerEvents` | Event map for scheduler lifecycle events |
+| `TreeLoggerOptions` | Configuration for `createTreeLogger` |
 
 ## [Core](core.md)
 
@@ -119,3 +120,10 @@ Re-exported from the internal type definitions. See individual reference pages f
 | Export | Description |
 | --- | --- |
 | `createBlackboardMcpServer` | Creates an MCP server that exposes the blackboard to Claude agents. See [Agent Integration guide](../guide-agent-integration.md) for usage. |
+
+## Logging
+
+| Export | Description |
+| --- | --- |
+| `createTreeLogger` | Attaches to a tree's event emitter and appends structured NDJSON log entries to a file. See [Structured Logging](../guide-blackboard-and-events.md#structured-logging-with-createtreelogger). |
+| `TreeLoggerOptions` | Configuration type for `createTreeLogger`. |
