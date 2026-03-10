@@ -162,6 +162,7 @@ const selector = new SelectorNode({
 - `order()` / `policy()` is called on every tick. If your strategy is expensive (e.g., it calls an API), implement caching.
 - `reset()` is called when the tree is reset. Use it to clear cached decisions.
 - Agent strategies (`AgentSelectionStrategy`, `AgentExecutionStrategy`, `AgentParallelStrategy`) support `cache: true` to call Claude once and reuse the result until `reset()`.
+- Agent strategies emit `agent:*` observability events (including `agent:prompt`, `agent:response`, `agent:error`) during SDK calls, so `createTreeLogger` and custom event listeners automatically capture strategy interactions.
 
 ### Dynamic Prompt Functions
 

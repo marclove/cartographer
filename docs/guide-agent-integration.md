@@ -171,6 +171,8 @@ interface AgentStrategyConfig {
 
 All three use `buildStrategyPrompt()`, which constructs a prompt including child names/descriptions and current blackboard state. On agent failure, they fall back to default behavior (original order / all-must-succeed).
 
+Agent strategies emit the full suite of `agent:*` observability events during their SDK calls — `agent:prompt` before calling Claude, intermediate events like `agent:thinking` and `agent:text` as the SDK streams, and `agent:response` or `agent:error` when the result arrives. After a successful call, they also emit `strategy:decision` with the parsed decision payload. This means any observer listening for `agent:*` events (including `createTreeLogger`) automatically captures strategy SDK interactions with no additional setup.
+
 ---
 
 ## Caching

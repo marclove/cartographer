@@ -137,7 +137,7 @@ Constructor: `new AgentSelectionStrategy(config: AgentStrategyConfig)`
 
 Implements `SelectionStrategy`. Asks Claude to reorder children for a selector. Output schema: `{ ordering: string[], reasoning: string }`. Maps returned names back to child nodes. Falls back to original order on failure.
 
-Emits `strategy:decision` with `strategy: 'agent-selection'`.
+Emits `strategy:decision` with `strategy: 'agent-selection'`, plus the full suite of `agent:*` observability events (see below).
 
 ### AgentExecutionStrategy
 
@@ -149,7 +149,7 @@ Constructor: `new AgentExecutionStrategy(config: AgentStrategyConfig)`
 
 Implements `ExecutionStrategy`. Asks Claude to reorder children for a sequence. Output schema: `{ ordering: string[], reasoning: string }`. Maps returned names back to child nodes. Falls back to original order on failure.
 
-Emits `strategy:decision` with `strategy: 'agent-execution'`.
+Emits `strategy:decision` with `strategy: 'agent-execution'`, plus the full suite of `agent:*` observability events (see below).
 
 ### AgentParallelStrategy
 
@@ -161,7 +161,20 @@ Constructor: `new AgentParallelStrategy(config: AgentStrategyConfig)`
 
 Implements `ParallelStrategy`. Asks Claude to determine parallel policy. Output schema: `{ policy: ParallelPolicy, reasoning: string }`. Falls back to `{ successCount: children.length }` on failure.
 
-Emits `strategy:decision` with `strategy: 'agent-parallel'`.
+Emits `strategy:decision` with `strategy: 'agent-parallel'`, plus the full suite of `agent:*` observability events (see below).
+
+### Strategy Observability Events
+
+All three agent strategies emit the same `agent:*` events as `AgentNode` during their SDK calls. The event sequence for each strategy invocation is:
+
+1. `agent:prompt` — emitted before calling the SDK, with `mode: 'structured'`
+2. Intermediate events as the SDK streams — `agent:thinking`, `agent:text`, `agent:tool_use`, `agent:stream`, `agent:message`, `agent:init`, `agent:status`, `agent:rate_limit`, `agent:tool_progress`
+3. `agent:response` (on success) or `agent:error` (on failure) — emitted when the SDK returns a result
+4. `strategy:decision` — emitted after a successful call with the parsed decision payload
+
+Since strategies don't own a node, all event payloads use `children[0]` as the `node` reference — the same proxy pattern used by `strategy:decision`.
+
+If the SDK throws an exception (as opposed to returning an error result), no `agent:response` or `agent:error` is emitted — the strategy silently falls back to default behavior.
 
 ### Example
 

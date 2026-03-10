@@ -158,7 +158,7 @@ interface AgentStrategyConfig {
 
 All agent strategies use `buildStrategyPrompt`, which includes child descriptions and current blackboard state in the prompt sent to Claude. On agent failure, each strategy falls back to default behavior (original order for selection/execution, all-must-succeed for parallel).
 
-When an agent strategy produces a result, it emits a `strategy:decision` event on the tree's event bus with the strategy name and decision payload.
+Agent strategies emit `agent:*` observability events throughout their SDK calls — `agent:prompt` before calling Claude, intermediate events (`agent:thinking`, `agent:text`, etc.) as the SDK streams, and `agent:response` or `agent:error` when the result arrives. After a successful call, a `strategy:decision` event is emitted with the strategy name and decision payload. See the [Strategies API reference](api/strategies.md#strategy-observability-events) for the full event sequence.
 
 #### Order Commitment vs Strategy Caching
 
