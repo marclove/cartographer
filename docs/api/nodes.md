@@ -147,7 +147,7 @@ const node = new ConditionNode({
 import { AgentNode } from 'cartographer';
 ```
 
-Leaf node that invokes the Claude Agent SDK. Supports two modes: `structured` (single-turn, optional typed output) and `agentic` (multi-turn with tool use).
+Leaf node that invokes the Claude Agent SDK. Supports two modes: `structured` (single-turn, optional typed output) and `unstructured` (multi-turn with tool use).
 
 ### Constructor
 
@@ -160,18 +160,18 @@ new AgentNode(config: AgentNodeConfig)
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | `string` | Yes | -- | Node name |
-| `mode` | `'structured' \| 'agentic'` | Yes | -- | Agent execution mode |
+| `mode` | `'structured' \| 'unstructured'` | Yes | -- | Agent execution mode |
 | `prompt` | `string \| ((context: TreeContext) => string)` | Yes | -- | Prompt sent to Claude. Can be a static string or a function that builds the prompt from context. |
 | `outputSchema` | `z.ZodType` | No | -- | Structured mode only. Zod schema for the expected output; converted to JSON Schema internally. |
 | `mapResult` | `(output: unknown, context: TreeContext) => NodeStatus` | No | -- | Structured mode only. Maps the parsed output to a `NodeStatus`. When omitted, any successful response returns `SUCCESS`. |
-| `allowedTools` | `string[]` | No | -- | Agentic mode only. Tool name patterns the agent is allowed to call (merged with the auto-attached blackboard tools). |
-| `permissionMode` | `'acceptEdits' \| 'bypassPermissions' \| 'default'` | No | `'default'` | Agentic mode only. Controls how tool-use permissions are enforced. |
-| `maxTurns` | `number` | No | -- | Agentic mode only. Maximum number of conversation turns. |
-| `maxBudgetUsd` | `number` | No | -- | Agentic mode only. Spending cap in USD. |
-| `systemPrompt` | `string` | No | -- | Agentic mode only. System prompt prepended to the conversation. |
-| `mcpServers` | `Record<string, unknown>` | No | -- | Agentic mode only. Additional MCP servers merged with the auto-attached blackboard server. |
+| `allowedTools` | `string[]` | No | -- | Unstructured mode only. Tool name patterns the agent is allowed to call (merged with the auto-attached blackboard tools). |
+| `permissionMode` | `'acceptEdits' \| 'bypassPermissions' \| 'default'` | No | `'default'` | Unstructured mode only. Controls how tool-use permissions are enforced. |
+| `maxTurns` | `number` | No | -- | Unstructured mode only. Maximum number of conversation turns. |
+| `maxBudgetUsd` | `number` | No | -- | Unstructured mode only. Spending cap in USD. |
+| `systemPrompt` | `string` | No | -- | Unstructured mode only. System prompt prepended to the conversation. |
+| `mcpServers` | `Record<string, unknown>` | No | -- | Unstructured mode only. Additional MCP servers merged with the auto-attached blackboard server. |
 | `model` | `'sonnet' \| 'opus' \| 'haiku'` | No | -- | Claude model to use. |
-| `effort` | `'low' \| 'medium' \| 'high' \| 'max'` | No | `'low'` (structured) / `'high'` (agentic) | Effort level passed to the SDK. |
+| `effort` | `'low' \| 'medium' \| 'high' \| 'max'` | No | `'low'` (structured) / `'high'` (unstructured) | Effort level passed to the SDK. |
 | `blackboardNamespace` | `string` | No | -- | When set, the auto-attached blackboard MCP server operates on a scoped namespace instead of the full blackboard. |
 | `cache` | `boolean` | No | `false` | When `true`, the node calls Claude once and returns the cached status on subsequent ticks. Cleared on `reset()`. |
 
@@ -180,7 +180,7 @@ new AgentNode(config: AgentNodeConfig)
 - A blackboard MCP server is automatically attached, exposing three tools to the agent: `blackboard_read`, `blackboard_write`, and `blackboard_keys`.
 - On success, the result is written to the blackboard at key `{name}:output`.
 - **Structured mode**: single turn (`maxTurns: 1`). If `outputSchema` is provided, it is converted to JSON Schema via `zod` and passed as the output format. If `mapResult` is provided, its return value determines the node status.
-- **Agentic mode**: multi-turn. Custom `mcpServers` and `allowedTools` are merged with the blackboard server config.
+- **Unstructured mode**: multi-turn. Custom `mcpServers` and `allowedTools` are merged with the blackboard server config.
 - Both modes emit the full set of agent observability events: `agent:prompt`, `agent:thinking`, `agent:text`, `agent:tool_use`, `agent:response`, `agent:error`, `agent:stream`, `agent:message`, `agent:tool_progress`, `agent:init`, `agent:status`, and `agent:rate_limit`. See [TreeEvents](core.md#treeevents-interface) for payload details.
 
 ### Example
@@ -199,7 +199,7 @@ const classifier = new AgentNode({
 
 const coder = new AgentNode({
   name: 'implement-feature',
-  mode: 'agentic',
+  mode: 'unstructured',
   prompt: (ctx) => `Implement: ${ctx.blackboard.get<string>('task')}`,
   model: 'sonnet',
   allowedTools: ['Read', 'Edit', 'Bash'],

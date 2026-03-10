@@ -7,7 +7,7 @@ Cartographer lets you compose AI agents, deterministic logic, and scheduled auto
 ## Features
 
 - **Classical behavior tree nodes** — Sequences, selectors, parallel nodes, and seven decorator types (retry, timeout, guard, inverter, repeat, always-succeed, always-fail).
-- **Agent nodes** — Structured mode for schema-validated single-turn responses, agentic mode for multi-turn tool-using interactions.
+- **Agent nodes** — Structured mode for schema-validated single-turn responses, unstructured mode for multi-turn tool-using interactions.
 - **Agent strategies** — Swap static child ordering or parallel policies for AI-driven decisions at runtime.
 - **Blackboard state management** — Shared key-value store with namespace scoping for inter-node communication.
 - **Event-driven observability** — Typed events for node lifecycle, agent calls, blackboard writes, and strategy decisions.

@@ -276,7 +276,7 @@ export class TreeLoader {
         return new AgentNode({
           id: config.id as string | undefined,
           name: config.name,
-          mode: config.mode as 'structured' | 'agentic',
+          mode: config.mode as 'structured' | 'unstructured',
           prompt: config.prompt as string,
           outputSchema: config.outputSchema
             ? registry.getSchema(config.outputSchema as string)

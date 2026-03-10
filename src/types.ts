@@ -105,7 +105,7 @@ export interface Blackboard {
  * - `agent:prompt` — Fired when an AgentNode resolves its prompt and is about to call the SDK.
  * - `agent:thinking` — Fired when the SDK produces a thinking block (chain-of-thought reasoning).
  * - `agent:text` — Fired when the SDK produces a text content block in an assistant message.
- * - `agent:tool_use` — Fired for each tool call in both structured and agentic mode.
+ * - `agent:tool_use` — Fired for each tool call in both structured and unstructured mode.
  * - `agent:response` — Fired when the SDK returns a final successful result.
  * - `agent:error` — Fired when the SDK returns an error result (max turns, budget, execution error, etc.).
  * - `agent:stream` — Fired for each raw streaming delta event (text, thinking, input_json).
@@ -140,7 +140,7 @@ export interface TreeEvents {
   'node:enter': { node: BTreeNode; context: TreeContext };
   'node:exit': { node: BTreeNode; status: NodeStatus; context: TreeContext; durationMs: number };
   'node:error': { node: BTreeNode; error: Error; context: TreeContext };
-  'agent:prompt': { node: BTreeNode; prompt: string; mode: 'structured' | 'agentic' };
+  'agent:prompt': { node: BTreeNode; prompt: string; mode: 'structured' | 'unstructured' };
   'agent:thinking': { node: BTreeNode; thinking: string };
   'agent:text': { node: BTreeNode; text: string };
   'agent:tool_use': { node: BTreeNode; tool: string; input: unknown };
@@ -569,7 +569,7 @@ export interface ConditionNodeConfig {
  * `outputSchema`. The parsed output is stored on the blackboard at
  * `{name}:output`. Use `mapResult` to derive the node status from the output.
  *
- * **Agentic mode** — Runs a multi-turn Claude session with access to tools.
+ * **Unstructured mode** — Runs a multi-turn Claude session with access to tools.
  * The agent can make tool calls, read/write the blackboard via MCP, and
  * work autonomously for up to `maxTurns` or `maxBudgetUsd`.
  *
@@ -590,10 +590,10 @@ export interface ConditionNodeConfig {
  *       : NodeStatus.FAILURE,
  * };
  *
- * // Agentic mode — research and write a report
- * const agentic: AgentNodeConfig = {
+ * // Unstructured mode — research and write a report
+ * const unstructured: AgentNodeConfig = {
  *   name: 'research-agent',
- *   mode: 'agentic',
+ *   mode: 'unstructured',
  *   prompt: 'Research the topic and write a summary',
  *   systemPrompt: 'You are a research assistant.',
  *   allowedTools: ['web-search', 'read-url'],
@@ -613,9 +613,9 @@ export interface AgentNodeConfig {
   /**
    * The execution mode for this agent.
    * - `'structured'` — Single-turn, schema-validated output.
-   * - `'agentic'` — Multi-turn with tool use.
+   * - `'unstructured'` — Multi-turn with tool use.
    */
-  mode: 'structured' | 'agentic';
+  mode: 'structured' | 'unstructured';
 
   /**
    * The prompt sent to Claude. Can be a static string or a function that
@@ -639,41 +639,41 @@ export interface AgentNodeConfig {
    */
   mapResult?: (output: unknown, context: TreeContext) => NodeStatus;
 
-  // Agentic mode
+  // Unstructured mode
 
   /**
    * List of tool names the agent is allowed to use.
-   * Only used in `'agentic'` mode.
+   * Only used in `'unstructured'` mode.
    */
   allowedTools?: string[];
 
   /**
    * Controls how the agent handles permission prompts for tool use.
-   * Only used in `'agentic'` mode.
+   * Only used in `'unstructured'` mode.
    */
   permissionMode?: 'acceptEdits' | 'bypassPermissions' | 'default';
 
   /**
    * Maximum number of conversation turns before the agent stops.
-   * Only used in `'agentic'` mode.
+   * Only used in `'unstructured'` mode.
    */
   maxTurns?: number;
 
   /**
    * Maximum spend in USD before the agent stops.
-   * Only used in `'agentic'` mode.
+   * Only used in `'unstructured'` mode.
    */
   maxBudgetUsd?: number;
 
   /**
    * System prompt prepended to the conversation.
-   * Only used in `'agentic'` mode.
+   * Only used in `'unstructured'` mode.
    */
   systemPrompt?: string;
 
   /**
    * MCP server configurations to make available to the agent.
-   * Only used in `'agentic'` mode.
+   * Only used in `'unstructured'` mode.
    */
   mcpServers?: Record<string, unknown>;
 

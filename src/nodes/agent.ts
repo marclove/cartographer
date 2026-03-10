@@ -10,7 +10,7 @@ import { emitMessageEvents } from '../agent/sdk-helpers.js';
  * A leaf node that calls the Claude SDK when ticked.
  *
  * `AgentNode` brings AI reasoning into the behavior tree. It operates in
- * one of two modes — **structured** or **agentic** — selected via the
+ * one of two modes — **structured** or **unstructured** — selected via the
  * `mode` field of {@link AgentNodeConfig}.
  *
  * ---
@@ -51,7 +51,7 @@ import { emitMessageEvents } from '../agent/sdk-helpers.js';
  *
  * ---
  *
- * ## Agentic mode
+ * ## Unstructured mode
  *
  * Runs a multi-turn Claude session with access to tools. Best for open-ended
  * tasks that require planning, web browsing, code execution, or sequences
@@ -67,7 +67,7 @@ import { emitMessageEvents } from '../agent/sdk-helpers.js';
  * ```ts
  * const research = new AgentNode({
  *   name: 'research-agent',
- *   mode: 'agentic',
+ *   mode: 'unstructured',
  *   systemPrompt: 'You are a concise research assistant.',
  *   prompt: (ctx) => `Research this topic: ${ctx.blackboard.get('topic')}`,
  *   allowedTools: ['web-search', 'read-url'],
@@ -110,7 +110,7 @@ import { emitMessageEvents } from '../agent/sdk-helpers.js';
  * | `agent:prompt` | After the prompt is resolved, before calling the SDK |
  * | `agent:thinking` | When Claude produces a thinking (chain-of-thought) block |
  * | `agent:text` | When Claude produces a text content block |
- * | `agent:tool_use` | For each tool call in both structured and agentic mode |
+ * | `agent:tool_use` | For each tool call in both structured and unstructured mode |
  * | `agent:response` | When the SDK returns a successful final result |
  * | `agent:error` | When the SDK returns an error result |
  * | `agent:stream` | For each raw streaming delta event |
@@ -306,7 +306,7 @@ export class AgentNode extends BaseNode {
       allowedTools,
       permissionMode: this.config.permissionMode ?? 'default',
       model: this.config.model,
-      // Default to 'high' effort for agentic calls — they are typically
+      // Default to 'high' effort for unstructured calls — they are typically
       // complex, open-ended tasks that benefit from deeper reasoning.
       effort: this.config.effort ?? 'high',
       maxTurns: this.config.maxTurns,

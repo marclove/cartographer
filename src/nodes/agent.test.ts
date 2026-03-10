@@ -128,12 +128,12 @@ describe('AgentNode - structured mode', () => {
   });
 });
 
-describe('AgentNode - agentic mode', () => {
+describe('AgentNode - unstructured mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('returns SUCCESS on successful agentic execution', async () => {
+  it('returns SUCCESS on successful unstructured execution', async () => {
     mockQuery.mockReturnValue(mockMessages([
       { type: 'assistant', message: { content: [{ type: 'text', text: 'Working...' }] } },
       { type: 'result', subtype: 'success', result: 'Fixed the bug', total_cost_usd: 0.05 },
@@ -141,7 +141,7 @@ describe('AgentNode - agentic mode', () => {
 
     const node = new AgentNode({
       name: 'fixer',
-      mode: 'agentic',
+      mode: 'unstructured',
       prompt: 'Fix the bug',
       allowedTools: ['Read', 'Edit'],
     });
@@ -156,7 +156,7 @@ describe('AgentNode - agentic mode', () => {
 
     const node = new AgentNode({
       name: 'fixer',
-      mode: 'agentic',
+      mode: 'unstructured',
       prompt: 'Fix the bug',
       maxTurns: 5,
     });
@@ -171,7 +171,7 @@ describe('AgentNode - agentic mode', () => {
 
     const node = new AgentNode({
       name: 'runner',
-      mode: 'agentic',
+      mode: 'unstructured',
       prompt: 'Run tests',
     });
 
@@ -187,7 +187,7 @@ describe('AgentNode - agentic mode', () => {
 
     const node = new AgentNode({
       name: 'worker',
-      mode: 'agentic',
+      mode: 'unstructured',
       prompt: 'Do work',
     });
 
@@ -216,7 +216,7 @@ describe('AgentNode - agentic mode', () => {
 
     const node = new AgentNode({
       name: 'reader',
-      mode: 'agentic',
+      mode: 'unstructured',
       prompt: 'Read files',
     });
 
@@ -250,7 +250,7 @@ describe('AgentNode - observability events', () => {
       { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 },
     ]) as any);
 
-    const node = new AgentNode({ name: 'thinker', mode: 'agentic', prompt: 'Think' });
+    const node = new AgentNode({ name: 'thinker', mode: 'unstructured', prompt: 'Think' });
     const ctx = createContext();
     const thinkingSpy = vi.fn();
     ctx.events.on('agent:thinking', thinkingSpy);
@@ -270,7 +270,7 @@ describe('AgentNode - observability events', () => {
       { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 },
     ]) as any);
 
-    const node = new AgentNode({ name: 'worker', mode: 'agentic', prompt: 'Work' });
+    const node = new AgentNode({ name: 'worker', mode: 'unstructured', prompt: 'Work' });
     const ctx = createContext();
     const textSpy = vi.fn();
     ctx.events.on('agent:text', textSpy);
@@ -321,7 +321,7 @@ describe('AgentNode - observability events', () => {
       },
     ]) as any);
 
-    const node = new AgentNode({ name: 'errorer', mode: 'agentic', prompt: 'Do stuff' });
+    const node = new AgentNode({ name: 'errorer', mode: 'unstructured', prompt: 'Do stuff' });
     const ctx = createContext();
     const errorSpy = vi.fn();
     ctx.events.on('agent:error', errorSpy);
@@ -359,7 +359,7 @@ describe('AgentNode - observability events', () => {
       { type: 'result', subtype: 'success', result: 'Hello', total_cost_usd: 0.01 },
     ]) as any);
 
-    const node = new AgentNode({ name: 'streamer', mode: 'agentic', prompt: 'Say hello' });
+    const node = new AgentNode({ name: 'streamer', mode: 'unstructured', prompt: 'Say hello' });
     const ctx = createContext();
     const streamSpy = vi.fn();
     ctx.events.on('agent:stream', streamSpy);
@@ -378,7 +378,7 @@ describe('AgentNode - observability events', () => {
     ];
     mockQuery.mockReturnValue(mockMessages(messages) as any);
 
-    const node = new AgentNode({ name: 'all-msgs', mode: 'agentic', prompt: 'Hi' });
+    const node = new AgentNode({ name: 'all-msgs', mode: 'unstructured', prompt: 'Hi' });
     const ctx = createContext();
     const msgSpy = vi.fn();
     ctx.events.on('agent:message', msgSpy);
@@ -396,7 +396,7 @@ describe('AgentNode - observability events', () => {
       { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 },
     ]) as any);
 
-    const node = new AgentNode({ name: 'progressor', mode: 'agentic', prompt: 'Run' });
+    const node = new AgentNode({ name: 'progressor', mode: 'unstructured', prompt: 'Run' });
     const ctx = createContext();
     const progressSpy = vi.fn();
     ctx.events.on('agent:tool_progress', progressSpy);
@@ -420,7 +420,7 @@ describe('AgentNode - observability events', () => {
       { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 },
     ]) as any);
 
-    const node = new AgentNode({ name: 'initer', mode: 'agentic', prompt: 'Init' });
+    const node = new AgentNode({ name: 'initer', mode: 'unstructured', prompt: 'Init' });
     const ctx = createContext();
     const initSpy = vi.fn();
     ctx.events.on('agent:init', initSpy);
@@ -442,7 +442,7 @@ describe('AgentNode - observability events', () => {
       { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 },
     ]) as any);
 
-    const node = new AgentNode({ name: 'statuser', mode: 'agentic', prompt: 'Think' });
+    const node = new AgentNode({ name: 'statuser', mode: 'unstructured', prompt: 'Think' });
     const ctx = createContext();
     const statusSpy = vi.fn();
     ctx.events.on('agent:status', statusSpy);
@@ -460,7 +460,7 @@ describe('AgentNode - observability events', () => {
       { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 },
     ]) as any);
 
-    const node = new AgentNode({ name: 'limited', mode: 'agentic', prompt: 'Go' });
+    const node = new AgentNode({ name: 'limited', mode: 'unstructured', prompt: 'Go' });
     const ctx = createContext();
     const rateSpy = vi.fn();
     ctx.events.on('agent:rate_limit', rateSpy);

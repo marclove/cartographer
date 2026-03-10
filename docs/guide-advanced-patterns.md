@@ -454,7 +454,7 @@ root:
       blackboardNamespace: classify
     - type: agent
       name: generate-response
-      mode: agentic
+      mode: unstructured
       prompt: "Generate a response based on the classification"
       systemPrompt: "You are a helpful assistant"
       maxTurns: 5

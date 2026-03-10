@@ -25,7 +25,7 @@ A support ticket triage system. Takes a raw customer support ticket, classifies 
 
 - `TreeBuilder` fluent API for tree construction
 - `AgentNode` in structured mode (classification, analysis, response drafting)
-- `AgentNode` in agentic mode (billing response drafting, technical diagnosis)
+- `AgentNode` in unstructured mode (billing response drafting, technical diagnosis)
 - Zod output schemas for typed structured output
 - Selector-based routing with condition nodes
 - Retry decorator around agent calls

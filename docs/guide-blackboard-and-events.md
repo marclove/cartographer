@@ -116,7 +116,7 @@ Fired when a node's `execute()` throws. The node still emits `node:exit` with `F
 Fired before an `AgentNode` calls the Claude SDK.
 
 ```typescript
-{ node: BTreeNode; prompt: string; mode: 'structured' | 'agentic' }
+{ node: BTreeNode; prompt: string; mode: 'structured' | 'unstructured' }
 ```
 
 ### `agent:thinking`
@@ -137,7 +137,7 @@ Fired when the SDK produces a text content block in an assistant message.
 
 ### `agent:tool_use`
 
-Fired for each tool call in both structured and agentic mode.
+Fired for each tool call in both structured and unstructured mode.
 
 ```typescript
 { node: BTreeNode; tool: string; input: unknown }

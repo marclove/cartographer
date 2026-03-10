@@ -32,10 +32,10 @@ import {
  *   │   ├── sequence "billing-path"
  *   │   │   ├── condition "is-billing"
  *   │   │   ├── agent "analyze-billing" (structured, haiku)
- *   │   │   └── retry(2) → agent "draft-billing-response" (agentic, sonnet)
+ *   │   │   └── retry(2) → agent "draft-billing-response" (unstructured, sonnet)
  *   │   ├── sequence "technical-path"
  *   │   │   ├── condition "is-technical"
- *   │   │   ├── retry(2) → agent "diagnose-issue" (agentic, sonnet)
+ *   │   │   ├── retry(2) → agent "diagnose-issue" (unstructured, sonnet)
  *   │   │   └── agent "draft-technical-response" (structured, sonnet)
  *   │   └── sequence "general-path"
  *   │       ├── condition "is-general"
@@ -67,7 +67,7 @@ export function buildContentPipeline() {
           });
           b.retry('draft-billing-retry', { maxAttempts: 2 }, (b) => {
             b.agent('draft-billing-response', {
-              mode: 'agentic',
+              mode: 'unstructured',
               prompt: draftBillingResponsePrompt,
               model: 'sonnet',
               maxTurns: 3,
@@ -79,7 +79,7 @@ export function buildContentPipeline() {
           b.condition('is-technical', isTechnical);
           b.retry('diagnose-retry', { maxAttempts: 2 }, (b) => {
             b.agent('diagnose-issue', {
-              mode: 'agentic',
+              mode: 'unstructured',
               prompt: diagnoseIssuePrompt,
               model: 'sonnet',
               maxTurns: 3,

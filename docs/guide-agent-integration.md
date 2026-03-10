@@ -1,6 +1,6 @@
 # Agent Integration
 
-AgentNode integrates Claude via the Agent SDK, bringing AI-powered reasoning into behavior trees. It supports two modes: **structured** for single-turn, schema-validated responses, and **agentic** for multi-turn, tool-using interactions.
+AgentNode integrates Claude via the Agent SDK, bringing AI-powered reasoning into behavior trees. It supports two modes: **structured** for single-turn, schema-validated responses, and **unstructured** for multi-turn, tool-using interactions.
 
 ---
 
@@ -9,14 +9,14 @@ AgentNode integrates Claude via the Agent SDK, bringing AI-powered reasoning int
 ```typescript
 interface AgentNodeConfig {
   name: string;
-  mode: 'structured' | 'agentic';
+  mode: 'structured' | 'unstructured';
   prompt: string | ((context: TreeContext) => string);
 
   // Structured mode
   outputSchema?: z.ZodType;
   mapResult?: (output: unknown, context: TreeContext) => NodeStatus;
 
-  // Agentic mode
+  // Unstructured mode
   allowedTools?: string[];
   permissionMode?: 'acceptEdits' | 'bypassPermissions' | 'default';
   maxTurns?: number;
@@ -75,7 +75,7 @@ If `mapResult` is not provided, structured mode always returns `SUCCESS` on a su
 
 ---
 
-## Agentic Mode
+## Unstructured Mode
 
 Multi-turn interaction. Default effort: `'high'`. Supports tools, MCP servers, and system prompts.
 
@@ -84,7 +84,7 @@ Best for: complex reasoning, code generation, multi-step tasks, tool-using agent
 ```typescript
 const researcher = new AgentNode({
   name: 'research-topic',
-  mode: 'agentic',
+  mode: 'unstructured',
   prompt: (ctx) => `Research the following topic and write a summary.
 
 Topic: ${ctx.blackboard.get<string>('topic')}`,
@@ -100,7 +100,7 @@ Topic: ${ctx.blackboard.get<string>('topic')}`,
 });
 ```
 
-Agentic mode details:
+Unstructured mode details:
 
 - Emits `agent:tool_use` for each tool use block in assistant messages (also emitted in structured mode).
 - Emits `agent:error` when the SDK returns an error result (max turns, budget, execution error).
@@ -213,7 +213,7 @@ Caches are cleared when the tree resets. With the scheduler, this means:
 
 Control costs with:
 
-- `maxBudgetUsd` on AgentNode (agentic mode only).
+- `maxBudgetUsd` on AgentNode (unstructured mode only).
 - `effort: 'low'` for simple tasks.
 - `model: 'haiku'` for fast, inexpensive operations.
 - Track spending via `agent:response` and `agent:error` events (both include a `cost` field).
@@ -232,7 +232,7 @@ tree.events.on('agent:error', ({ node, subtype, cost }) => {
 
 ## Decision Matrix
 
-| Criterion | Structured | Agentic |
+| Criterion | Structured | Unstructured |
 |-----------|-----------|---------|
 | Turns | Single | Multi |
 | Output format | Zod schema to JSON | Free text |
@@ -245,7 +245,7 @@ tree.events.on('agent:error', ({ node, subtype, cost }) => {
 
 ## Worked Example: Classification Pipeline
 
-This example combines both modes in a single tree. A cheap structured call classifies a support ticket, then conditional routing decides whether to escalate to an agentic handler. For a complete, runnable version of this pattern with Zod schemas, billing analysis, and escalation handling, see the [content pipeline example](../examples/README.md#content-pipeline).
+This example combines both modes in a single tree. A cheap structured call classifies a support ticket, then conditional routing decides whether to escalate to an unstructured handler. For a complete, runnable version of this pattern with Zod schemas, billing analysis, and escalation handling, see the [content pipeline example](../examples/README.md#content-pipeline).
 
 ```typescript
 import { TreeBuilder, NodeStatus, AgentNode } from 'cartographer';
@@ -272,9 +272,9 @@ const tree = new TreeBuilder('classification-pipeline')
           const result = ctx.blackboard.get<{ urgency: string }>('classify:output');
           return result?.urgency === 'high';
         });
-        // Step 3: Handle urgent with agentic mode (thorough)
+        // Step 3: Handle urgent with unstructured mode (thorough)
         b.agent('handle-urgent', {
-          mode: 'agentic',
+          mode: 'unstructured',
           prompt: (ctx) => {
             const ticket = ctx.blackboard.get<string>('ticket');
             const classification = ctx.blackboard.get('classify:output');

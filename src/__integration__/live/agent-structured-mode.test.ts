@@ -3,18 +3,16 @@ import { z } from 'zod/v4';
 import { NodeStatus } from '../../types.js';
 import { AgentNode } from '../../nodes/agent.js';
 import { TreeBuilder } from '../../builder/tree-builder.js';
-import { AgentSelectionStrategy } from '../../strategies/agent-selection.js';
-import { ActionNode } from '../../nodes/action.js';
 import { createContext, collectEvents } from '../helpers.js';
 import { createTreeLogger } from '../../tree-logger.js';
 
-const LOG_FILE = 'logs/live-agent-sdk.log';
+const LOG_FILE = 'logs/live-agent-structured-mode.log';
 
 let stopLogging: (() => void) | undefined;
 afterEach(() => { stopLogging?.(); stopLogging = undefined; });
 
-describe('Agent SDK Integration', { timeout: 30_000 }, () => {
-  it('Structured mode: classify sentiment with Zod schema', async () => {
+describe('Agent Structured Mode Integration', { timeout: 30_000 }, () => {
+  it('structured mode: classify sentiment with Zod schema', async () => {
     const SentimentSchema = z.object({
       sentiment: z.enum(['positive', 'negative', 'neutral']),
       confidence: z.number().min(0).max(1),
@@ -47,7 +45,7 @@ describe('Agent SDK Integration', { timeout: 30_000 }, () => {
     expect(responseEvents[0].result).toBeDefined();
   });
 
-  it('AgentNode in a tree with blackboard data flow', async () => {
+  it('structured mode in a tree with blackboard data flow', async () => {
     const SummarySchema = z.object({
       summary: z.string(),
       wordCount: z.number(),
@@ -84,41 +82,5 @@ describe('Agent SDK Integration', { timeout: 30_000 }, () => {
     expect(output).toBeDefined();
     expect(output!.summary.length).toBeGreaterThan(0);
     expect(output!.wordCount).toBeGreaterThan(0);
-  });
-
-  it('Agent Selection Strategy reorders children', async () => {
-    const ctx = createContext({ task: 'file-processing' });
-    stopLogging = createTreeLogger(ctx.events, { filePath: LOG_FILE });
-    const strategyEvents = collectEvents(ctx, 'strategy:decision');
-
-    const children = [
-      new ActionNode({ name: 'upload-to-cloud', action: () => NodeStatus.SUCCESS }),
-      new ActionNode({ name: 'validate-format', action: () => NodeStatus.SUCCESS }),
-      new ActionNode({ name: 'compress-file', action: () => NodeStatus.SUCCESS }),
-    ];
-
-    const strategy = new AgentSelectionStrategy({
-      prompt: 'Order these file processing steps in the most logical sequence for processing a file.',
-      model: 'haiku',
-      effort: 'low',
-      childDescriptions: {
-        'upload-to-cloud': 'Upload the processed file to cloud storage',
-        'validate-format': 'Check if the file format is valid',
-        'compress-file': 'Compress the file to reduce size',
-      },
-    });
-
-    const reordered = await strategy.order(children, ctx);
-
-    // All children should be present (possibly reordered)
-    expect(reordered).toHaveLength(3);
-    const reorderedNames = reordered.map((c) => c.name);
-    expect(reorderedNames).toContain('upload-to-cloud');
-    expect(reorderedNames).toContain('validate-format');
-    expect(reorderedNames).toContain('compress-file');
-
-    // Strategy decision event should have been emitted
-    expect(strategyEvents).toHaveLength(1);
-    expect(strategyEvents[0].strategy).toBe('agent-selection');
   });
 });

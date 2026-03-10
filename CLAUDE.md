@@ -31,7 +31,7 @@ Every node implements the `BTreeNode` interface (`tick`, `reset`, `abort`). Tick
 
 ### Source Layout
 
-- **`src/nodes/`** — Leaf nodes: `ActionNode` (runs a function), `ConditionNode` (boolean check), `AgentNode` (Claude SDK calls in structured or agentic mode)
+- **`src/nodes/`** — Leaf nodes: `ActionNode` (runs a function), `ConditionNode` (boolean check), `AgentNode` (Claude SDK calls in structured or unstructured mode)
 - **`src/composites/`** — `SequenceNode` (all succeed), `SelectorNode` (first success), `ParallelNode` (concurrent with policy). Sequence and Selector resume from RUNNING children on subsequent ticks.
 - **`src/decorators/`** — Single-child wrappers: Inverter, Repeat, Retry, Timeout, Guard, AlwaysSucceed, AlwaysFail
 - **`src/strategies/`** — Strategy pattern for composites. Default strategies pass through; Agent strategies delegate ordering/policy decisions to Claude.

@@ -6,13 +6,13 @@ import { TreeBuilder } from '../../builder/tree-builder.js';
 import { createContext, collectEvents } from '../helpers.js';
 import { createTreeLogger } from '../../tree-logger.js';
 
-const LOG_FILE = 'logs/live-agent-agentic-mode.log';
+const LOG_FILE = 'logs/live-agent-unstructured-mode.log';
 
 let stopLogging: (() => void) | undefined;
 afterEach(() => { stopLogging?.(); stopLogging = undefined; });
 
-describe('Agent Agentic Mode Integration', { timeout: 30_000 }, () => {
-  it('agentic mode with blackboard MCP tool use', async () => {
+describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
+  it('unstructured mode with blackboard MCP tool use', async () => {
     const ctx = createContext({
       items: ['apple', 'banana', 'cherry'],
     });
@@ -23,7 +23,7 @@ describe('Agent Agentic Mode Integration', { timeout: 30_000 }, () => {
 
     const agent = new AgentNode({
       name: 'mcp-agent',
-      mode: 'agentic',
+      mode: 'unstructured',
       prompt:
         "Read the 'items' key from the blackboard. Join the items with commas into a single string and write it to the 'summary' key on the blackboard.",
       model: 'haiku',
@@ -45,15 +45,15 @@ describe('Agent Agentic Mode Integration', { timeout: 30_000 }, () => {
     expect(summary).toContain('cherry');
   });
 
-  it('agentic mode in a tree pipeline', async () => {
-    const tree = new TreeBuilder('agentic-pipeline')
+  it('unstructured mode in a tree pipeline', async () => {
+    const tree = new TreeBuilder('unstructured-pipeline')
       .sequence('main', (b) => {
         b.action('write-data', (ctx) => {
           ctx.blackboard.set('numbers', [10, 20, 30]);
           return NodeStatus.SUCCESS;
         });
         b.agent('transformer', {
-          mode: 'agentic',
+          mode: 'unstructured',
           prompt:
             "Read the 'numbers' key from the blackboard. Calculate their sum and write it to the 'total' key on the blackboard.",
           model: 'haiku',

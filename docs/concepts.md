@@ -63,7 +63,7 @@ Cartographer provides three leaf node types:
 
 - **ActionNode** -- Executes arbitrary logic. Your function receives the tree context and returns a `NodeStatus`.
 - **ConditionNode** -- Evaluates a boolean check. Returns `SUCCESS` if the condition is true, `FAILURE` if false.
-- **AgentNode** -- Delegates work to an AI agent via the Claude SDK. Supports structured output and agentic (multi-turn tool-use) modes.
+- **AgentNode** -- Delegates work to an AI agent via the Claude SDK. Supports structured output and unstructured (multi-turn tool-use) modes.
 
 ### Composite Nodes
 
@@ -212,7 +212,7 @@ An `AgentNode` is a leaf node that delegates its work to an AI agent powered by 
 Agent nodes support two modes:
 
 - **Structured mode** -- Sends a prompt and receives a response validated against a Zod schema. Useful for classification, extraction, and decision-making tasks.
-- **Agentic mode** -- Gives Claude access to tools and allows multi-turn interaction. Useful for complex tasks that require reasoning, research, or code generation.
+- **Unstructured mode** -- Gives Claude access to tools and allows multi-turn interaction. Useful for complex tasks that require reasoning, research, or code generation.
 
 The agent node writes its results to the blackboard, making them available to downstream nodes just like any other data.
 
@@ -256,7 +256,7 @@ A single run of a composite node from start to terminal result. A cycle begins w
 A pluggable component that controls how a composite node orders its children or evaluates its policy. Strategies can be static (fixed rules) or agent-backed (AI-driven decisions).
 
 **Agent Node**
-A leaf node that delegates execution to an AI agent via the Claude SDK. Supports structured output and multi-turn agentic interaction.
+A leaf node that delegates execution to an AI agent via the Claude SDK. Supports structured output and multi-turn unstructured interaction.
 
 **Status (NodeStatus)**
 The result of ticking a node. One of three values: `SUCCESS`, `FAILURE`, or `RUNNING`.

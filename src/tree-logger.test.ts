@@ -76,11 +76,11 @@ describe('createTreeLogger', () => {
 
   it('writes agent:prompt', () => {
     createTreeLogger(events, { filePath: 'out.log' });
-    events.emit('agent:prompt', { node: makeNode('ai'), prompt: 'Do something', mode: 'agentic' });
+    events.emit('agent:prompt', { node: makeNode('ai'), prompt: 'Do something', mode: 'unstructured' });
 
     const [entry] = writtenEntries();
     expect(entry.event).toBe('agent:prompt');
-    expect(entry.mode).toBe('agentic');
+    expect(entry.mode).toBe('unstructured');
     expect(entry.prompt).toBe('Do something');
   });
 

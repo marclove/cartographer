@@ -88,7 +88,7 @@ Typical uses: checking blackboard state, evaluating environment conditions, gati
 
 Single-turn interaction with an optional Zod schema for typed output. Defaults to `effort: 'low'`. Good for classification, extraction, and formatting tasks.
 
-### Agentic mode
+### Unstructured mode
 
 Multi-turn interaction with tool use, MCP servers, and extended reasoning. Defaults to `effort: 'high'`. Good for complex reasoning and multi-step tasks.
 
