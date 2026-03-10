@@ -131,7 +131,7 @@ export class AgentNode extends BaseNode {
   private cachedStatus: NodeStatus | null = null;
 
   constructor(config: AgentNodeConfig) {
-    super(config.name);
+    super(config.name, config.id);
     this.config = config;
   }
 

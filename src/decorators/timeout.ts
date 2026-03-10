@@ -1,6 +1,6 @@
 import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
-import type { TimeoutConfig, TreeContext } from '../types.js';
+import type { BTreeNode, TimeoutConfig, TreeContext } from '../types.js';
 
 /**
  * A decorator that enforces a wall-clock deadline on its child.
@@ -22,8 +22,12 @@ export class TimeoutNode extends BaseNode {
   private child: TimeoutConfig['child'];
   private timeoutMs: number;
 
+  override get children(): readonly BTreeNode[] {
+    return [this.child];
+  }
+
   constructor(config: TimeoutConfig) {
-    super(config.name);
+    super(config.name, config.id);
     this.child = config.child;
     this.timeoutMs = config.timeoutMs;
   }

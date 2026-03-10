@@ -74,7 +74,7 @@ import { DefaultSelectionStrategy } from '../strategies/default-selection.js';
  * ```
  */
 export class SelectorNode extends BaseNode {
-  private children: SelectorConfig['children'];
+  private _children: BTreeNode[];
   private strategy: SelectionStrategy;
 
   /**
@@ -91,9 +91,13 @@ export class SelectorNode extends BaseNode {
    */
   private committedOrder: BTreeNode[] | null = null;
 
+  override get children(): readonly BTreeNode[] {
+    return this._children;
+  }
+
   constructor(config: SelectorConfig) {
-    super(config.name);
-    this.children = config.children;
+    super(config.name, config.id);
+    this._children = [...config.children];
     this.strategy = config.strategy ?? new DefaultSelectionStrategy();
   }
 
@@ -102,7 +106,7 @@ export class SelectorNode extends BaseNode {
     // consulted when starting a new cycle (committedOrder is null). While a
     // child is RUNNING the committed order is stable across ticks.
     if (this.committedOrder === null) {
-      this.committedOrder = await this.strategy.order(this.children, context);
+      this.committedOrder = await this.strategy.order(this._children, context);
     }
     const ordered = this.committedOrder;
 

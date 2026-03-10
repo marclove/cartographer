@@ -257,6 +257,7 @@ export class TreeLoader {
       case 'action': {
         if (!config.ref) throw new Error(`Action node "${config.name}" is missing required "ref"`);
         return new ActionNode({
+          id: config.id as string | undefined,
           name: config.name,
           action: registry.getAction(config.ref),
         });
@@ -265,6 +266,7 @@ export class TreeLoader {
       case 'condition': {
         if (!config.ref) throw new Error(`Condition node "${config.name}" is missing required "ref"`);
         return new ConditionNode({
+          id: config.id as string | undefined,
           name: config.name,
           condition: registry.getCondition(config.ref),
         });
@@ -272,6 +274,7 @@ export class TreeLoader {
 
       case 'agent':
         return new AgentNode({
+          id: config.id as string | undefined,
           name: config.name,
           mode: config.mode as 'structured' | 'agentic',
           prompt: config.prompt as string,
@@ -290,6 +293,7 @@ export class TreeLoader {
 
       case 'selector':
         return new SelectorNode({
+          id: config.id as string | undefined,
           name: config.name,
           children: (config.children ?? []).map((c) => TreeLoader.buildNode(c, registry)),
           strategy: config.strategy?.ref
@@ -299,6 +303,7 @@ export class TreeLoader {
 
       case 'sequence':
         return new SequenceNode({
+          id: config.id as string | undefined,
           name: config.name,
           children: (config.children ?? []).map((c) => TreeLoader.buildNode(c, registry)),
           strategy: config.strategy?.ref
@@ -308,6 +313,7 @@ export class TreeLoader {
 
       case 'parallel':
         return new ParallelNode({
+          id: config.id as string | undefined,
           name: config.name,
           children: (config.children ?? []).map((c) => TreeLoader.buildNode(c, registry)),
           strategy: config.strategy?.ref
@@ -318,6 +324,7 @@ export class TreeLoader {
       case 'inverter': {
         if (!config.child) throw new Error(`Inverter node "${config.name}" is missing required "child"`);
         return new InverterNode({
+          id: config.id as string | undefined,
           name: config.name,
           child: TreeLoader.buildNode(config.child, registry),
         });
@@ -326,6 +333,7 @@ export class TreeLoader {
       case 'repeat': {
         if (!config.child) throw new Error(`Repeat node "${config.name}" is missing required "child"`);
         return new RepeatNode({
+          id: config.id as string | undefined,
           name: config.name,
           child: TreeLoader.buildNode(config.child, registry),
           count: config.count as number | undefined,
@@ -336,6 +344,7 @@ export class TreeLoader {
       case 'retry': {
         if (!config.child) throw new Error(`Retry node "${config.name}" is missing required "child"`);
         return new RetryNode({
+          id: config.id as string | undefined,
           name: config.name,
           child: TreeLoader.buildNode(config.child, registry),
           maxAttempts: config.maxAttempts as number,
@@ -346,6 +355,7 @@ export class TreeLoader {
       case 'alwaysSucceed': {
         if (!config.child) throw new Error(`AlwaysSucceed node "${config.name}" is missing required "child"`);
         return new AlwaysSucceedNode({
+          id: config.id as string | undefined,
           name: config.name,
           child: TreeLoader.buildNode(config.child, registry),
         });
@@ -354,6 +364,7 @@ export class TreeLoader {
       case 'alwaysFail': {
         if (!config.child) throw new Error(`AlwaysFail node "${config.name}" is missing required "child"`);
         return new AlwaysFailNode({
+          id: config.id as string | undefined,
           name: config.name,
           child: TreeLoader.buildNode(config.child, registry),
         });
@@ -362,6 +373,7 @@ export class TreeLoader {
       case 'timeout': {
         if (!config.child) throw new Error(`Timeout node "${config.name}" is missing required "child"`);
         return new TimeoutNode({
+          id: config.id as string | undefined,
           name: config.name,
           child: TreeLoader.buildNode(config.child, registry),
           timeoutMs: config.timeoutMs as number,
@@ -372,6 +384,7 @@ export class TreeLoader {
         if (!config.child) throw new Error(`Guard node "${config.name}" is missing required "child"`);
         if (!config.conditionRef) throw new Error(`Guard node "${config.name}" is missing required "conditionRef"`);
         return new GuardNode({
+          id: config.id as string | undefined,
           name: config.name,
           child: TreeLoader.buildNode(config.child, registry),
           condition: registry.getCondition(config.conditionRef as string),

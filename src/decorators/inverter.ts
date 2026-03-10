@@ -1,6 +1,6 @@
 import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
-import type { DecoratorConfig, TreeContext } from '../types.js';
+import type { BTreeNode, DecoratorConfig, TreeContext } from '../types.js';
 
 /**
  * A decorator that flips its child's terminal result: SUCCESS becomes FAILURE
@@ -13,8 +13,12 @@ import type { DecoratorConfig, TreeContext } from '../types.js';
 export class InverterNode extends BaseNode {
   private child: DecoratorConfig['child'];
 
+  override get children(): readonly BTreeNode[] {
+    return [this.child];
+  }
+
   constructor(config: DecoratorConfig) {
-    super(config.name);
+    super(config.name, config.id);
     this.child = config.child;
   }
 

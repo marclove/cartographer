@@ -1,6 +1,6 @@
 import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
-import type { RepeatConfig, TreeContext } from '../types.js';
+import type { BTreeNode, RepeatConfig, TreeContext } from '../types.js';
 
 /**
  * A decorator that ticks its child repeatedly within a single execution.
@@ -25,8 +25,12 @@ export class RepeatNode extends BaseNode {
   private count?: number;
   private untilStatus?: NodeStatus;
 
+  override get children(): readonly BTreeNode[] {
+    return [this.child];
+  }
+
   constructor(config: RepeatConfig) {
-    super(config.name);
+    super(config.name, config.id);
     this.child = config.child;
     this.count = config.count;
     this.untilStatus = config.untilStatus;

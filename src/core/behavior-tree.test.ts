@@ -4,6 +4,7 @@ import { NodeStatus } from '../types.js';
 import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { MapBlackboard } from './blackboard.js';
+import { EventEmitter } from './event-emitter.js';
 
 describe('BehaviorTree', () => {
   it('tick() returns the root node status', async () => {
@@ -92,6 +93,100 @@ describe('BehaviorTree', () => {
     const tree = new BehaviorTree({ name: 'test-tree', root });
     tree.abort();
     expect(abortSpy).toHaveBeenCalled();
+  });
+
+  it('throws on duplicate node IDs', () => {
+    const a = new ActionNode({ id: 'dupe', name: 'a', action: async () => NodeStatus.SUCCESS });
+    const b = new ActionNode({ id: 'dupe', name: 'b', action: async () => NodeStatus.SUCCESS });
+    const root = new SequenceNode({ name: 'root', children: [a, b] });
+
+    expect(() => new BehaviorTree({ name: 'tree', root })).toThrow(/duplicate.*id/i);
+  });
+
+  it('allows unique custom IDs', () => {
+    const a = new ActionNode({ id: 'node-a', name: 'a', action: async () => NodeStatus.SUCCESS });
+    const b = new ActionNode({ id: 'node-b', name: 'b', action: async () => NodeStatus.SUCCESS });
+    const root = new SequenceNode({ name: 'root', children: [a, b] });
+
+    expect(() => new BehaviorTree({ name: 'tree', root })).not.toThrow();
+  });
+
+  it('detects duplicate IDs in nested trees', () => {
+    const leaf = new ActionNode({ id: 'leaf', name: 'leaf', action: async () => NodeStatus.SUCCESS });
+    const inner = new SequenceNode({ name: 'inner', children: [leaf] });
+    const outerLeaf = new ActionNode({ id: 'leaf', name: 'leaf2', action: async () => NodeStatus.SUCCESS });
+    const root = new SequenceNode({ name: 'root', children: [inner, outerLeaf] });
+
+    expect(() => new BehaviorTree({ name: 'tree', root })).toThrow(/duplicate.*id.*leaf/i);
+  });
+
+  it('allows trees with auto-generated IDs', () => {
+    const a = new ActionNode({ name: 'a', action: async () => NodeStatus.SUCCESS });
+    const b = new ActionNode({ name: 'b', action: async () => NodeStatus.SUCCESS });
+    const root = new SequenceNode({ name: 'root', children: [a, b] });
+
+    expect(() => new BehaviorTree({ name: 'tree', root })).not.toThrow();
+  });
+
+  it('emits tree:init on construction', () => {
+    const emitSpy = vi.spyOn(EventEmitter.prototype, 'emit');
+    try {
+      const tree = new BehaviorTree({
+        name: 'my-tree',
+        root: new ActionNode({ name: 'root-node', action: () => NodeStatus.SUCCESS }),
+      });
+
+      const initCall = emitSpy.mock.calls.find(([event]) => event === 'tree:init');
+      expect(initCall).toBeDefined();
+      expect(initCall![1]).toEqual({ tree: 'my-tree', root: 'root-node' });
+    } finally {
+      emitSpy.mockRestore();
+    }
+  });
+
+  it('emits tree:tick after each tick', async () => {
+    const tree = new BehaviorTree({
+      name: 'my-tree',
+      root: new ActionNode({ name: 'root', action: () => NodeStatus.SUCCESS }),
+    });
+    const spy = vi.fn();
+    tree.events.on('tree:tick', spy);
+
+    await tree.tick();
+
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ tree: 'my-tree', status: NodeStatus.SUCCESS })
+    );
+    expect(spy.mock.calls[0][0].durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('emits tree:reset on reset', () => {
+    const tree = new BehaviorTree({
+      name: 'my-tree',
+      root: new ActionNode({ name: 'root', action: () => NodeStatus.SUCCESS }),
+    });
+    const spy = vi.fn();
+    tree.events.on('tree:reset', spy);
+
+    tree.reset();
+
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy).toHaveBeenCalledWith({ tree: 'my-tree' });
+  });
+
+  it('emits tree:abort on abort', () => {
+    const tree = new BehaviorTree({
+      name: 'my-tree',
+      root: new ActionNode({ name: 'root', action: () => NodeStatus.SUCCESS }),
+    });
+    const spy = vi.fn();
+    tree.events.on('tree:abort', spy);
+
+    tree.abort();
+
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy).toHaveBeenCalledWith({ tree: 'my-tree' });
   });
 
   it('nodes share the same blackboard through context', async () => {

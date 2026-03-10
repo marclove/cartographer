@@ -1,6 +1,6 @@
 import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
-import type { GuardConfig, TreeContext } from '../types.js';
+import type { BTreeNode, GuardConfig, TreeContext } from '../types.js';
 
 /**
  * A decorator that gates its child behind an async condition function.
@@ -18,8 +18,12 @@ export class GuardNode extends BaseNode {
   private child: GuardConfig['child'];
   private condition: GuardConfig['condition'];
 
+  override get children(): readonly BTreeNode[] {
+    return [this.child];
+  }
+
   constructor(config: GuardConfig) {
-    super(config.name);
+    super(config.name, config.id);
     this.child = config.child;
     this.condition = config.condition;
   }

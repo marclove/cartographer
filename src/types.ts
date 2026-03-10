@@ -115,6 +115,12 @@ export interface Blackboard {
  * - `agent:status` — Fired when the SDK emits a status change during execution.
  * - `agent:rate_limit` — Fired when the SDK reports a rate limit event.
  *
+ * **Tree lifecycle events:**
+ * - `tree:init` — Fired when a `BehaviorTree` is constructed, after ID uniqueness validation passes.
+ * - `tree:tick` — Fired after each `BehaviorTree.tick()` completes, with the final status and duration.
+ * - `tree:reset` — Fired when `BehaviorTree.reset()` is called.
+ * - `tree:abort` — Fired when `BehaviorTree.abort()` is called.
+ *
  * **Data events:**
  * - `blackboard:write` — Fired when a value is written to the blackboard.
  * - `strategy:decision` — Fired when an agent strategy makes an ordering or policy decision.
@@ -157,6 +163,10 @@ export interface TreeEvents {
   'agent:init': { node: BTreeNode; sessionId: string; model?: string; tools?: unknown; mcpServers?: unknown };
   'agent:status': { node: BTreeNode; status: string };
   'agent:rate_limit': { node: BTreeNode; info: unknown };
+  'tree:init': { tree: string; root: string };
+  'tree:tick': { tree: string; status: NodeStatus; durationMs: number };
+  'tree:reset': { tree: string };
+  'tree:abort': { tree: string };
   'blackboard:write': { key: string; value: unknown; source: string };
   'strategy:decision': { composite: BTreeNode; strategy: string; decision: unknown };
 }
@@ -258,6 +268,16 @@ export interface BTreeNode {
 
   /** A human-readable name for this node, used in events and debugging. */
   readonly name: string;
+
+  /**
+   * The direct child nodes of this node.
+   *
+   * Leaf nodes return an empty array. Composites return their child list.
+   * Decorators return a single-element array containing their wrapped child.
+   * Used by `BehaviorTree` to walk the tree for validation (e.g. ID
+   * uniqueness checks).
+   */
+  readonly children: readonly BTreeNode[];
 
   /**
    * Execute one tick of this node.
@@ -487,6 +507,18 @@ export interface AgentStrategyConfig {
  * ```
  */
 export interface ActionNodeConfig {
+  /**
+   * Optional stable identifier for this node instance.
+   *
+   * When provided, this value is used as the node's `id` instead of an
+   * auto-generated UUID. Useful for stable cross-run log correlation,
+   * config-driven identity, and targeted node lookup.
+   *
+   * Must be unique across all nodes in a tree — `BehaviorTree` validates
+   * this at construction time and throws on duplicates.
+   */
+  id?: string;
+
   /** Human-readable name for this action node. */
   name: string;
 
@@ -515,6 +547,9 @@ export interface ActionNodeConfig {
  * ```
  */
 export interface ConditionNodeConfig {
+  /** Optional stable identifier. Auto-generated UUID when omitted. */
+  id?: string;
+
   /** Human-readable name for this condition node. */
   name: string;
 
@@ -569,6 +604,9 @@ export interface ConditionNodeConfig {
  * ```
  */
 export interface AgentNodeConfig {
+  /** Optional stable identifier. Auto-generated UUID when omitted. */
+  id?: string;
+
   /** Human-readable name for this agent node. */
   name: string;
 
@@ -675,6 +713,9 @@ export interface AgentNodeConfig {
  * An optional {@link SelectionStrategy} controls the child evaluation order.
  */
 export interface SelectorConfig {
+  /** Optional stable identifier. Auto-generated UUID when omitted. */
+  id?: string;
+
   /** Human-readable name for this selector. */
   name: string;
 
@@ -699,6 +740,9 @@ export interface SelectorConfig {
  * An optional {@link ExecutionStrategy} controls the child execution order.
  */
 export interface SequenceConfig {
+  /** Optional stable identifier. Auto-generated UUID when omitted. */
+  id?: string;
+
   /** Human-readable name for this sequence. */
   name: string;
 
@@ -722,6 +766,9 @@ export interface SequenceConfig {
  * An optional {@link ParallelStrategy} controls the success/failure policy.
  */
 export interface ParallelConfig {
+  /** Optional stable identifier. Auto-generated UUID when omitted. */
+  id?: string;
+
   /** Human-readable name for this parallel node. */
   name: string;
 
@@ -743,6 +790,9 @@ export interface ParallelConfig {
  * Decorators wrap a single child node and modify its behavior or result.
  */
 export interface DecoratorConfig {
+  /** Optional stable identifier. Auto-generated UUID when omitted. */
+  id?: string;
+
   /** Human-readable name for this decorator. */
   name: string;
 

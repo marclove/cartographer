@@ -77,7 +77,7 @@ import { DefaultExecutionStrategy } from '../strategies/default-execution.js';
  * ```
  */
 export class SequenceNode extends BaseNode {
-  private children: SequenceConfig['children'];
+  private _children: BTreeNode[];
   private strategy: ExecutionStrategy;
 
   /**
@@ -94,9 +94,13 @@ export class SequenceNode extends BaseNode {
    */
   private committedOrder: BTreeNode[] | null = null;
 
+  override get children(): readonly BTreeNode[] {
+    return this._children;
+  }
+
   constructor(config: SequenceConfig) {
-    super(config.name);
-    this.children = config.children;
+    super(config.name, config.id);
+    this._children = [...config.children];
     this.strategy = config.strategy ?? new DefaultExecutionStrategy();
   }
 
@@ -105,7 +109,7 @@ export class SequenceNode extends BaseNode {
     // consulted when starting a new cycle (committedOrder is null). While a
     // child is RUNNING the committed order is stable across ticks.
     if (this.committedOrder === null) {
-      this.committedOrder = await this.strategy.order(this.children, context);
+      this.committedOrder = await this.strategy.order(this._children, context);
     }
     const ordered = this.committedOrder;
 

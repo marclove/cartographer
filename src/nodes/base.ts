@@ -52,8 +52,18 @@ export abstract class BaseNode implements BTreeNode {
    */
   readonly name: string;
 
-  constructor(name: string) {
-    this.id = uuidv4();
+  /**
+   * The direct children of this node.
+   *
+   * Returns an empty array by default (leaf nodes). Composites and
+   * decorators override this to expose their children for tree walking.
+   */
+  get children(): readonly BTreeNode[] {
+    return [];
+  }
+
+  constructor(name: string, id?: string) {
+    this.id = id ?? uuidv4();
     this.name = name;
   }
 

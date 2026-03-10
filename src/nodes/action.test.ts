@@ -52,6 +52,11 @@ describe('ActionNode', () => {
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
   });
 
+  it('accepts custom id via config', () => {
+    const node = new ActionNode({ id: 'my-action', name: 'act', action: async () => NodeStatus.SUCCESS });
+    expect(node.id).toBe('my-action');
+  });
+
   it('can return RUNNING status', async () => {
     const node = new ActionNode({
       name: 'running-action',

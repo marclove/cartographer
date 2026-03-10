@@ -165,6 +165,17 @@ root:
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
+  it('passes id from config to node', async () => {
+    const registry = new TreeRegistry();
+    registry.registerAction('noop', async () => NodeStatus.SUCCESS);
+    const tree = TreeLoader.fromConfig({
+      name: 'test',
+      root: { type: 'action', name: 'act', ref: 'noop', id: 'custom-id' },
+    }, registry);
+    expect(tree).toBeDefined();
+    expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
+  });
+
   it('throws on unknown node type', () => {
     const registry = new TreeRegistry();
 

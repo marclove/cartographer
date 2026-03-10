@@ -67,6 +67,33 @@ export class BehaviorTree {
     this.blackboard = config.blackboard ?? new MapBlackboard();
     this.events = new EventEmitter<TreeEvents>();
     this.abortController = new AbortController();
+    BehaviorTree.validateUniqueIds(this.root);
+    this.events.emit('tree:init', { tree: this.name, root: this.root.name });
+  }
+
+  /**
+   * Walk the tree and verify that every node has a unique ID.
+   *
+   * Uses the `children` accessor on `BTreeNode` to traverse the tree
+   * iteratively. Throws on the first duplicate ID found.
+   */
+  private static validateUniqueIds(root: BTreeNode): void {
+    const seen = new Set<string>();
+    const stack: BTreeNode[] = [root];
+
+    while (stack.length > 0) {
+      const node = stack.pop()!;
+      if (seen.has(node.id)) {
+        throw new Error(
+          `Duplicate node ID "${node.id}" found in tree. ` +
+          `Node IDs must be unique. The duplicate was found on node "${node.name}".`
+        );
+      }
+      seen.add(node.id);
+      for (const child of node.children) {
+        stack.push(child);
+      }
+    }
   }
 
   /**
@@ -100,7 +127,11 @@ export class BehaviorTree {
       signal: this.abortController.signal,
     };
 
-    return this.root.tick(context);
+    const start = performance.now();
+    const status = await this.root.tick(context);
+    const durationMs = performance.now() - start;
+    this.events.emit('tree:tick', { tree: this.name, status, durationMs });
+    return status;
   }
 
   /**
@@ -158,6 +189,7 @@ export class BehaviorTree {
   reset(): void {
     this.root.reset();
     this.abortController = new AbortController();
+    this.events.emit('tree:reset', { tree: this.name });
   }
 
   /**
@@ -182,5 +214,6 @@ export class BehaviorTree {
   abort(): void {
     this.root.abort();
     this.abortController.abort();
+    this.events.emit('tree:abort', { tree: this.name });
   }
 }

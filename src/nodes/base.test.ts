@@ -9,6 +9,10 @@ import type { TreeEvents } from '../types.js';
 class TestNode extends BaseNode {
   public executeFn: (context: TreeContext) => Promise<NodeStatus> = async () => NodeStatus.SUCCESS;
 
+  constructor(name: string, id?: string) {
+    super(name, id);
+  }
+
   protected async execute(context: TreeContext): Promise<NodeStatus> {
     return this.executeFn(context);
   }
@@ -96,5 +100,20 @@ describe('BaseNode', () => {
   it('abort() is callable', () => {
     const node = new TestNode('node');
     expect(() => node.abort()).not.toThrow();
+  });
+
+  it('uses custom id when provided', () => {
+    const node = new TestNode('my-node', 'custom-id-123');
+    expect(node.id).toBe('custom-id-123');
+  });
+
+  it('generates UUID when id is not provided', () => {
+    const node = new TestNode('my-node');
+    expect(node.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  });
+
+  it('returns empty children array by default', () => {
+    const node = new TestNode('leaf');
+    expect(node.children).toEqual([]);
   });
 });

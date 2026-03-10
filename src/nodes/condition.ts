@@ -63,7 +63,7 @@ export class ConditionNode extends BaseNode {
   private condition: ConditionNodeConfig['condition'];
 
   constructor(config: ConditionNodeConfig) {
-    super(config.name);
+    super(config.name, config.id);
     this.condition = config.condition;
   }
 

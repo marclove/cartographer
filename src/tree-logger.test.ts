@@ -17,8 +17,8 @@ function writtenEntries(): Record<string, unknown>[] {
   return mockAppend.mock.calls.map(([, line]) => JSON.parse(line as string));
 }
 
-function makeNode(name: string) {
-  return { name } as any;
+function makeNode(name: string, id = `${name}-id`) {
+  return { name, id } as any;
 }
 
 function makeContext() {

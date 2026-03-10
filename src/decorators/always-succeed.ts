@@ -1,6 +1,6 @@
 import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
-import type { DecoratorConfig, TreeContext } from '../types.js';
+import type { BTreeNode, DecoratorConfig, TreeContext } from '../types.js';
 
 /**
  * A decorator that forces its child to always return SUCCESS.
@@ -16,8 +16,12 @@ import type { DecoratorConfig, TreeContext } from '../types.js';
 export class AlwaysSucceedNode extends BaseNode {
   private child: DecoratorConfig['child'];
 
+  override get children(): readonly BTreeNode[] {
+    return [this.child];
+  }
+
   constructor(config: DecoratorConfig) {
-    super(config.name);
+    super(config.name, config.id);
     this.child = config.child;
   }
 

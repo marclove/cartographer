@@ -79,7 +79,7 @@ export class ActionNode extends BaseNode {
   private action: ActionNodeConfig['action'];
 
   constructor(config: ActionNodeConfig) {
-    super(config.name);
+    super(config.name, config.id);
     this.action = config.action;
   }
 

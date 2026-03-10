@@ -1,6 +1,6 @@
 import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
-import type { ParallelConfig, TreeContext, ParallelStrategy } from '../types.js';
+import type { ParallelConfig, TreeContext, ParallelStrategy, BTreeNode } from '../types.js';
 import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
 
 /**
@@ -85,23 +85,27 @@ import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
  * ```
  */
 export class ParallelNode extends BaseNode {
-  private children: ParallelConfig['children'];
+  private _children: BTreeNode[];
   private strategy: ParallelStrategy;
 
+  override get children(): readonly BTreeNode[] {
+    return this._children;
+  }
+
   constructor(config: ParallelConfig) {
-    super(config.name);
-    this.children = config.children;
+    super(config.name, config.id);
+    this._children = [...config.children];
     this.strategy = config.strategy ?? new DefaultParallelStrategy();
   }
 
   protected async execute(context: TreeContext): Promise<NodeStatus> {
     // Obtain the policy before ticking children — agent strategies may
     // consult the blackboard to decide thresholds dynamically.
-    const policy = await this.strategy.policy(this.children, context);
+    const policy = await this.strategy.policy(this._children, context);
 
     // Tick all children concurrently. Every child is ticked on every call,
     // regardless of what it returned on previous ticks.
-    const results = await Promise.all(this.children.map((child) => child.tick(context)));
+    const results = await Promise.all(this._children.map((child) => child.tick(context)));
 
     // If any child is still in progress, defer policy evaluation until
     // all children have produced a terminal status.

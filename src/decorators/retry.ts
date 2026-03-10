@@ -1,6 +1,6 @@
 import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
-import type { RetryConfig, TreeContext } from '../types.js';
+import type { BTreeNode, RetryConfig, TreeContext } from '../types.js';
 
 /**
  * A decorator that re-ticks its child up to `maxAttempts` times until it stops
@@ -25,8 +25,12 @@ export class RetryNode extends BaseNode {
   private maxAttempts: number;
   private delayMs?: number;
 
+  override get children(): readonly BTreeNode[] {
+    return [this.child];
+  }
+
   constructor(config: RetryConfig) {
-    super(config.name);
+    super(config.name, config.id);
     this.child = config.child;
     this.maxAttempts = config.maxAttempts;
     this.delayMs = config.delayMs;

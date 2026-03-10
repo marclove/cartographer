@@ -84,57 +84,75 @@ export function createTreeLogger(
   // --- Node lifecycle ---
 
   on('node:enter', ({ node }) => {
-    write({ event: 'node:enter', node: node.name });
+    write({ event: 'node:enter', node: node.name, nodeId: node.id });
   });
 
   on('node:exit', ({ node, status, durationMs }) => {
-    write({ event: 'node:exit', node: node.name, status, durationMs });
+    write({ event: 'node:exit', node: node.name, nodeId: node.id, status, durationMs });
   });
 
   on('node:error', ({ node, error }) => {
-    write({ event: 'node:error', node: node.name, error: error.message, stack: error.stack });
+    write({ event: 'node:error', node: node.name, nodeId: node.id, error: error.message, stack: error.stack });
   });
 
   // --- Agent events ---
 
   on('agent:prompt', ({ node, mode, prompt }) => {
-    write({ event: 'agent:prompt', node: node.name, mode, prompt });
+    write({ event: 'agent:prompt', node: node.name, nodeId: node.id, mode, prompt });
   });
 
   on('agent:thinking', ({ node, thinking }) => {
-    write({ event: 'agent:thinking', node: node.name, thinking });
+    write({ event: 'agent:thinking', node: node.name, nodeId: node.id, thinking });
   });
 
   on('agent:text', ({ node, text }) => {
-    write({ event: 'agent:text', node: node.name, text });
+    write({ event: 'agent:text', node: node.name, nodeId: node.id, text });
   });
 
   on('agent:tool_use', ({ node, tool, input }) => {
-    write({ event: 'agent:tool_use', node: node.name, tool, input });
+    write({ event: 'agent:tool_use', node: node.name, nodeId: node.id, tool, input });
   });
 
   on('agent:response', ({ node, result, cost }) => {
-    write({ event: 'agent:response', node: node.name, result, cost });
+    write({ event: 'agent:response', node: node.name, nodeId: node.id, result, cost });
   });
 
   on('agent:error', ({ node, subtype, errors, permissionDenials, cost }) => {
-    write({ event: 'agent:error', node: node.name, subtype, errors, permissionDenials, cost });
+    write({ event: 'agent:error', node: node.name, nodeId: node.id, subtype, errors, permissionDenials, cost });
   });
 
   on('agent:tool_progress', ({ node, toolUseId, toolName, elapsedSeconds }) => {
-    write({ event: 'agent:tool_progress', node: node.name, toolUseId, toolName, elapsedSeconds });
+    write({ event: 'agent:tool_progress', node: node.name, nodeId: node.id, toolUseId, toolName, elapsedSeconds });
   });
 
   on('agent:init', ({ node, sessionId, model, tools, mcpServers }) => {
-    write({ event: 'agent:init', node: node.name, sessionId, model, tools, mcpServers });
+    write({ event: 'agent:init', node: node.name, nodeId: node.id, sessionId, model, tools, mcpServers });
   });
 
   on('agent:status', ({ node, status }) => {
-    write({ event: 'agent:status', node: node.name, status });
+    write({ event: 'agent:status', node: node.name, nodeId: node.id, status });
   });
 
   on('agent:rate_limit', ({ node, info }) => {
-    write({ event: 'agent:rate_limit', node: node.name, info });
+    write({ event: 'agent:rate_limit', node: node.name, nodeId: node.id, info });
+  });
+
+  // --- Tree lifecycle ---
+
+  on('tree:init', ({ tree, root }) => {
+    write({ event: 'tree:init', tree, root });
+  });
+
+  on('tree:tick', ({ tree, status, durationMs }) => {
+    write({ event: 'tree:tick', tree, status, durationMs });
+  });
+
+  on('tree:reset', ({ tree }) => {
+    write({ event: 'tree:reset', tree });
+  });
+
+  on('tree:abort', ({ tree }) => {
+    write({ event: 'tree:abort', tree });
   });
 
   // --- Data events (opt-in) ---
@@ -147,7 +165,7 @@ export function createTreeLogger(
 
   if (logStrategy) {
     on('strategy:decision', ({ composite, strategy, decision }) => {
-      write({ event: 'strategy:decision', composite: composite.name, strategy, decision });
+      write({ event: 'strategy:decision', composite: composite.name, compositeId: composite.id, strategy, decision });
     });
   }
 
