@@ -20,14 +20,14 @@ interface SelectorConfig {
 
 ### Behavior
 
-1. Obtains the child list from `strategy.order()` (default: original insertion order).
+1. If no child order is committed for the current cycle, obtains it from `strategy.order()` (default: original insertion order) and commits it.
 2. If a child returned `RUNNING` on a previous tick, resumes from that child (skipping already-completed siblings).
 3. Ticks each child starting from the resume point.
-4. First child returning `SUCCESS` — selector returns `SUCCESS`.
-5. First child returning `RUNNING` — selector saves the child's position and returns `RUNNING`.
-6. All children return `FAILURE` — selector returns `FAILURE`.
+4. First child returning `SUCCESS` — selector returns `SUCCESS` and clears the committed order.
+5. First child returning `RUNNING` — selector saves the child's position and returns `RUNNING` (committed order is preserved).
+6. All children return `FAILURE` — selector returns `FAILURE` and clears the committed order.
 
-The resume behavior uses the child's unique `id`, so it works correctly even if a strategy reorders children between ticks.
+The strategy is consulted once per execution cycle. The committed order is stable across ticks within a cycle and is cleared on terminal results or `reset()`.
 
 ### Example
 
@@ -62,14 +62,14 @@ interface SequenceConfig {
 
 ### Behavior
 
-1. Obtains the child list from `strategy.order()` (default: original insertion order).
+1. If no child order is committed for the current cycle, obtains it from `strategy.order()` (default: original insertion order) and commits it.
 2. If a child returned `RUNNING` on a previous tick, resumes from that child (skipping already-completed siblings).
 3. Ticks each child starting from the resume point.
-4. First child returning `FAILURE` — sequence returns `FAILURE`.
-5. First child returning `RUNNING` — sequence saves the child's position and returns `RUNNING`.
-6. All children return `SUCCESS` — sequence returns `SUCCESS`.
+4. First child returning `FAILURE` — sequence returns `FAILURE` and clears the committed order.
+5. First child returning `RUNNING` — sequence saves the child's position and returns `RUNNING` (committed order is preserved).
+6. All children return `SUCCESS` — sequence returns `SUCCESS` and clears the committed order.
 
-The resume behavior uses the child's unique `id`, so it works correctly even if a strategy reorders children between ticks.
+The strategy is consulted once per execution cycle. The committed order is stable across ticks within a cycle and is cleared on terminal results or `reset()`.
 
 ---
 
@@ -160,15 +160,17 @@ All agent strategies use `buildStrategyPrompt`, which includes child description
 
 When an agent strategy produces a result, it emits a `strategy:decision` event on the tree's event bus with the strategy name and decision payload.
 
-#### Caching Strategy Results
+#### Order Commitment vs Strategy Caching
 
-When `cache: true` is set on the config, the agent strategy calls Claude once and reuses the result on subsequent ticks. This avoids redundant API calls in multi-tick workflows where the ordering or policy decision does not change between ticks. The cache is cleared when the composite's `reset()` is called.
+Composites handle intra-cycle order stability automatically: the strategy is consulted once when a new execution cycle begins, and the returned order is committed until the cycle completes (SUCCESS/FAILURE) or the node is reset. This means the strategy is never called redundantly while a child is RUNNING.
+
+When `cache: true` is set on the config, the strategy also caches its decision *across* execution cycles. After a cycle completes and a new one starts, the cached result is reused without calling Claude again. The cache is cleared when `reset()` is called on the composite.
 
 ```typescript
 const strategy = new AgentExecutionStrategy({
   prompt: 'Order these deployment steps for the current environment',
   model: 'haiku',
-  cache: true,  // Claude is called once; result reused across ticks
+  cache: true,  // Reuse across cycles; cleared on reset()
 });
 ```
 

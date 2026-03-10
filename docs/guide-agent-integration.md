@@ -174,9 +174,9 @@ All three use `buildStrategyPrompt()`, which constructs a prompt including child
 
 ## Caching
 
-Both `AgentNode` and the agent strategies accept a `cache: true` option. When enabled, the first Claude API call is made normally, but the result is stored and returned directly on subsequent ticks without calling Claude again. The cache is cleared when `reset()` is called on the node or composite.
+Both `AgentNode` and the agent strategies accept a `cache: true` option.
 
-This is useful in multi-tick workflows where the tree is ticked repeatedly by a scheduler with `resetBetweenTicks: false`. Without caching, an agent node that already completed its work would call Claude again every time the tree is ticked. With caching, the stored result is returned immediately.
+**AgentNode caching:** When enabled, the first Claude API call is made normally, but the result is stored and returned directly on subsequent ticks without calling Claude again. The cache is cleared when `reset()` is called. This is useful in multi-tick workflows where the tree is ticked repeatedly by a scheduler with `resetBetweenTicks: false`.
 
 ```typescript
 // Agent node: call Claude once, return cached status on subsequent ticks
@@ -186,16 +186,18 @@ b.agent('classify', {
   model: 'haiku',
   cache: true,
 });
+```
 
-// Agent strategy: call Claude once, reuse the ordering across ticks
+**Agent strategy caching:** Composites (sequence, selector) already guarantee intra-cycle order stability — the strategy is consulted once when an execution cycle starts and the order is committed until the cycle completes (SUCCESS/FAILURE) or the node is reset. The `cache` flag on strategies controls whether the decision persists *across* execution cycles. Without it, a new cycle re-consults the strategy. With it, the same decision is reused until `reset()`.
+
+```typescript
+// Agent strategy: reuse the ordering across execution cycles until reset()
 const strategy = new AgentSelectionStrategy({
   prompt: 'Pick the best approach',
   model: 'haiku',
   cache: true,
 });
 ```
-
-For agent nodes, `cache` stores the returned `NodeStatus` (SUCCESS or FAILURE). For agent strategies, `cache` stores the ordering (selection/execution) or policy (parallel) result.
 
 Caches are cleared when the tree resets. With the scheduler, this means:
 

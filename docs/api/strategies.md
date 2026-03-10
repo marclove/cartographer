@@ -75,7 +75,7 @@ interface AgentStrategyConfig {
 | `model` | `'sonnet' \| 'opus' \| 'haiku'` | No | `'sonnet'` | Claude model |
 | `effort` | `'low' \| 'medium' \| 'high' \| 'max'` | No | `'low'` | Effort level |
 | `childDescriptions` | `Record<string, string>` | No | — | Maps child name to human description |
-| `cache` | `boolean` | No | `false` | When `true`, the strategy calls Claude once and reuses the result on subsequent invocations. Cleared on `reset()`. |
+| `cache` | `boolean` | No | `false` | When `true`, the strategy caches its decision across execution cycles. Composites already guarantee intra-cycle stability (strategy is called once per cycle). This flag controls whether the result persists after a cycle completes. Cleared on `reset()`. |
 
 ## Default Strategies
 

@@ -163,6 +163,134 @@ describe('SequenceNode', () => {
     expect(tickCounts.a).toBe(2);
   });
 
+  describe('order commitment', () => {
+    it('calls strategy.order() once per execution cycle even with RUNNING child', async () => {
+      let healthCalls = 0;
+      const health: BTreeNode = {
+        id: 'health', name: 'health',
+        tick: async () => {
+          healthCalls++;
+          return healthCalls >= 3 ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
+        },
+        reset: () => {}, abort: () => {},
+      };
+
+      const orderSpy = vi.fn(async (children: BTreeNode[]) => children);
+      const strategy: ExecutionStrategy = { order: orderSpy };
+
+      const node = new SequenceNode({
+        name: 'seq',
+        children: [actionNode('a', NodeStatus.SUCCESS), health],
+        strategy,
+      });
+      const ctx = createContext();
+
+      await node.tick(ctx); // RUNNING
+      await node.tick(ctx); // RUNNING
+      await node.tick(ctx); // SUCCESS
+
+      expect(orderSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-consults strategy on a new execution cycle after SUCCESS', async () => {
+      const orderSpy = vi.fn(async (children: BTreeNode[]) => children);
+      const strategy: ExecutionStrategy = { order: orderSpy };
+
+      const node = new SequenceNode({
+        name: 'seq',
+        children: [actionNode('a', NodeStatus.SUCCESS)],
+        strategy,
+      });
+      const ctx = createContext();
+
+      await node.tick(ctx); // SUCCESS — cycle 1
+      await node.tick(ctx); // SUCCESS — cycle 2
+
+      expect(orderSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('re-consults strategy on a new execution cycle after FAILURE', async () => {
+      const orderSpy = vi.fn(async (children: BTreeNode[]) => children);
+      const strategy: ExecutionStrategy = { order: orderSpy };
+
+      const node = new SequenceNode({
+        name: 'seq',
+        children: [actionNode('a', NodeStatus.FAILURE)],
+        strategy,
+      });
+      const ctx = createContext();
+
+      await node.tick(ctx); // FAILURE — cycle 1
+      await node.tick(ctx); // FAILURE — cycle 2
+
+      expect(orderSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('re-consults strategy after reset()', async () => {
+      let calls = 0;
+      const child: BTreeNode = {
+        id: 'c', name: 'c',
+        tick: async () => {
+          calls++;
+          return NodeStatus.RUNNING;
+        },
+        reset: () => {}, abort: () => {},
+      };
+
+      const orderSpy = vi.fn(async (children: BTreeNode[]) => children);
+      const strategy: ExecutionStrategy = { order: orderSpy };
+
+      const node = new SequenceNode({ name: 'seq', children: [child], strategy });
+      const ctx = createContext();
+
+      await node.tick(ctx); // RUNNING — commits order
+      expect(orderSpy).toHaveBeenCalledTimes(1);
+
+      node.reset();
+      await node.tick(ctx); // RUNNING — new cycle after reset
+      expect(orderSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('committed order is stable even if strategy would return different results', async () => {
+      let callCount = 0;
+      let bCalls = 0;
+      const a: BTreeNode = {
+        id: 'a', name: 'a',
+        tick: async () => NodeStatus.SUCCESS,
+        reset: () => {}, abort: () => {},
+      };
+      const b: BTreeNode = {
+        id: 'b', name: 'b',
+        tick: async () => {
+          bCalls++;
+          return bCalls <= 2 ? NodeStatus.RUNNING : NodeStatus.SUCCESS;
+        },
+        reset: () => {}, abort: () => {},
+      };
+
+      const strategy: ExecutionStrategy = {
+        order: async (children) => {
+          callCount++;
+          // First call: [a, b], second call would be [b, a]
+          return callCount === 1 ? [a, b] : [b, a];
+        },
+      };
+
+      const node = new SequenceNode({ name: 'seq', children: [a, b], strategy });
+      const ctx = createContext();
+
+      // Tick 1: strategy returns [a, b]; a succeeds, b RUNNING
+      expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+      // Tick 2: committed order still [a, b]; b still RUNNING
+      expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+      // Tick 3: committed order still [a, b]; b succeeds
+      expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+
+      // Strategy was only called once for the entire cycle
+      expect(callCount).toBe(1);
+    });
+  });
+
   it('uses a custom strategy to reorder children', async () => {
     const reverseStrategy: ExecutionStrategy = {
       order: async (children) => [...children].reverse(),

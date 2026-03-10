@@ -16,8 +16,10 @@ const OrderingSchema = z.object({
  * An {@link ExecutionStrategy} that asks Claude to decide the order in which
  * a {@link SequenceNode} executes its children.
  *
- * On each tick (or once per reset cycle when `cache: true`), Claude receives
- * a prompt that includes the child node names, any descriptions supplied via
+ * The composite calls this strategy once per execution cycle (the order is
+ * committed for the cycle's duration). When `cache: true`, the decision
+ * persists across cycles until `reset()` is called. Claude receives a prompt
+ * that includes the child node names, any descriptions supplied via
  * `childDescriptions`, and a JSON snapshot of the current blackboard. Claude
  * returns an ordered list of child names, which is mapped back to node
  * references and returned to the sequence.
@@ -65,10 +67,10 @@ const OrderingSchema = z.object({
  * });
  * ```
  *
- * **Caching the decision across ticks:**
+ * **Caching the decision across execution cycles:**
  * ```ts
- * // Claude is called only on the first tick after construction or reset().
- * // Subsequent ticks reuse the same ordering without an SDK call.
+ * // Without cache, Claude is consulted at the start of each execution cycle.
+ * // With cache: true, the first decision is reused across cycles until reset().
  * const cached = new SequenceNode({
  *   name: 'cached-sequence',
  *   children: [stepA, stepB, stepC],

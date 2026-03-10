@@ -423,9 +423,15 @@ export interface AgentStrategyConfig {
   childDescriptions?: Record<string, string>;
 
   /**
-   * When `true`, the strategy caches its first decision and returns it on
-   * subsequent ticks without calling the SDK again. The cache is cleared
-   * when `reset()` is called.
+   * When `true`, the strategy caches its decision *across* execution cycles.
+   *
+   * Composites already guarantee intra-cycle order stability: the strategy
+   * is consulted once when a cycle starts and the order is committed until
+   * the cycle completes (SUCCESS/FAILURE) or the node is reset.
+   *
+   * This flag controls whether the cached decision persists after a cycle
+   * completes and a new one begins. When `true`, the strategy returns the
+   * same result without calling the SDK again until `reset()` is called.
    */
   cache?: boolean;
 }

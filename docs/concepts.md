@@ -249,6 +249,9 @@ A shared key-value store passed to every node through the tree context. Nodes us
 **Context (TreeContext)**
 The execution environment passed to every node on each tick. Contains the blackboard, event emitter, and an optional abort signal.
 
+**Execution Cycle**
+A single run of a composite node from start to terminal result. A cycle begins when the composite has no RUNNING child (fresh start) and ends when it returns SUCCESS or FAILURE. Within a cycle, the child order is committed on the first tick and remains stable across subsequent ticks that resume a RUNNING child. Calling `reset()` also ends the current cycle.
+
 **Strategy**
 A pluggable component that controls how a composite node orders its children or evaluates its policy. Strategies can be static (fixed rules) or agent-backed (AI-driven decisions).
 
