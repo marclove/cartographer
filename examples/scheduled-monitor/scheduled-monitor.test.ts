@@ -1,9 +1,14 @@
-import { describe, it, expect, afterAll } from 'vitest';
-import { NodeStatus } from '../../src/index.js';
+import { describe, it, expect, afterAll, afterEach } from 'vitest';
+import { NodeStatus, createTreeLogger } from '../../src/index.js';
 import type { TreeEvents } from '../../src/index.js';
 import { createTestServer, type TestServer } from './server.js';
 import { buildHealthMonitor } from './tree.js';
 import type { HealthRecord, HealthAssessment, IncidentReport } from './schemas.js';
+
+const LOG_FILE = 'logs/scheduled-monitor.log';
+
+let stopLogging: (() => void) | undefined;
+afterEach(() => { stopLogging?.(); stopLogging = undefined; });
 
 describe('scheduled-monitor example', { timeout: 120_000 }, () => {
   let server: TestServer;
@@ -15,6 +20,7 @@ describe('scheduled-monitor example', { timeout: 120_000 }, () => {
   it('detects an api outage and opens an incident across multiple ticks', async () => {
     server = await createTestServer();
     const tree = buildHealthMonitor(server.url);
+    stopLogging = createTreeLogger(tree.events, { filePath: LOG_FILE, logBlackboard: true });
 
     // Track incident report via event listener — the blackboard key gets
     // deleted by clearIncidentState on recovery, so we can't check it after the run.

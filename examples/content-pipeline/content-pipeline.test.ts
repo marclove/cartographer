@@ -1,11 +1,17 @@
-import { describe, it, expect } from 'vitest';
-import { NodeStatus } from '../../src/index.js';
+import { describe, it, expect, afterEach } from 'vitest';
+import { NodeStatus, createTreeLogger } from '../../src/index.js';
 import { buildContentPipeline } from './tree.js';
 import { SAMPLE_TICKET } from './prompts.js';
+
+const LOG_FILE = 'logs/content-pipeline.log';
+
+let stopLogging: (() => void) | undefined;
+afterEach(() => { stopLogging?.(); stopLogging = undefined; });
 
 describe('content-pipeline example', { timeout: 120_000 }, () => {
   it('processes a support ticket end-to-end', async () => {
     const tree = buildContentPipeline();
+    stopLogging = createTreeLogger(tree.events, { filePath: LOG_FILE, logBlackboard: true });
     tree.blackboard.set('ticket', SAMPLE_TICKET);
 
     const { status, blackboard } = await tree.run();

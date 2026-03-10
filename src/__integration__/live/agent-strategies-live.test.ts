@@ -1,13 +1,20 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { NodeStatus } from '../../types.js';
 import { ActionNode } from '../../nodes/action.js';
 import { ParallelNode } from '../../composites/parallel.js';
 import { AgentParallelStrategy } from '../../strategies/agent-parallel.js';
 import { createContext, collectEvents } from '../helpers.js';
+import { createTreeLogger } from '../../tree-logger.js';
+
+const LOG_FILE = 'logs/live-agent-strategies.log';
+
+let stopLogging: (() => void) | undefined;
+afterEach(() => { stopLogging?.(); stopLogging = undefined; });
 
 describe('Agent Strategies Integration (Live API)', { timeout: 60_000 }, () => {
   it('AgentParallelStrategy end-to-end with live API', async () => {
     const ctx = createContext();
+    stopLogging = createTreeLogger(ctx.events, { filePath: LOG_FILE });
     const strategyEvents = collectEvents(ctx, 'strategy:decision');
 
     const strategy = new AgentParallelStrategy({

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { z } from 'zod/v4';
 import { NodeStatus } from '../../types.js';
 import { AgentNode } from '../../nodes/agent.js';
@@ -6,6 +6,12 @@ import { TreeBuilder } from '../../builder/tree-builder.js';
 import { AgentSelectionStrategy } from '../../strategies/agent-selection.js';
 import { ActionNode } from '../../nodes/action.js';
 import { createContext, collectEvents } from '../helpers.js';
+import { createTreeLogger } from '../../tree-logger.js';
+
+const LOG_FILE = 'logs/live-agent-sdk.log';
+
+let stopLogging: (() => void) | undefined;
+afterEach(() => { stopLogging?.(); stopLogging = undefined; });
 
 describe('Agent SDK Integration', { timeout: 30_000 }, () => {
   it('Structured mode: classify sentiment with Zod schema', async () => {
@@ -24,6 +30,7 @@ describe('Agent SDK Integration', { timeout: 30_000 }, () => {
     });
 
     const ctx = createContext();
+    stopLogging = createTreeLogger(ctx.events, { filePath: LOG_FILE, logBlackboard: true });
     const responseEvents = collectEvents(ctx, 'agent:response');
 
     const status = await agent.tick(ctx);
@@ -68,6 +75,7 @@ describe('Agent SDK Integration', { timeout: 30_000 }, () => {
         });
       })
       .build();
+    stopLogging = createTreeLogger(tree.events, { filePath: LOG_FILE, logBlackboard: true });
 
     const { status } = await tree.run();
     expect(status).toBe(NodeStatus.SUCCESS);
@@ -80,6 +88,7 @@ describe('Agent SDK Integration', { timeout: 30_000 }, () => {
 
   it('Agent Selection Strategy reorders children', async () => {
     const ctx = createContext({ task: 'file-processing' });
+    stopLogging = createTreeLogger(ctx.events, { filePath: LOG_FILE });
     const strategyEvents = collectEvents(ctx, 'strategy:decision');
 
     const children = [

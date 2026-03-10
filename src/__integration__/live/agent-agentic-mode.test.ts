@@ -1,15 +1,22 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { z } from 'zod/v4';
 import { NodeStatus } from '../../types.js';
 import { AgentNode } from '../../nodes/agent.js';
 import { TreeBuilder } from '../../builder/tree-builder.js';
 import { createContext, collectEvents } from '../helpers.js';
+import { createTreeLogger } from '../../tree-logger.js';
+
+const LOG_FILE = 'logs/live-agent-agentic-mode.log';
+
+let stopLogging: (() => void) | undefined;
+afterEach(() => { stopLogging?.(); stopLogging = undefined; });
 
 describe('Agent Agentic Mode Integration', { timeout: 30_000 }, () => {
   it('agentic mode with blackboard MCP tool use', async () => {
     const ctx = createContext({
       items: ['apple', 'banana', 'cherry'],
     });
+    stopLogging = createTreeLogger(ctx.events, { filePath: LOG_FILE, logBlackboard: true });
 
     const toolUseEvents = collectEvents(ctx, 'agent:tool_use');
     const responseEvents = collectEvents(ctx, 'agent:response');
@@ -59,6 +66,7 @@ describe('Agent Agentic Mode Integration', { timeout: 30_000 }, () => {
         });
       })
       .build();
+    stopLogging = createTreeLogger(tree.events, { filePath: LOG_FILE, logBlackboard: true });
 
     const { status } = await tree.run();
     expect(status).toBe(NodeStatus.SUCCESS);
@@ -72,6 +80,7 @@ describe('Agent Agentic Mode Integration', { timeout: 30_000 }, () => {
     });
 
     const ctx = createContext();
+    stopLogging = createTreeLogger(ctx.events, { filePath: LOG_FILE, logBlackboard: true });
     const responseEvents = collectEvents(ctx, 'agent:response');
 
     const agent = new AgentNode({
@@ -101,6 +110,7 @@ describe('Agent Agentic Mode Integration', { timeout: 30_000 }, () => {
 
   it('agent caching — SDK called once, reset clears cache', async () => {
     const ctx = createContext();
+    stopLogging = createTreeLogger(ctx.events, { filePath: LOG_FILE, logBlackboard: true });
     const responseEvents = collectEvents(ctx, 'agent:response');
 
     const CountSchema = z.object({
