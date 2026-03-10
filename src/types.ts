@@ -103,8 +103,17 @@ export interface Blackboard {
  *
  * **Agent events:**
  * - `agent:prompt` — Fired when an AgentNode resolves its prompt and is about to call the SDK.
- * - `agent:response` — Fired when an AgentNode receives a response from the SDK.
- * - `agent:tool_use` — Fired for each tool call made during agentic mode execution.
+ * - `agent:thinking` — Fired when the SDK produces a thinking block (chain-of-thought reasoning).
+ * - `agent:text` — Fired when the SDK produces a text content block in an assistant message.
+ * - `agent:tool_use` — Fired for each tool call in both structured and agentic mode.
+ * - `agent:response` — Fired when the SDK returns a final successful result.
+ * - `agent:error` — Fired when the SDK returns an error result (max turns, budget, execution error, etc.).
+ * - `agent:stream` — Fired for each raw streaming delta event (text, thinking, input_json).
+ * - `agent:message` — Fired for every raw SDK message, enabling custom processing without framework filtering.
+ * - `agent:tool_progress` — Fired when the SDK reports tool execution progress with elapsed time.
+ * - `agent:init` — Fired when the SDK emits a session init message with model, tools, and config.
+ * - `agent:status` — Fired when the SDK emits a status change during execution.
+ * - `agent:rate_limit` — Fired when the SDK reports a rate limit event.
  *
  * **Data events:**
  * - `blackboard:write` — Fired when a value is written to the blackboard.
@@ -126,8 +135,28 @@ export interface TreeEvents {
   'node:exit': { node: BTreeNode; status: NodeStatus; context: TreeContext; durationMs: number };
   'node:error': { node: BTreeNode; error: Error; context: TreeContext };
   'agent:prompt': { node: BTreeNode; prompt: string; mode: 'structured' | 'agentic' };
-  'agent:response': { node: BTreeNode; result: unknown; cost?: number };
+  'agent:thinking': { node: BTreeNode; thinking: string };
+  'agent:text': { node: BTreeNode; text: string };
   'agent:tool_use': { node: BTreeNode; tool: string; input: unknown };
+  'agent:response': { node: BTreeNode; result: unknown; cost?: number };
+  'agent:error': {
+    node: BTreeNode;
+    subtype: string;
+    errors?: string[];
+    permissionDenials?: unknown;
+    cost?: number;
+  };
+  'agent:stream': { node: BTreeNode; event: unknown };
+  'agent:message': { node: BTreeNode; message: unknown };
+  'agent:tool_progress': {
+    node: BTreeNode;
+    toolUseId: string;
+    toolName: string;
+    elapsedSeconds: number;
+  };
+  'agent:init': { node: BTreeNode; sessionId: string; model?: string; tools?: unknown; mcpServers?: unknown };
+  'agent:status': { node: BTreeNode; status: string };
+  'agent:rate_limit': { node: BTreeNode; info: unknown };
   'blackboard:write': { key: string; value: unknown; source: string };
   'strategy:decision': { composite: BTreeNode; strategy: string; decision: unknown };
 }

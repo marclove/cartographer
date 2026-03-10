@@ -107,8 +107,17 @@ import { createBlackboardMcpServer } from '../agent/blackboard-mcp.js';
  * | Event | When |
  * |---|---|
  * | `agent:prompt` | After the prompt is resolved, before calling the SDK |
- * | `agent:tool_use` | For each tool call during agentic mode execution |
- * | `agent:response` | When the SDK returns a final result |
+ * | `agent:thinking` | When Claude produces a thinking (chain-of-thought) block |
+ * | `agent:text` | When Claude produces a text content block |
+ * | `agent:tool_use` | For each tool call in both structured and agentic mode |
+ * | `agent:response` | When the SDK returns a successful final result |
+ * | `agent:error` | When the SDK returns an error result |
+ * | `agent:stream` | For each raw streaming delta event |
+ * | `agent:message` | For every raw SDK message (catch-all) |
+ * | `agent:tool_progress` | When a tool reports execution progress |
+ * | `agent:init` | When the SDK emits a session init message |
+ * | `agent:status` | When the SDK emits a status change |
+ * | `agent:rate_limit` | When the SDK reports a rate limit event |
  */
 export class AgentNode extends BaseNode {
   private config: AgentNodeConfig;
@@ -212,6 +221,8 @@ export class AgentNode extends BaseNode {
     for await (const message of query({ prompt, options } as any)) {
       const msg = message as any;
 
+      this.emitMessageEvents(msg, context);
+
       if (msg.type === 'result') {
         if (msg.subtype === 'success') {
           // Prefer the SDK's pre-parsed structured_output; fall back to
@@ -242,6 +253,13 @@ export class AgentNode extends BaseNode {
           return NodeStatus.SUCCESS;
         }
 
+        context.events.emit('agent:error', {
+          node: this,
+          subtype: msg.subtype,
+          errors: msg.errors,
+          permissionDenials: msg.permission_denials,
+          cost: msg.total_cost_usd,
+        });
         return NodeStatus.FAILURE;
       }
     }
@@ -298,37 +316,117 @@ export class AgentNode extends BaseNode {
     for await (const message of query({ prompt, options } as any)) {
       const msg = message as any;
 
-      // Emit an event for each tool call so callers can observe agent actions.
-      if (msg.type === 'assistant' && msg.message?.content) {
-        for (const block of msg.message.content) {
-          if (block.type === 'tool_use') {
-            context.events.emit('agent:tool_use', {
-              node: this,
-              tool: block.name,
-              input: block.input,
-            });
-          }
-        }
-      }
+      this.emitMessageEvents(msg, context);
 
       if (msg.type === 'result') {
         const result = msg.result;
         const cost = msg.total_cost_usd;
 
-        context.events.emit('agent:response', {
-          node: this,
-          result,
-          cost,
-        });
+        if (msg.subtype === 'success') {
+          context.events.emit('agent:response', {
+            node: this,
+            result,
+            cost,
+          });
 
-        if (result !== undefined) {
-          context.blackboard.set(`${this.name}:output`, result);
+          if (result !== undefined) {
+            context.blackboard.set(`${this.name}:output`, result);
+          }
+
+          return NodeStatus.SUCCESS;
         }
 
-        return msg.subtype === 'success' ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
+        context.events.emit('agent:error', {
+          node: this,
+          subtype: msg.subtype,
+          errors: msg.errors,
+          permissionDenials: msg.permission_denials,
+          cost,
+        });
+        return NodeStatus.FAILURE;
       }
     }
 
     return NodeStatus.FAILURE;
+  }
+
+  /**
+   * Emit granular observability events for a raw SDK message.
+   *
+   * Called for every message yielded by `query()` in both structured and
+   * agentic modes. Handles assistant content blocks (thinking, text,
+   * tool_use), streaming deltas, system messages, tool progress, rate
+   * limits, and the catch-all `agent:message`.
+   */
+  private emitMessageEvents(msg: any, context: TreeContext): void {
+    // Catch-all: emit every raw SDK message for power users.
+    context.events.emit('agent:message', { node: this, message: msg });
+
+    // Assistant messages carry content blocks: thinking, text, tool_use.
+    if (msg.type === 'assistant' && msg.message?.content) {
+      for (const block of msg.message.content) {
+        if (block.type === 'thinking') {
+          context.events.emit('agent:thinking', {
+            node: this,
+            thinking: block.thinking,
+          });
+        } else if (block.type === 'text') {
+          context.events.emit('agent:text', {
+            node: this,
+            text: block.text,
+          });
+        } else if (block.type === 'tool_use') {
+          context.events.emit('agent:tool_use', {
+            node: this,
+            tool: block.name,
+            input: block.input,
+          });
+        }
+      }
+    }
+
+    // Raw streaming deltas — enables real-time token-by-token UI updates.
+    if (msg.type === 'stream_event') {
+      context.events.emit('agent:stream', {
+        node: this,
+        event: msg.event,
+      });
+    }
+
+    // Tool execution progress with elapsed time.
+    if (msg.type === 'tool_progress') {
+      context.events.emit('agent:tool_progress', {
+        node: this,
+        toolUseId: msg.tool_use_id,
+        toolName: msg.tool_name,
+        elapsedSeconds: msg.elapsed_time_seconds,
+      });
+    }
+
+    // System messages: init, status changes.
+    if (msg.type === 'system') {
+      if (msg.subtype === 'init') {
+        context.events.emit('agent:init', {
+          node: this,
+          sessionId: msg.session_id,
+          model: msg.model,
+          tools: msg.tools,
+          mcpServers: msg.mcp_servers,
+        });
+      } else if (msg.subtype === 'status') {
+        context.events.emit('agent:status', {
+          node: this,
+          status: msg.status,
+        });
+      }
+    }
+
+    // Rate limit warnings.
+    if (msg.type === 'rate_limit_event') {
+      context.events.emit('agent:rate_limit', {
+        node: this,
+        info: msg.rate_limit_info,
+      });
+    }
   }
 }

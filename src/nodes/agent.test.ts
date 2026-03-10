@@ -230,3 +230,244 @@ describe('AgentNode - agentic mode', () => {
     );
   });
 });
+
+describe('AgentNode - observability events', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('emits agent:thinking for thinking blocks', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'thinking', thinking: 'Let me reason about this...' },
+            { type: 'text', text: 'Here is my answer' },
+          ],
+        },
+      },
+      { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 },
+    ]) as any);
+
+    const node = new AgentNode({ name: 'thinker', mode: 'agentic', prompt: 'Think' });
+    const ctx = createContext();
+    const thinkingSpy = vi.fn();
+    ctx.events.on('agent:thinking', thinkingSpy);
+    await node.tick(ctx);
+
+    expect(thinkingSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ thinking: 'Let me reason about this...' }),
+    );
+  });
+
+  it('emits agent:text for text blocks', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'Working on it...' }] },
+      },
+      { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 },
+    ]) as any);
+
+    const node = new AgentNode({ name: 'worker', mode: 'agentic', prompt: 'Work' });
+    const ctx = createContext();
+    const textSpy = vi.fn();
+    ctx.events.on('agent:text', textSpy);
+    await node.tick(ctx);
+
+    expect(textSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Working on it...' }),
+    );
+  });
+
+  it('emits agent:tool_use in structured mode', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'tool_use', name: 'mcp__blackboard__get', input: { key: 'data' } },
+          ],
+        },
+      },
+      { type: 'result', subtype: 'success', structured_output: { answer: 'yes' }, total_cost_usd: 0.01 },
+    ]) as any);
+
+    const node = new AgentNode({
+      name: 'structured-tools',
+      mode: 'structured',
+      prompt: 'Classify',
+      outputSchema: z.object({ answer: z.string() }),
+    });
+
+    const ctx = createContext();
+    const toolSpy = vi.fn();
+    ctx.events.on('agent:tool_use', toolSpy);
+    await node.tick(ctx);
+
+    expect(toolSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ tool: 'mcp__blackboard__get', input: { key: 'data' } }),
+    );
+  });
+
+  it('emits agent:error on SDK error result', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'result',
+        subtype: 'error_max_turns',
+        errors: ['Exceeded maximum turns'],
+        total_cost_usd: 0.05,
+      },
+    ]) as any);
+
+    const node = new AgentNode({ name: 'errorer', mode: 'agentic', prompt: 'Do stuff' });
+    const ctx = createContext();
+    const errorSpy = vi.fn();
+    ctx.events.on('agent:error', errorSpy);
+    await node.tick(ctx);
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subtype: 'error_max_turns',
+        errors: ['Exceeded maximum turns'],
+        cost: 0.05,
+      }),
+    );
+  });
+
+  it('emits agent:error in structured mode on failure', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      { type: 'result', subtype: 'error_during_execution', errors: ['Something broke'] },
+    ]) as any);
+
+    const node = new AgentNode({ name: 'broken', mode: 'structured', prompt: 'Classify' });
+    const ctx = createContext();
+    const errorSpy = vi.fn();
+    ctx.events.on('agent:error', errorSpy);
+    await node.tick(ctx);
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ subtype: 'error_during_execution', errors: ['Something broke'] }),
+    );
+  });
+
+  it('emits agent:stream for streaming delta events', async () => {
+    const streamEvent = { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hello' } };
+    mockQuery.mockReturnValue(mockMessages([
+      { type: 'stream_event', event: streamEvent },
+      { type: 'result', subtype: 'success', result: 'Hello', total_cost_usd: 0.01 },
+    ]) as any);
+
+    const node = new AgentNode({ name: 'streamer', mode: 'agentic', prompt: 'Say hello' });
+    const ctx = createContext();
+    const streamSpy = vi.fn();
+    ctx.events.on('agent:stream', streamSpy);
+    await node.tick(ctx);
+
+    expect(streamSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ event: streamEvent }),
+    );
+  });
+
+  it('emits agent:message for every SDK message', async () => {
+    const messages = [
+      { type: 'system', subtype: 'init', session_id: 'sess-1', model: 'claude-opus-4-6', tools: [], mcp_servers: [] },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Hi' }] } },
+      { type: 'result', subtype: 'success', result: 'Hi', total_cost_usd: 0.01 },
+    ];
+    mockQuery.mockReturnValue(mockMessages(messages) as any);
+
+    const node = new AgentNode({ name: 'all-msgs', mode: 'agentic', prompt: 'Hi' });
+    const ctx = createContext();
+    const msgSpy = vi.fn();
+    ctx.events.on('agent:message', msgSpy);
+    await node.tick(ctx);
+
+    expect(msgSpy).toHaveBeenCalledTimes(3);
+    expect(msgSpy.mock.calls[0][0].message).toEqual(messages[0]);
+    expect(msgSpy.mock.calls[1][0].message).toEqual(messages[1]);
+    expect(msgSpy.mock.calls[2][0].message).toEqual(messages[2]);
+  });
+
+  it('emits agent:tool_progress for tool progress updates', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      { type: 'tool_progress', tool_use_id: 'tu-1', tool_name: 'Bash', elapsed_time_seconds: 5.2 },
+      { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 },
+    ]) as any);
+
+    const node = new AgentNode({ name: 'progressor', mode: 'agentic', prompt: 'Run' });
+    const ctx = createContext();
+    const progressSpy = vi.fn();
+    ctx.events.on('agent:tool_progress', progressSpy);
+    await node.tick(ctx);
+
+    expect(progressSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ toolUseId: 'tu-1', toolName: 'Bash', elapsedSeconds: 5.2 }),
+    );
+  });
+
+  it('emits agent:init for session init messages', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'system',
+        subtype: 'init',
+        session_id: 'sess-abc',
+        model: 'claude-opus-4-6',
+        tools: ['Read', 'Edit'],
+        mcp_servers: [{ name: 'blackboard' }],
+      },
+      { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 },
+    ]) as any);
+
+    const node = new AgentNode({ name: 'initer', mode: 'agentic', prompt: 'Init' });
+    const ctx = createContext();
+    const initSpy = vi.fn();
+    ctx.events.on('agent:init', initSpy);
+    await node.tick(ctx);
+
+    expect(initSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'sess-abc',
+        model: 'claude-opus-4-6',
+        tools: ['Read', 'Edit'],
+        mcpServers: [{ name: 'blackboard' }],
+      }),
+    );
+  });
+
+  it('emits agent:status for status change messages', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      { type: 'system', subtype: 'status', status: 'thinking' },
+      { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 },
+    ]) as any);
+
+    const node = new AgentNode({ name: 'statuser', mode: 'agentic', prompt: 'Think' });
+    const ctx = createContext();
+    const statusSpy = vi.fn();
+    ctx.events.on('agent:status', statusSpy);
+    await node.tick(ctx);
+
+    expect(statusSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'thinking' }),
+    );
+  });
+
+  it('emits agent:rate_limit for rate limit events', async () => {
+    const rateLimitInfo = { status: 'warning', resetsAt: '2026-03-09T12:00:00Z', rateLimitType: 'tokens' };
+    mockQuery.mockReturnValue(mockMessages([
+      { type: 'rate_limit_event', rate_limit_info: rateLimitInfo },
+      { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 },
+    ]) as any);
+
+    const node = new AgentNode({ name: 'limited', mode: 'agentic', prompt: 'Go' });
+    const ctx = createContext();
+    const rateSpy = vi.fn();
+    ctx.events.on('agent:rate_limit', rateSpy);
+    await node.tick(ctx);
+
+    expect(rateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ info: rateLimitInfo }),
+    );
+  });
+});
