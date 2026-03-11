@@ -28,20 +28,20 @@ import {
  *
  * Tree structure:
  *   sequence "triage"
- *   ├── agent "classify" (haiku, schema)
+ *   ├── agent "classify" (structured)
  *   ├── selector "route-by-category"
  *   │   ├── sequence "billing-path"
  *   │   │   ├── condition "is-billing"
- *   │   │   ├── agent "analyze-billing" (haiku, schema)
- *   │   │   └── retry(2) → agent "draft-billing-response" (sonnet)
+ *   │   │   ├── agent "analyze-billing" (structured)
+ *   │   │   └── retry(2) → agent "draft-billing-response" (unstructured)
  *   │   ├── sequence "technical-path"
  *   │   │   ├── condition "is-technical"
- *   │   │   ├── retry(2) → agent "diagnose-issue" (sonnet)
- *   │   │   └── agent "draft-technical-response" (sonnet, schema)
+ *   │   │   ├── retry(2) → agent "diagnose-issue" (unstructured)
+ *   │   │   └── agent "draft-technical-response" (strucutured)
  *   │   └── sequence "general-path"
  *   │       ├── condition "is-general"
- *   │       └── agent "draft-general-response" (haiku, schema)
- *   ├── alwaysSucceed → guard(isUrgent) → agent "escalation-summary" (haiku, schema)
+ *   │       └── agent "draft-general-response" (structured)
+ *   ├── alwaysSucceed → guard(isUrgent) → agent "escalation-summary" (structured)
  *   └── action "emit-result"
  */
 export function buildContentPipeline() {
@@ -51,7 +51,7 @@ export function buildContentPipeline() {
       b.agent('classify', {
         prompt: classifyPrompt,
         options: {
-          model: 'claude-haiku-4-5-20251001',
+          model: 'claude-haiku-4-5',
           effort: 'low',
           outputFormat: { type: 'json_schema', schema: z.toJSONSchema(ClassificationSchema) as any },
         },
@@ -64,14 +64,14 @@ export function buildContentPipeline() {
           b.agent('analyze-billing', {
             prompt: analyzeBillingPrompt,
             options: {
-              model: 'claude-haiku-4-5-20251001',
+              model: 'claude-haiku-4-5',
               outputFormat: { type: 'json_schema', schema: z.toJSONSchema(BillingAnalysisSchema) as any },
             },
           });
           b.retry('draft-billing-retry', { maxAttempts: 2 }, (b) => {
             b.agent('draft-billing-response', {
               prompt: draftBillingResponsePrompt,
-              options: { model: 'claude-sonnet-4-6', maxTurns: 3 },
+              options: { model: 'claude-haiku-4-5', maxTurns: 3 },
             });
           });
         });
@@ -81,13 +81,13 @@ export function buildContentPipeline() {
           b.retry('diagnose-retry', { maxAttempts: 2 }, (b) => {
             b.agent('diagnose-issue', {
               prompt: diagnoseIssuePrompt,
-              options: { model: 'claude-sonnet-4-6', maxTurns: 3 },
+              options: { model: 'claude-haiku-4-5', maxTurns: 3 },
             });
           });
           b.agent('draft-technical-response', {
             prompt: draftTechnicalResponsePrompt,
             options: {
-              model: 'claude-sonnet-4-6',
+              model: 'claude-haiku-4-5',
               outputFormat: { type: 'json_schema', schema: z.toJSONSchema(ResponseSchema) as any },
             },
           });
@@ -98,7 +98,7 @@ export function buildContentPipeline() {
           b.agent('draft-general-response', {
             prompt: draftGeneralResponsePrompt,
             options: {
-              model: 'claude-haiku-4-5-20251001',
+              model: 'claude-haiku-4-5',
               outputFormat: { type: 'json_schema', schema: z.toJSONSchema(ResponseSchema) as any },
             },
           });
@@ -113,7 +113,7 @@ export function buildContentPipeline() {
           b.agent('escalation-summary', {
             prompt: escalationPrompt,
             options: {
-              model: 'claude-haiku-4-5-20251001',
+              model: 'claude-haiku-4-5',
               outputFormat: { type: 'json_schema', schema: z.toJSONSchema(EscalationSchema) as any },
             },
           });

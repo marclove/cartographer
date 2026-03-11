@@ -36,20 +36,20 @@ import {
  *   │   ├── action "check-database"
  *   │   └── action "check-queue"
  *   ├── action "update-history"
- *   ├── alwaysSucceed → timeout(10s) → agent "assess-health" (structured, haiku)
+ *   ├── alwaysSucceed → timeout(10s) → agent "assess-health" (structured)
  *   ├── selector "respond-to-assessment"
  *   │   ├── sequence "outage-path"
  *   │   │   ├── condition "is-unhealthy"
  *   │   │   ├── selector "outage-actions"
  *   │   │   │   ├── sequence "new-outage"
  *   │   │   │   │   ├── condition "no-active-incident"
- *   │   │   │   │   └── agent "draft-incident-report" (structured, haiku)
- *   │   │   │   ├── guard(enoughTimeSinceLastUpdate) → agent "draft-status-update" (structured, haiku)
+ *   │   │   │   │   └── agent "draft-incident-report" (structured)
+ *   │   │   │   ├── guard(enoughTimeSinceLastUpdate) → agent "draft-status-update" (structured)
  *   │   │   │   └── action "skip-update"
  *   │   │   └── action "record-incident-tick"
  *   │   ├── sequence "recovery-path"
  *   │   │   ├── condition "was-down-now-healthy"
- *   │   │   ├── agent "draft-resolution" (structured, haiku)
+ *   │   │   ├── agent "draft-resolution" (structured)
  *   │   │   └── action "clear-incident"
  *   │   └── action "log-healthy"
  *
@@ -78,7 +78,7 @@ export function buildHealthMonitor(baseUrl: string) {
           b.agent('assess-health', {
             prompt: assessHealthPrompt,
             options: {
-              model: 'claude-haiku-4-5-20251001',
+              model: 'claude-haiku-4-5',
               effort: 'low',
               outputFormat: { type: 'json_schema', schema: z.toJSONSchema(HealthAssessmentSchema) as any },
             },
@@ -98,7 +98,7 @@ export function buildHealthMonitor(baseUrl: string) {
               b.agent('draft-incident-report', {
                 prompt: draftIncidentReportPrompt,
                 options: {
-                  model: 'claude-haiku-4-5-20251001',
+                  model: 'claude-haiku-4-5',
                   outputFormat: { type: 'json_schema', schema: z.toJSONSchema(IncidentReportSchema) as any },
                 },
               });
@@ -108,7 +108,7 @@ export function buildHealthMonitor(baseUrl: string) {
               b.agent('draft-status-update', {
                 prompt: draftStatusUpdatePrompt,
                 options: {
-                  model: 'claude-haiku-4-5-20251001',
+                  model: 'claude-haiku-4-5',
                   outputFormat: { type: 'json_schema', schema: z.toJSONSchema(StatusUpdateSchema) as any },
                 },
               });
@@ -125,7 +125,7 @@ export function buildHealthMonitor(baseUrl: string) {
           b.agent('draft-resolution', {
             prompt: draftResolutionPrompt,
             options: {
-              model: 'claude-haiku-4-5-20251001',
+              model: 'claude-haiku-4-5',
               outputFormat: { type: 'json_schema', schema: z.toJSONSchema(ResolutionSummarySchema) as any },
             },
           });
