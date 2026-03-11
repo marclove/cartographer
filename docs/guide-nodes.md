@@ -82,7 +82,7 @@ Typical uses: checking blackboard state, evaluating environment conditions, gati
 
 ## AgentNode
 
-`AgentNode` integrates Claude via the Anthropic Agent SDK. Every call is an agentic SDK invocation. Provide an `outputSchema` to get structured, schema-validated output.
+`AgentNode` integrates Claude via the Anthropic Agent SDK. Every call is an agentic SDK invocation. SDK options are passed directly via the `options` field, giving you access to the full range of Agent SDK capabilities -- models, tools, MCP servers, structured output, budget caps, and more.
 
 ### Behavior
 
@@ -90,8 +90,6 @@ Every AgentNode automatically:
 
 - Attaches a blackboard MCP server so the agent can read and write shared state.
 - Writes the agent's result to `{name}:output` on the blackboard.
-
-All options -- `allowedTools`, `maxTurns`, `systemPrompt`, `mcpServers`, `permissionMode`, `maxBudgetUsd` -- are available regardless of whether `outputSchema` is set.
 
 ### Example
 
@@ -101,8 +99,10 @@ import { AgentNode } from 'cartographer';
 const classifier = new AgentNode({
   name: 'classify-intent',
   prompt: (ctx) => `Classify this text: ${ctx.blackboard.get<string>('input')}`,
-  model: 'haiku',
-  effort: 'low',
+  options: {
+    model: 'claude-haiku-4-5-20251001',
+    effort: 'low',
+  },
 });
 ```
 

@@ -6,7 +6,7 @@
 import { TreeRegistry } from 'cartographer';
 ```
 
-A registry for actions, conditions, schemas, and strategies referenced by name in YAML configs.
+A registry for actions, conditions, and strategies referenced by name in YAML configs.
 
 ### Constructor
 
@@ -32,14 +32,6 @@ registerCondition(name: string, fn: (context: TreeContext) => Promise<boolean> |
 
 Registers a named condition function that can be referenced from YAML configs via `ref`.
 
-#### registerSchema
-
-```typescript
-registerSchema(name: string, schema: z.ZodType): void
-```
-
-Registers a named Zod schema. Used by `agent` nodes to validate output via the `outputSchema` field.
-
 #### registerStrategy
 
 ```typescript
@@ -63,14 +55,6 @@ getCondition(name: string): ConditionFn
 ```
 
 Returns the registered condition function. Throws if not found.
-
-#### getSchema
-
-```typescript
-getSchema(name: string): z.ZodType
-```
-
-Returns the registered Zod schema. Throws if not found.
 
 #### getStrategy
 
@@ -140,7 +124,7 @@ The loader recognizes the following node `type` values:
 |------|----------------|-----------------|
 | `action` | `name`, `ref` (registry key) | -- |
 | `condition` | `name`, `ref` (registry key) | -- |
-| `agent` | `name`, `prompt` | `model`, `effort`, `outputSchema` (ref), `allowedTools`, `permissionMode`, `maxTurns`, `maxBudgetUsd`, `systemPrompt`, `blackboardNamespace` |
+| `agent` | `name`, `prompt` | `blackboardNamespace`, `cache`, `options` (SDK options object) |
 | `selector` | `name` | `children`, `strategy.ref` |
 | `sequence` | `name` | `children`, `strategy.ref` |
 | `parallel` | `name` | `children`, `strategy.ref` |
@@ -157,7 +141,7 @@ The loader recognizes the following node `type` values:
 - `action` and `condition` nodes use `ref` to look up a registered action or condition by name.
 - `guard` nodes use `conditionRef` to look up a registered condition.
 - Composite nodes (`selector`, `sequence`, `parallel`) use `strategy.ref` to look up a registered strategy.
-- `agent` nodes with `outputSchema` use the value as a registry schema key.
+- `agent` nodes pass `options` directly to `AgentNode` as the SDK options object.
 
 ### Example YAML
 

@@ -143,14 +143,17 @@ The optional `reset()` method is called by composites during their own `reset()`
 Agent strategies use Claude to make runtime decisions about child ordering or parallel policy. All three accept the same configuration:
 
 ```typescript
+import type { Options } from '@anthropic-ai/claude-agent-sdk';
+
 interface AgentStrategyConfig {
   prompt: string | ((children: BTreeNode[], context: TreeContext) => string);
-  model?: 'sonnet' | 'opus' | 'haiku';
-  effort?: 'low' | 'medium' | 'high' | 'max';
   childDescriptions?: Record<string, string>;
   cache?: boolean;
+  options?: Partial<Options>;
 }
 ```
+
+The `options` field accepts any property from the Agent SDK's `Options` type. Agent strategies default to `model: 'sonnet'` and `effort: 'low'` when not specified.
 
 - **`AgentSelectionStrategy`** — Claude reorders selector children based on context.
 - **`AgentExecutionStrategy`** — Claude reorders sequence children based on context.
@@ -169,7 +172,7 @@ When `cache: true` is set on the config, the strategy also caches its decision *
 ```typescript
 const strategy = new AgentExecutionStrategy({
   prompt: 'Order these deployment steps for the current environment',
-  model: 'haiku',
+  options: { model: 'claude-haiku-4-5-20251001' },
   cache: true,  // Reuse across cycles; cleared on reset()
 });
 ```
@@ -183,8 +186,10 @@ const tree = new TreeBuilder('smart-selector')
   .selector('pick-best', {
     strategy: new AgentSelectionStrategy({
       prompt: 'Pick the best data source based on current state',
-      model: 'haiku',
-      effort: 'low',
+      options: {
+        model: 'claude-haiku-4-5-20251001',
+        effort: 'low',
+      },
       childDescriptions: {
         'try-cache': 'Fast but may be stale',
         'try-api': 'Always fresh but slower',

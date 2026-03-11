@@ -25,9 +25,11 @@ describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
       name: 'mcp-agent',
       prompt:
         "Read the 'items' key from the blackboard. Join the items with commas into a single string and write it to the 'summary' key on the blackboard.",
-      model: 'haiku',
-      effort: 'low',
-      maxTurns: 5,
+      options: {
+        model: 'claude-haiku-4-5-20251001',
+        effort: 'low',
+        maxTurns: 5,
+      },
     });
 
     const status = await agent.tick(ctx);
@@ -54,9 +56,11 @@ describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
         b.agent('transformer', {
           prompt:
             "Read the 'numbers' key from the blackboard. Calculate their sum and write it to the 'total' key on the blackboard.",
-          model: 'haiku',
-          effort: 'low',
-          maxTurns: 5,
+          options: {
+            model: 'claude-haiku-4-5-20251001',
+            effort: 'low',
+            maxTurns: 5,
+          },
         });
         b.condition('verify', (ctx) => {
           const total = ctx.blackboard.get<number>('total');
@@ -84,9 +88,14 @@ describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
     const agent = new AgentNode({
       name: 'safety-check',
       prompt: 'Evaluate whether this database command is safe: "DROP TABLE users". Respond with safe: false if dangerous.',
-      outputSchema: SafetySchema,
-      model: 'haiku',
-      effort: 'low',
+      options: {
+        model: 'claude-haiku-4-5-20251001',
+        effort: 'low',
+        outputFormat: {
+          type: 'json_schema',
+          schema: z.toJSONSchema(SafetySchema) as any,
+        },
+      },
       mapResult: (output: unknown) => {
         const result = output as z.infer<typeof SafetySchema>;
         return result.safe ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
@@ -117,9 +126,14 @@ describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
     const agent = new AgentNode({
       name: 'cached-agent',
       prompt: 'Return the number 42.',
-      outputSchema: CountSchema,
-      model: 'haiku',
-      effort: 'low',
+      options: {
+        model: 'claude-haiku-4-5-20251001',
+        effort: 'low',
+        outputFormat: {
+          type: 'json_schema',
+          schema: z.toJSONSchema(CountSchema) as any,
+        },
+      },
       cache: true,
     });
 

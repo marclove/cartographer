@@ -164,7 +164,7 @@ registry.registerAction('useCache', (ctx) => {
 const tree = TreeLoader.fromYAML(yamlString, registry);
 ```
 
-**TreeRegistry methods:** `registerAction`, `registerCondition`, `registerSchema`, `registerStrategy`, `getAction`, `getCondition`, `getSchema`, `getStrategy`.
+**TreeRegistry methods:** `registerAction`, `registerCondition`, `registerStrategy`, `getAction`, `getCondition`, `getStrategy`.
 
 **TreeLoader static methods:** `fromYAML(yamlString, registry)`, `fromConfig(config, registry)`.
 

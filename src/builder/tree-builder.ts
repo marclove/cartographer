@@ -491,7 +491,6 @@ function parseCompositeArgs(
  *
  *     b.agent('confirm', {
  *       prompt: 'Generate a brief order confirmation message',
- *       outputSchema: z.object({ message: z.string() }),
  *     });
  *   })
  *   .build();

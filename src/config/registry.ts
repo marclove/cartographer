@@ -1,4 +1,3 @@
-import type { z } from 'zod/v4';
 import type {
   TreeContext, NodeStatus, SelectionStrategy, ExecutionStrategy, ParallelStrategy,
 } from '../types.js';
@@ -20,19 +19,16 @@ type AnyStrategy = SelectionStrategy | ExecutionStrategy | ParallelStrategy;
  * done in any order. All `get*` methods throw a descriptive error if the
  * requested name has not been registered.
  *
- * The four registries and their corresponding YAML fields:
+ * The three registries and their corresponding YAML fields:
  *
  * | Registry | YAML field | Node types |
  * |---|---|---|
  * | Actions | `ref` | `action` nodes |
  * | Conditions | `ref` | `condition` nodes; `conditionRef` on `guard` nodes |
- * | Schemas | `outputSchema` | `agent` nodes (structured mode) |
  * | Strategies | `strategy.ref` | `selector`, `sequence`, `parallel` nodes |
  *
  * @example
  * ```ts
- * import { z } from 'zod';
- *
  * const registry = new TreeRegistry();
  *
  * // Register actions and conditions
@@ -46,12 +42,6 @@ type AnyStrategy = SelectionStrategy | ExecutionStrategy | ParallelStrategy;
  *   ctx.blackboard.has('authToken'),
  * );
  *
- * // Register a Zod schema for an agent node's outputSchema
- * registry.registerSchema('intent-schema', z.object({
- *   intent: z.string(),
- *   confidence: z.number(),
- * }));
- *
  * // Register a strategy
  * registry.registerStrategy('adaptive-order', new AgentExecutionStrategy({
  *   prompt: 'Order these steps for optimal execution',
@@ -64,7 +54,6 @@ type AnyStrategy = SelectionStrategy | ExecutionStrategy | ParallelStrategy;
 export class TreeRegistry {
   private actions = new Map<string, ActionFn>();
   private conditions = new Map<string, ConditionFn>();
-  private schemas = new Map<string, z.ZodType>();
   private strategies = new Map<string, AnyStrategy>();
 
   /**
@@ -86,18 +75,6 @@ export class TreeRegistry {
    */
   registerCondition(name: string, fn: ConditionFn): void {
     this.conditions.set(name, fn);
-  }
-
-  /**
-   * Register a Zod schema under the given name.
-   *
-   * Referenced in YAML by `outputSchema: <name>` on `agent` node definitions
-   * operating in `structured` mode. The loader uses this schema to validate
-   * and parse the agent's structured output.
-   * Overwrites any previously registered schema with the same name.
-   */
-  registerSchema(name: string, schema: z.ZodType): void {
-    this.schemas.set(name, schema);
   }
 
   /**
@@ -134,17 +111,6 @@ export class TreeRegistry {
     const fn = this.conditions.get(name);
     if (!fn) throw new Error(`Condition "${name}" not found in registry`);
     return fn;
-  }
-
-  /**
-   * Retrieve a registered Zod schema by name.
-   *
-   * @throws {Error} If no schema has been registered under `name`.
-   */
-  getSchema(name: string): z.ZodType {
-    const schema = this.schemas.get(name);
-    if (!schema) throw new Error(`Schema "${name}" not found in registry`);
-    return schema;
   }
 
   /**

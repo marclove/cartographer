@@ -58,8 +58,7 @@ const PolicySchema = z.object({
  *       const env = context.blackboard.get<string>('environment');
  *       return `In ${env} environment, decide the minimum success threshold for these checks`;
  *     },
- *     model: 'haiku',
- *     effort: 'low',
+ *     options: { model: 'claude-haiku-4-5-20251001', effort: 'low' },
  *   }),
  * });
  * ```

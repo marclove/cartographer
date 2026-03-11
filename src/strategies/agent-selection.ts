@@ -68,8 +68,7 @@ const OrderingSchema = z.object({
  *       const intent = context.blackboard.get<string>('intent');
  *       return `For a "${intent}" request, choose which response strategy to try first`;
  *     },
- *     model: 'haiku',
- *     effort: 'low',
+ *     options: { model: 'claude-haiku-4-5-20251001', effort: 'low' },
  *   }),
  * });
  * ```

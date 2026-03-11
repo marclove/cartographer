@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { Options } from '@anthropic-ai/claude-agent-sdk';
 
 // --- Node Status ---
 
@@ -439,13 +440,12 @@ export interface ParallelStrategy {
  * ```ts
  * const config: AgentStrategyConfig = {
  *   prompt: 'Given the user intent on the blackboard, order these tasks',
- *   model: 'haiku',
- *   effort: 'low',
  *   childDescriptions: {
  *     'fetch-data': 'Retrieves data from the API',
  *     'use-cache': 'Returns cached results if available',
  *   },
  *   cache: true, // Reuse the first decision until reset()
+ *   options: { model: 'claude-haiku-4-5-20251001', effort: 'low' },
  * };
  * ```
  */
@@ -458,12 +458,6 @@ export interface AgentStrategyConfig {
    * names, descriptions, and blackboard state automatically.
    */
   prompt: string | ((children: BTreeNode[], context: TreeContext) => string);
-
-  /** Which Claude model to use. Defaults to `'sonnet'`. */
-  model?: 'sonnet' | 'opus' | 'haiku';
-
-  /** How much reasoning effort the model should apply. */
-  effort?: 'low' | 'medium' | 'high' | 'max';
 
   /**
    * Human-readable descriptions for each child node, keyed by child name.
@@ -483,6 +477,16 @@ export interface AgentStrategyConfig {
    * same result without calling the SDK again until `reset()` is called.
    */
   cache?: boolean;
+
+  /**
+   * SDK options passed directly to the Claude Agent SDK `query()` call.
+   *
+   * Use this to configure model, effort, thinking, tools, MCP servers,
+   * and any other SDK option. Defaults applied when not set:
+   * - `model`: `'sonnet'`
+   * - `effort`: `'low'`
+   */
+  options?: Partial<Options>;
 }
 
 // --- Node Configs ---
@@ -564,15 +568,17 @@ export interface ConditionNodeConfig {
  * Configuration for an `AgentNode` — a leaf node that calls the Claude SDK.
  *
  * Every agent call is an agentic SDK invocation. The blackboard is always
- * exposed via a built-in MCP server, and you can attach additional tools,
- * MCP servers, system prompts, turn limits, and budget caps to any call.
+ * exposed via a built-in MCP server. Configure additional tools, MCP
+ * servers, system prompts, turn limits, budget caps, and any other SDK
+ * option via the `options` field, which is passed directly to the SDK's
+ * `query()` function.
  *
- * To request **structured output**, provide an `outputSchema`. The SDK
- * validates the response against the schema and the parsed result is stored
- * on the blackboard at `{name}:output`. You can combine structured output
- * with tools, multi-turn interaction, and all other options.
+ * To request **structured output**, set `options.outputFormat` with a
+ * JSON schema. The SDK validates the response and the parsed result is
+ * stored on the blackboard at `{name}:output`. You can combine structured
+ * output with tools, multi-turn interaction, and all other options.
  *
- * Without `outputSchema`, the raw text response is stored on the blackboard.
+ * Without `outputFormat`, the raw text response is stored on the blackboard.
  *
  * @example
  * ```ts
@@ -580,7 +586,12 @@ export interface ConditionNodeConfig {
  * const classifier = new AgentNode({
  *   name: 'classify-intent',
  *   prompt: (ctx) => `Classify: ${ctx.blackboard.get('userMessage')}`,
- *   outputSchema: z.object({ intent: z.string(), confidence: z.number() }),
+ *   options: {
+ *     outputFormat: {
+ *       type: 'json_schema',
+ *       schema: { type: 'object', properties: { intent: { type: 'string' }, confidence: { type: 'number' } } },
+ *     },
+ *   },
  *   mapResult: (output) =>
  *     (output as { confidence: number }).confidence > 0.8
  *       ? NodeStatus.SUCCESS
@@ -591,10 +602,12 @@ export interface ConditionNodeConfig {
  * const researcher = new AgentNode({
  *   name: 'research-agent',
  *   prompt: 'Research the topic and write a summary',
- *   systemPrompt: 'You are a research assistant.',
- *   allowedTools: ['web-search', 'read-url'],
- *   maxTurns: 10,
- *   maxBudgetUsd: 0.50,
+ *   options: {
+ *     systemPrompt: 'You are a research assistant.',
+ *     allowedTools: ['web-search', 'read-url'],
+ *     maxTurns: 10,
+ *     maxBudgetUsd: 0.50,
+ *   },
  *   blackboardNamespace: 'research',
  * });
  * ```
@@ -612,50 +625,11 @@ export interface AgentNodeConfig {
    */
   prompt: string | ((context: TreeContext) => string);
 
-  // Structured output
-
-  /**
-   * A Zod schema that the response must conform to. When provided, the
-   * SDK validates the response and the parsed output is stored on the
-   * blackboard at `{name}:output`.
-   */
-  outputSchema?: z.ZodType;
-
   /**
    * Maps the output to a `NodeStatus`. If omitted, the node returns
    * `SUCCESS` when the SDK call succeeds.
    */
   mapResult?: (output: unknown, context: TreeContext) => NodeStatus;
-
-  // Tools and MCP
-
-  /** List of tool names the agent is allowed to use. */
-  allowedTools?: string[];
-
-  /** Controls how the agent handles permission prompts for tool use. */
-  permissionMode?: 'acceptEdits' | 'bypassPermissions' | 'default';
-
-  /** Additional MCP servers made available alongside the blackboard server. */
-  mcpServers?: Record<string, unknown>;
-
-  // Execution limits
-
-  /** Maximum number of conversation turns before the agent stops. */
-  maxTurns?: number;
-
-  /** Maximum spend in USD before the agent stops. */
-  maxBudgetUsd?: number;
-
-  // Agent behavior
-
-  /** System prompt prepended to the conversation. */
-  systemPrompt?: string;
-
-  /** Which Claude model to use. Defaults to `'sonnet'`. */
-  model?: 'sonnet' | 'opus' | 'haiku';
-
-  /** How much reasoning effort the model should apply. */
-  effort?: 'low' | 'medium' | 'high' | 'max';
 
   /**
    * When set, the agent accesses a scoped view of the blackboard where
@@ -670,6 +644,15 @@ export interface AgentNodeConfig {
    * again. The cache is cleared when `reset()` is called.
    */
   cache?: boolean;
+
+  /**
+   * SDK options passed directly to the Claude Agent SDK `query()` call.
+   *
+   * Use this to configure model, effort, thinking, tools, MCP servers,
+   * system prompt, output format, budget limits, and any other SDK option.
+   * The blackboard MCP server and its tools are always injected automatically.
+   */
+  options?: Partial<Options>;
 }
 
 // --- Composite Configs ---

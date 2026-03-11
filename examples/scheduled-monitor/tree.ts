@@ -1,3 +1,4 @@
+import { z } from 'zod/v4';
 import { TreeBuilder, NodeStatus } from '../../src/index.js';
 import {
   HealthAssessmentSchema,
@@ -76,9 +77,11 @@ export function buildHealthMonitor(baseUrl: string) {
         b.timeout('assess-timeout', { timeoutMs: 15_000 }, (b) => {
           b.agent('assess-health', {
             prompt: assessHealthPrompt,
-            model: 'haiku',
-            effort: 'low',
-            outputSchema: HealthAssessmentSchema,
+            options: {
+              model: 'claude-haiku-4-5-20251001',
+              effort: 'low',
+              outputFormat: { type: 'json_schema', schema: z.toJSONSchema(HealthAssessmentSchema) as any },
+            },
           });
         });
       });
@@ -94,16 +97,20 @@ export function buildHealthMonitor(baseUrl: string) {
               b.condition('no-active-incident', noActiveIncident);
               b.agent('draft-incident-report', {
                 prompt: draftIncidentReportPrompt,
-                model: 'haiku',
-                outputSchema: IncidentReportSchema,
+                options: {
+                  model: 'claude-haiku-4-5-20251001',
+                  outputFormat: { type: 'json_schema', schema: z.toJSONSchema(IncidentReportSchema) as any },
+                },
               });
             });
             // Ongoing outage: periodic status update (throttled)
             b.guard('throttle-updates', { condition: enoughTimeSinceLastUpdate }, (b) => {
               b.agent('draft-status-update', {
                 prompt: draftStatusUpdatePrompt,
-                model: 'haiku',
-                outputSchema: StatusUpdateSchema,
+                options: {
+                  model: 'claude-haiku-4-5-20251001',
+                  outputFormat: { type: 'json_schema', schema: z.toJSONSchema(StatusUpdateSchema) as any },
+                },
               });
             });
             // Fallback: no update needed this tick
@@ -117,8 +124,10 @@ export function buildHealthMonitor(baseUrl: string) {
           b.condition('was-down-now-healthy', wasDownNowHealthy);
           b.agent('draft-resolution', {
             prompt: draftResolutionPrompt,
-            model: 'haiku',
-            outputSchema: ResolutionSummarySchema,
+            options: {
+              model: 'claude-haiku-4-5-20251001',
+              outputFormat: { type: 'json_schema', schema: z.toJSONSchema(ResolutionSummarySchema) as any },
+            },
           });
           b.action('clear-incident', clearIncidentState);
         });

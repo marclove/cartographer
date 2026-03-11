@@ -147,7 +147,7 @@ const node = new ConditionNode({
 import { AgentNode } from 'cartographer';
 ```
 
-Leaf node that invokes the Claude Agent SDK. Every call is an agentic SDK invocation. Provide an `outputSchema` to get structured, schema-validated output.
+Leaf node that invokes the Claude Agent SDK. Every call is an agentic SDK invocation. SDK options are passed directly via the `options` field, giving you access to the full range of Agent SDK capabilities.
 
 ### Constructor
 
@@ -161,47 +161,47 @@ new AgentNode(config: AgentNodeConfig)
 |-------|------|----------|---------|-------------|
 | `name` | `string` | Yes | -- | Node name |
 | `prompt` | `string \| ((context: TreeContext) => string)` | Yes | -- | Prompt sent to Claude. Can be a static string or a function that builds the prompt from context. |
-| `outputSchema` | `z.ZodType` | No | -- | Zod schema for the expected output; converted to JSON Schema internally. When set, the agent returns structured, validated output. |
-| `mapResult` | `(output: unknown, context: TreeContext) => NodeStatus` | No | -- | Maps the parsed structured output to a `NodeStatus`. Only applicable when `outputSchema` is set. When omitted, any successful response returns `SUCCESS`. |
-| `allowedTools` | `string[]` | No | -- | Tool name patterns the agent is allowed to call (merged with the auto-attached blackboard tools). |
-| `permissionMode` | `'acceptEdits' \| 'bypassPermissions' \| 'default'` | No | `'default'` | Controls how tool-use permissions are enforced. |
-| `maxTurns` | `number` | No | -- | Maximum number of conversation turns. |
-| `maxBudgetUsd` | `number` | No | -- | Spending cap in USD. |
-| `systemPrompt` | `string` | No | -- | System prompt prepended to the conversation. |
-| `mcpServers` | `Record<string, unknown>` | No | -- | Additional MCP servers merged with the auto-attached blackboard server. |
-| `model` | `'sonnet' \| 'opus' \| 'haiku'` | No | -- | Claude model to use. |
-| `effort` | `'low' \| 'medium' \| 'high' \| 'max'` | No | -- | Effort level passed to the SDK. |
+| `mapResult` | `(output: unknown, context: TreeContext) => NodeStatus` | No | -- | Maps the agent output to a `NodeStatus`. When omitted, any successful response returns `SUCCESS`. |
 | `blackboardNamespace` | `string` | No | -- | When set, the auto-attached blackboard MCP server operates on a scoped namespace instead of the full blackboard. |
 | `cache` | `boolean` | No | `false` | When `true`, the node calls Claude once and returns the cached status on subsequent ticks. Cleared on `reset()`. |
+| `options` | `Partial<Options>` | No | -- | Agent SDK options passed directly to the SDK. Includes `model`, `effort`, `outputFormat`, `allowedTools`, `mcpServers`, `systemPrompt`, `maxTurns`, `maxBudgetUsd`, `permissionMode`, and [many more](https://github.com/anthropics/claude-agent-sdk). |
 
 ### Behavior
 
-- Every call is an agentic SDK invocation. All options are available regardless of whether `outputSchema` is set.
+- Every call is an agentic SDK invocation. All SDK options are available via the `options` field.
 - A blackboard MCP server is automatically attached, exposing three tools to the agent: `blackboard_read`, `blackboard_write`, and `blackboard_keys`.
 - On success, the result is written to the blackboard at key `{name}:output`.
-- If `outputSchema` is provided, it is converted to JSON Schema via `zod` and passed as the output format. If `mapResult` is provided, its return value determines the node status.
-- Custom `mcpServers` and `allowedTools` are merged with the blackboard server config.
+- When `options.outputFormat` is provided, the SDK validates the response against the schema. If `mapResult` is provided, its return value determines the node status.
+- Custom `options.mcpServers` and `options.allowedTools` are merged with the blackboard server config.
+- If the `outputFormat.schema` contains a `$schema` meta-property (as produced by `z.toJSONSchema()`), it is automatically stripped before passing to the SDK.
 - Emits the full set of agent observability events: `agent:prompt`, `agent:thinking`, `agent:text`, `agent:tool_use`, `agent:response`, `agent:error`, `agent:stream`, `agent:message`, `agent:tool_progress`, `agent:init`, `agent:status`, and `agent:rate_limit`. See [TreeEvents](core.md#treeevents-interface) for payload details.
 
 ### Example
 
 ```typescript
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import { AgentNode } from 'cartographer';
 
 const classifier = new AgentNode({
   name: 'classify',
   prompt: 'Classify the following text.',
-  model: 'haiku',
-  outputSchema: z.object({ label: z.string() }),
+  options: {
+    model: 'claude-haiku-4-5-20251001',
+    outputFormat: {
+      type: 'json_schema',
+      schema: z.toJSONSchema(z.object({ label: z.string() })) as any,
+    },
+  },
 });
 
 const coder = new AgentNode({
   name: 'implement-feature',
   prompt: (ctx) => `Implement: ${ctx.blackboard.get<string>('task')}`,
-  model: 'sonnet',
-  allowedTools: ['Read', 'Edit', 'Bash'],
-  permissionMode: 'acceptEdits',
-  maxTurns: 20,
+  options: {
+    model: 'claude-sonnet-4-6',
+    allowedTools: ['Read', 'Edit', 'Bash'],
+    permissionMode: 'acceptEdits',
+    maxTurns: 20,
+  },
 });
 ```

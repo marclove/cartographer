@@ -61,8 +61,7 @@ const OrderingSchema = z.object({
  *       const mode = context.blackboard.get<string>('mode');
  *       return `Order these steps for ${mode} mode execution`;
  *     },
- *     model: 'haiku',
- *     effort: 'low',
+ *     options: { model: 'claude-haiku-4-5-20251001', effort: 'low' },
  *   }),
  * });
  * ```

@@ -4,7 +4,6 @@ import type { TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
 import { MapBlackboard } from '../core/blackboard.js';
 import type { TreeEvents } from '../types.js';
-import { z } from 'zod/v4';
 
 // We'll mock the SDK's query function
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
@@ -37,7 +36,6 @@ describe('AgentNode - structured output', () => {
   });
 
   it('returns SUCCESS on successful structured output', async () => {
-    const schema = z.object({ answer: z.string() });
     mockQuery.mockReturnValue(mockMessages([
       { type: 'result', subtype: 'success', structured_output: { answer: 'yes' }, total_cost_usd: 0.01 },
     ]) as any);
@@ -45,7 +43,12 @@ describe('AgentNode - structured output', () => {
     const node = new AgentNode({
       name: 'classify',
       prompt: 'Classify this input',
-      outputSchema: schema,
+      options: {
+        outputFormat: {
+          type: 'json_schema',
+          schema: { type: 'object', properties: { answer: { type: 'string' } } },
+        },
+      },
     });
 
     const ctx = createContext();
@@ -53,7 +56,6 @@ describe('AgentNode - structured output', () => {
   });
 
   it('writes structured output to blackboard', async () => {
-    const schema = z.object({ answer: z.string() });
     mockQuery.mockReturnValue(mockMessages([
       { type: 'result', subtype: 'success', structured_output: { answer: 'yes' }, total_cost_usd: 0.01 },
     ]) as any);
@@ -61,7 +63,12 @@ describe('AgentNode - structured output', () => {
     const node = new AgentNode({
       name: 'classify',
       prompt: 'Classify this input',
-      outputSchema: schema,
+      options: {
+        outputFormat: {
+          type: 'json_schema',
+          schema: { type: 'object', properties: { answer: { type: 'string' } } },
+        },
+      },
     });
 
     const ctx = createContext();
@@ -70,7 +77,6 @@ describe('AgentNode - structured output', () => {
   });
 
   it('uses mapResult to determine status', async () => {
-    const schema = z.object({ confidence: z.number() });
     mockQuery.mockReturnValue(mockMessages([
       { type: 'result', subtype: 'success', structured_output: { confidence: 0.3 }, total_cost_usd: 0.01 },
     ]) as any);
@@ -78,7 +84,12 @@ describe('AgentNode - structured output', () => {
     const node = new AgentNode({
       name: 'classify',
       prompt: 'Classify',
-      outputSchema: schema,
+      options: {
+        outputFormat: {
+          type: 'json_schema',
+          schema: { type: 'object', properties: { confidence: { type: 'number' } } },
+        },
+      },
       mapResult: (output: unknown) => {
         const data = output as { confidence: number };
         return data.confidence > 0.5 ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
@@ -137,7 +148,7 @@ describe('AgentNode - unstructured output', () => {
     const node = new AgentNode({
       name: 'fixer',
       prompt: 'Fix the bug',
-      allowedTools: ['Read', 'Edit'],
+      options: { allowedTools: ['Read', 'Edit'] },
     });
 
     expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
@@ -151,7 +162,7 @@ describe('AgentNode - unstructured output', () => {
     const node = new AgentNode({
       name: 'fixer',
       prompt: 'Fix the bug',
-      maxTurns: 5,
+      options: { maxTurns: 5 },
     });
 
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
@@ -304,7 +315,12 @@ describe('AgentNode - observability events', () => {
     const node = new AgentNode({
       name: 'structured-tools',
       prompt: 'Classify',
-      outputSchema: z.object({ answer: z.string() }),
+      options: {
+        outputFormat: {
+          type: 'json_schema',
+          schema: { type: 'object', properties: { answer: { type: 'string' } } },
+        },
+      },
     });
 
     const ctx = createContext();

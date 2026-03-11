@@ -25,7 +25,7 @@ import type { BTreeNode, TreeContext, TreeEvents, TypedEventEmitter, AgentStrate
  * `null` so callers can implement graceful fallback behaviour.
  *
  * **Model and effort defaults:**
- * - `model` defaults to `'sonnet'` if not specified in `config`.
+ * - `model` defaults to `'sonnet'` if not specified in `config.options`.
  * - `effort` defaults to `'low'` since strategy decisions are typically
  *   simple structured tasks.
  *
@@ -43,7 +43,7 @@ import type { BTreeNode, TreeContext, TreeEvents, TypedEventEmitter, AgentStrate
  * const result = await queryStructured(
  *   'Classify this text as positive or negative with a confidence score',
  *   Result,
- *   { prompt: '', model: 'haiku', effort: 'low' },
+ *   { prompt: '', options: { model: 'claude-haiku-4-5-20251001', effort: 'low' } },
  * );
  *
  * if (result) {
@@ -60,12 +60,14 @@ export async function queryStructured<T extends z.ZodType>(
   try {
     // Strip the $schema meta-property — the Claude SDK does not accept it.
     const { $schema, ...jsonSchema } = z.toJSONSchema(schema) as Record<string, unknown>;
+    const userOptions = config.options ?? {};
     for await (const message of query({
       prompt,
       options: {
+        ...userOptions,
         outputFormat: { type: 'json_schema', schema: jsonSchema },
-        model: config.model ?? 'sonnet',
-        effort: config.effort ?? 'low',
+        model: userOptions.model ?? 'sonnet',
+        effort: userOptions.effort ?? 'low',
       },
     } as any)) {
       const msg = message as any;

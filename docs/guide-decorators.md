@@ -226,7 +226,7 @@ builder.guard('check-budget', {
 }, (b) => {
   b.agent('expensive-agent', {
     prompt: 'Analyze the data',
-    maxBudgetUsd: 0.50,
+    options: { maxBudgetUsd: 0.50 },
   });
 });
 ```

@@ -63,7 +63,7 @@ Cartographer provides three leaf node types:
 
 - **ActionNode** -- Executes arbitrary logic. Your function receives the tree context and returns a `NodeStatus`.
 - **ConditionNode** -- Evaluates a boolean check. Returns `SUCCESS` if the condition is true, `FAILURE` if false.
-- **AgentNode** -- Delegates work to an AI agent via the Claude SDK. Provide an `outputSchema` to get structured, schema-validated output.
+- **AgentNode** -- Delegates work to an AI agent via the Claude SDK. Use `options.outputFormat` to get structured, schema-validated output.
 
 ### Composite Nodes
 
@@ -209,7 +209,7 @@ Traditional behavior trees are static: the tree structure and execution order ar
 
 An `AgentNode` is a leaf node that delegates its work to an AI agent powered by the Claude SDK. Instead of running a hand-coded function, it sends a prompt to Claude and interprets the response.
 
-Every AgentNode call is an agentic SDK invocation. To get structured, schema-validated output, provide an `outputSchema`. All options -- tools, MCP servers, system prompts, turn limits, budget caps -- are always available regardless of whether `outputSchema` is set.
+Every AgentNode call is an agentic SDK invocation. SDK options are passed directly via the `options` field, giving you access to the full range of Agent SDK capabilities -- models, tools, MCP servers, structured output via `outputFormat`, turn limits, budget caps, and more.
 
 The agent node writes its results to the blackboard, making them available to downstream nodes just like any other data.
 
@@ -253,7 +253,7 @@ A single run of a composite node from start to terminal result. A cycle begins w
 A pluggable component that controls how a composite node orders its children or evaluates its policy. Strategies can be static (fixed rules) or agent-backed (AI-driven decisions).
 
 **Agent Node**
-A leaf node that delegates execution to an AI agent via the Claude SDK. Provide an `outputSchema` for structured output, or omit it for free-form interaction.
+A leaf node that delegates execution to an AI agent via the Claude SDK. Use `options.outputFormat` for structured output, or omit it for free-form interaction.
 
 **Status (NodeStatus)**
 The result of ticking a node. One of three values: `SUCCESS`, `FAILURE`, or `RUNNING`.

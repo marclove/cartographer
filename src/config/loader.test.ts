@@ -3,7 +3,6 @@ import { TreeLoader } from './loader.js';
 import { TreeRegistry } from './registry.js';
 import { NodeStatus } from '../types.js';
 import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
-import { z } from 'zod/v4';
 
 describe('TreeLoader', () => {
   it('loads a simple action tree from config object', async () => {
@@ -91,7 +90,6 @@ describe('TreeLoader', () => {
 
   it('loads agent nodes with inline config', async () => {
     const registry = new TreeRegistry();
-    registry.registerSchema('TestSchema', z.object({ result: z.string() }));
 
     const config = {
       name: 'agent-tree',
@@ -99,8 +97,12 @@ describe('TreeLoader', () => {
         type: 'agent',
         name: 'classify',
         prompt: 'Classify this input',
-        outputSchema: 'TestSchema',
-        model: 'sonnet',
+        blackboardNamespace: 'classify',
+        cache: true,
+        options: {
+          model: 'claude-haiku-4-5-20251001',
+          effort: 'low',
+        },
       },
     };
 

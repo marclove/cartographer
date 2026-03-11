@@ -1,5 +1,4 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { z } from 'zod/v4';
 import { BaseNode } from './base.js';
 import { NodeStatus } from '../types.js';
 import type { AgentNodeConfig, TreeContext } from '../types.js';
@@ -11,27 +10,37 @@ import { emitMessageEvents } from '../agent/sdk-helpers.js';
  *
  * `AgentNode` brings AI reasoning into the behavior tree. Every call is
  * an agentic SDK invocation — Claude always has read/write access to the
- * blackboard via a built-in MCP server, and you can attach additional
- * tools, MCP servers, system prompts, turn limits, and budget caps.
+ * blackboard via a built-in MCP server, and you can configure additional
+ * tools, MCP servers, system prompts, turn limits, budget caps, and any
+ * other SDK option via the `options` field.
  *
- * To request **structured output**, provide an `outputSchema` in the
- * config. The SDK validates the response against the schema and the
- * parsed result is stored on the blackboard at `{name}:output`. You can
- * combine structured output with tools, multi-turn interaction, and all
- * other options.
+ * To request **structured output**, set `options.outputFormat` with a
+ * JSON schema. The SDK validates the response and the parsed result is
+ * stored on the blackboard at `{name}:output`. You can combine structured
+ * output with tools, multi-turn interaction, and all other options.
  *
- * Without `outputSchema`, the raw text response is stored on the
- * blackboard.
+ * Without `outputFormat`, the raw text response is stored on the blackboard.
  *
  * ```ts
  * // Structured output with schema validation
  * const classify = new AgentNode({
  *   name: 'classify-intent',
  *   prompt: (ctx) => `Classify this message: ${ctx.blackboard.get('userMessage')}`,
- *   outputSchema: z.object({
- *     intent: z.string(),
- *     confidence: z.number(),
- *   }),
+ *   options: {
+ *     model: 'claude-haiku-4-5-20251001',
+ *     effort: 'low',
+ *     outputFormat: {
+ *       type: 'json_schema',
+ *       schema: {
+ *         type: 'object',
+ *         properties: {
+ *           intent: { type: 'string' },
+ *           confidence: { type: 'number' },
+ *         },
+ *         required: ['intent', 'confidence'],
+ *       },
+ *     },
+ *   },
  *   mapResult: (output, ctx) => {
  *     const { intent, confidence } = output as { intent: string; confidence: number };
  *     ctx.blackboard.set('intent', intent);
@@ -44,11 +53,13 @@ import { emitMessageEvents } from '../agent/sdk-helpers.js';
  * // Multi-turn with tools
  * const research = new AgentNode({
  *   name: 'research-agent',
- *   systemPrompt: 'You are a concise research assistant.',
  *   prompt: (ctx) => `Research this topic: ${ctx.blackboard.get('topic')}`,
- *   allowedTools: ['web-search', 'read-url'],
- *   maxTurns: 10,
- *   maxBudgetUsd: 0.25,
+ *   options: {
+ *     systemPrompt: 'You are a concise research assistant.',
+ *     allowedTools: ['web-search', 'read-url'],
+ *     maxTurns: 10,
+ *     maxBudgetUsd: 0.25,
+ *   },
  *   blackboardNamespace: 'research',
  * });
  * ```
@@ -68,15 +79,6 @@ import { emitMessageEvents } from '../agent/sdk-helpers.js';
  * When `cache: true`, the status returned by the first successful execution
  * is stored internally and returned on all subsequent ticks without calling
  * the SDK. The cache is cleared when `reset()` is called.
- *
- * ```ts
- * const expensiveAgent = new AgentNode({
- *   name: 'plan',
- *   prompt: 'Generate an execution plan',
- *   outputSchema: z.object({ steps: z.array(z.string()) }),
- *   cache: true, // SDK called only once; re-ticking returns the cached status
- * });
- * ```
  *
  * ## Events emitted
  *
@@ -143,36 +145,35 @@ export class AgentNode extends BaseNode {
       this.config.blackboardNamespace,
     );
 
+    const userOptions = this.config.options ?? {};
+
     const mcpServers: Record<string, unknown> = {
       blackboard: blackboardServer,
-      ...this.config.mcpServers,
+      ...userOptions.mcpServers,
     };
 
     const allowedTools = [
-      ...(this.config.allowedTools ?? []),
+      ...(userOptions.allowedTools ?? []),
       'mcp__blackboard__*',
     ];
 
+    // Strip the $schema meta-property from outputFormat.schema if present —
+    // the Claude SDK does not accept it, and Zod's toJSONSchema() adds it.
+    let { outputFormat } = userOptions;
+    if (outputFormat && 'schema' in outputFormat) {
+      const { $schema, ...schema } = outputFormat.schema as Record<string, unknown>;
+      if ($schema) {
+        outputFormat = { ...outputFormat, schema } as typeof outputFormat;
+      }
+    }
+
     const options: Record<string, unknown> = {
+      ...userOptions,
       mcpServers,
       allowedTools,
-      permissionMode: this.config.permissionMode ?? 'default',
-      model: this.config.model,
-      effort: this.config.effort,
-      maxTurns: this.config.maxTurns,
-      maxBudgetUsd: this.config.maxBudgetUsd,
-      systemPrompt: this.config.systemPrompt,
+      permissionMode: userOptions.permissionMode ?? 'default',
+      ...(outputFormat && { outputFormat }),
     };
-
-    // When an output schema is provided, convert it to JSON Schema and
-    // pass it to the SDK as the expected output format.
-    if (this.config.outputSchema) {
-      const { $schema, ...schema } = z.toJSONSchema(this.config.outputSchema) as Record<string, unknown>;
-      options.outputFormat = {
-        type: 'json_schema',
-        schema,
-      };
-    }
 
     for await (const message of query({ prompt, options } as any)) {
       const msg = message as any;
@@ -183,11 +184,11 @@ export class AgentNode extends BaseNode {
         const cost = msg.total_cost_usd;
 
         if (msg.subtype === 'success') {
-          // When outputSchema was provided, prefer the SDK's pre-parsed
+          // When outputFormat was provided, prefer the SDK's pre-parsed
           // structured_output; fall back to JSON-parsing the raw result
           // string, then the string itself.
           let output: unknown;
-          if (this.config.outputSchema) {
+          if (userOptions.outputFormat) {
             output = msg.structured_output;
             if (output === undefined && typeof msg.result === 'string') {
               try {

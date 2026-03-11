@@ -4,7 +4,6 @@ import { NodeStatus } from '../types.js';
 import type { TreeContext } from '../types.js';
 import { AgentSelectionStrategy } from '../strategies/agent-selection.js';
 import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
-import { z } from 'zod/v4';
 
 describe('TreeBuilder', () => {
   it('builds a tree with a single action node', async () => {
@@ -101,7 +100,6 @@ describe('TreeBuilder', () => {
           .condition('check', () => true)
           .agent('classify', {
             prompt: 'Classify this',
-            outputSchema: z.object({ label: z.string() }),
           })
       )
       .build();

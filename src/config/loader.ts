@@ -56,7 +56,7 @@ interface TreeConfig {
  * `TreeLoader` is the bridge between declarative YAML tree definitions and
  * executable behavior tree instances. It recursively walks the node config
  * tree, instantiates the appropriate node class for each entry, and wires
- * in action functions, condition functions, schemas, and strategies from the
+ * in action functions, condition functions, and strategies from the
  * registry.
  *
  * All methods are static — `TreeLoader` is not instantiated.
@@ -83,15 +83,15 @@ interface TreeConfig {
  *       name: is-authenticated
  *       ref: is-authenticated
  *
- *     # Agent node — inline config; "outputSchema" resolves a registered Zod schema
+ *     # Agent node — inline config with nested options
  *     - type: agent
  *       name: classify
- *       mode: structured
  *       prompt: "Classify the user intent"
- *       outputSchema: intent-schema
- *       model: haiku
- *       effort: low
  *       blackboardNamespace: classify
+ *       cache: true
+ *       options:
+ *         model: claude-haiku-4-5-20251001
+ *         effort: low
  *
  *     # Selector / Sequence / Parallel — optional strategy.ref
  *     - type: selector
@@ -159,7 +159,7 @@ interface TreeConfig {
  * |---|---|---|
  * | `action` | `ref` | — |
  * | `condition` | `ref` | — |
- * | `agent` | `mode`, `prompt` | `outputSchema`, `model`, `effort`, `allowedTools`, `permissionMode`, `maxTurns`, `maxBudgetUsd`, `systemPrompt`, `blackboardNamespace` |
+ * | `agent` | `prompt` | `blackboardNamespace`, `cache`, `options` (SDK options object) |
  * | `selector` | — | `strategy.ref`, `children` |
  * | `sequence` | — | `strategy.ref`, `children` |
  * | `parallel` | — | `strategy.ref`, `children` |
@@ -204,7 +204,7 @@ export class TreeLoader {
    * provided registry.
    *
    * @param yamlString - The YAML tree definition to parse.
-   * @param registry - The registry containing action, condition, schema, and
+   * @param registry - The registry containing action, condition, and
    *   strategy implementations referenced by the YAML.
    *
    * @throws {Error} If the YAML cannot be parsed, or if the parsed object
@@ -228,7 +228,7 @@ export class TreeLoader {
    * been parsed into a plain object that matches the expected shape.
    *
    * @param config - The parsed tree configuration with `name` and `root`.
-   * @param registry - The registry containing action, condition, schema, and
+   * @param registry - The registry containing action, condition, and
    *   strategy implementations referenced by the config.
    *
    * @throws {Error} For invalid node configurations — see {@link buildNode}.
@@ -245,7 +245,7 @@ export class TreeLoader {
    * Composite nodes (`selector`, `sequence`, `parallel`) recurse into
    * `config.children`. Decorator nodes (`inverter`, `repeat`, `retry`, etc.)
    * recurse into `config.child`. Registry lookups happen here for `ref`,
-   * `conditionRef`, `outputSchema`, and `strategy.ref` fields.
+   * `conditionRef`, and `strategy.ref` fields.
    *
    * @throws {Error} If `config.type` is not a recognised node type.
    * @throws {Error} If a required field (`ref`, `child`, `conditionRef`,
@@ -272,23 +272,16 @@ export class TreeLoader {
         });
       }
 
-      case 'agent':
+      case 'agent': {
         return new AgentNode({
           id: config.id as string | undefined,
           name: config.name,
           prompt: config.prompt as string,
-          outputSchema: config.outputSchema
-            ? registry.getSchema(config.outputSchema as string)
-            : undefined,
-          model: config.model as any,
-          effort: config.effort as any,
-          allowedTools: config.allowedTools as string[] | undefined,
-          permissionMode: config.permissionMode as any,
-          maxTurns: config.maxTurns as number | undefined,
-          maxBudgetUsd: config.maxBudgetUsd as number | undefined,
-          systemPrompt: config.systemPrompt as string | undefined,
           blackboardNamespace: config.blackboardNamespace as string | undefined,
+          cache: config.cache as boolean | undefined,
+          options: config.options as any,
         });
+      }
 
       case 'selector':
         return new SelectorNode({

@@ -59,23 +59,22 @@ interface ParallelPolicy {
 
 ```typescript
 import type { AgentStrategyConfig } from 'cartographer';
+import type { Options } from '@anthropic-ai/claude-agent-sdk';
 
 interface AgentStrategyConfig {
   prompt: string | ((children: BTreeNode[], context: TreeContext) => string);
-  model?: 'sonnet' | 'opus' | 'haiku';
-  effort?: 'low' | 'medium' | 'high' | 'max';
   childDescriptions?: Record<string, string>;
   cache?: boolean;
+  options?: Partial<Options>;
 }
 ```
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `prompt` | `string \| function` | Yes | — | Base prompt for Claude. Function receives children and context. |
-| `model` | `'sonnet' \| 'opus' \| 'haiku'` | No | `'sonnet'` | Claude model |
-| `effort` | `'low' \| 'medium' \| 'high' \| 'max'` | No | `'low'` | Effort level |
 | `childDescriptions` | `Record<string, string>` | No | — | Maps child name to human description |
 | `cache` | `boolean` | No | `false` | When `true`, the strategy caches its decision across execution cycles. Composites already guarantee intra-cycle stability (strategy is called once per cycle). This flag controls whether the result persists after a cycle completes. Cleared on `reset()`. |
+| `options` | `Partial<Options>` | No | — | Agent SDK options passed directly to the SDK. Defaults to `model: 'sonnet'` and `effort: 'low'` when not specified. |
 
 ## Default Strategies
 
@@ -181,8 +180,10 @@ If the SDK throws an exception (as opposed to returning an error result), no `ag
 ```typescript
 const strategy = new AgentSelectionStrategy({
   prompt: 'Choose the best data source',
-  model: 'haiku',
-  effort: 'low',
+  options: {
+    model: 'claude-haiku-4-5-20251001',
+    effort: 'low',
+  },
   childDescriptions: {
     'cache': 'Fast, possibly stale',
     'api': 'Fresh, slower',

@@ -1,3 +1,4 @@
+import { z } from 'zod/v4';
 import { TreeBuilder, NodeStatus } from '../../src/index.js';
 import {
   ClassificationSchema,
@@ -49,9 +50,11 @@ export function buildContentPipeline() {
       // Step 1: Classify the ticket
       b.agent('classify', {
         prompt: classifyPrompt,
-        model: 'haiku',
-        effort: 'low',
-        outputSchema: ClassificationSchema,
+        options: {
+          model: 'claude-haiku-4-5-20251001',
+          effort: 'low',
+          outputFormat: { type: 'json_schema', schema: z.toJSONSchema(ClassificationSchema) as any },
+        },
       });
 
       // Step 2: Route based on classification
@@ -60,14 +63,15 @@ export function buildContentPipeline() {
           b.condition('is-billing', isBilling);
           b.agent('analyze-billing', {
             prompt: analyzeBillingPrompt,
-            model: 'haiku',
-            outputSchema: BillingAnalysisSchema,
+            options: {
+              model: 'claude-haiku-4-5-20251001',
+              outputFormat: { type: 'json_schema', schema: z.toJSONSchema(BillingAnalysisSchema) as any },
+            },
           });
           b.retry('draft-billing-retry', { maxAttempts: 2 }, (b) => {
             b.agent('draft-billing-response', {
               prompt: draftBillingResponsePrompt,
-              model: 'sonnet',
-              maxTurns: 3,
+              options: { model: 'claude-sonnet-4-6', maxTurns: 3 },
             });
           });
         });
@@ -77,14 +81,15 @@ export function buildContentPipeline() {
           b.retry('diagnose-retry', { maxAttempts: 2 }, (b) => {
             b.agent('diagnose-issue', {
               prompt: diagnoseIssuePrompt,
-              model: 'sonnet',
-              maxTurns: 3,
+              options: { model: 'claude-sonnet-4-6', maxTurns: 3 },
             });
           });
           b.agent('draft-technical-response', {
             prompt: draftTechnicalResponsePrompt,
-            model: 'sonnet',
-            outputSchema: ResponseSchema,
+            options: {
+              model: 'claude-sonnet-4-6',
+              outputFormat: { type: 'json_schema', schema: z.toJSONSchema(ResponseSchema) as any },
+            },
           });
         });
 
@@ -92,8 +97,10 @@ export function buildContentPipeline() {
           b.condition('is-general', isGeneral);
           b.agent('draft-general-response', {
             prompt: draftGeneralResponsePrompt,
-            model: 'haiku',
-            outputSchema: ResponseSchema,
+            options: {
+              model: 'claude-haiku-4-5-20251001',
+              outputFormat: { type: 'json_schema', schema: z.toJSONSchema(ResponseSchema) as any },
+            },
           });
         });
       });
@@ -105,8 +112,10 @@ export function buildContentPipeline() {
         b.guard('escalation-gate', { condition: isUrgent }, (b) => {
           b.agent('escalation-summary', {
             prompt: escalationPrompt,
-            model: 'haiku',
-            outputSchema: EscalationSchema,
+            options: {
+              model: 'claude-haiku-4-5-20251001',
+              outputFormat: { type: 'json_schema', schema: z.toJSONSchema(EscalationSchema) as any },
+            },
           });
         });
       });

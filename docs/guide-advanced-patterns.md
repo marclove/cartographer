@@ -176,7 +176,7 @@ const strategy = new AgentExecutionStrategy({
     const urgency = ctx.blackboard.get('urgency');
     return `Order steps for ${urgency} priority processing`;
   },
-  model: 'haiku',
+  options: { model: 'claude-haiku-4-5-20251001' },
   cache: true,
 });
 ```
@@ -436,7 +436,7 @@ const tree = TreeLoader.fromYAML(yamlString, registry);
 
 ### Agent Nodes in YAML
 
-`AgentNode` can be defined inline in YAML with all configuration options:
+`AgentNode` can be defined inline in YAML. Top-level fields mirror `AgentNodeConfig` (`name`, `prompt`, `blackboardNamespace`, `cache`), while SDK options are nested under `options:`:
 
 ```yaml
 name: classifier
@@ -447,30 +447,24 @@ root:
     - type: agent
       name: classify-intent
       prompt: "Classify the user's intent"
-      outputSchema: intent-schema
-      model: haiku
-      effort: low
       blackboardNamespace: classify
+      cache: true
+      options:
+        model: claude-haiku-4-5-20251001
+        effort: low
     - type: agent
       name: generate-response
       prompt: "Generate a response based on the classification"
-      systemPrompt: "You are a helpful assistant"
-      maxTurns: 5
-      allowedTools:
-        - search
-        - lookup
+      options:
+        model: claude-sonnet-4-6
+        systemPrompt: "You are a helpful assistant"
+        maxTurns: 5
+        allowedTools:
+          - search
+          - lookup
 ```
 
-Register schemas before loading:
-
-```typescript
-import { z } from 'zod';
-
-registry.registerSchema('intent-schema', z.object({
-  intent: z.string(),
-  confidence: z.number(),
-}));
-```
+The YAML structure maps directly to `AgentNodeConfig` — no registry lookups or transformations are needed for agent nodes.
 
 ### Complete YAML Example
 
@@ -494,9 +488,9 @@ root:
           - type: agent
             name: classify
             prompt: "Classify this support ticket"
-            outputSchema: ticket-classification
-            model: haiku
             blackboardNamespace: classification
+            options:
+              model: claude-haiku-4-5-20251001
 
           # Try to auto-resolve, fall back to escalation
           - type: selector
