@@ -97,8 +97,8 @@ export function createTreeLogger(
 
   // --- Agent events ---
 
-  on('agent:prompt', ({ node, mode, prompt }) => {
-    write({ event: 'agent:prompt', node: node.name, nodeId: node.id, mode, prompt });
+  on('agent:prompt', ({ node, prompt }) => {
+    write({ event: 'agent:prompt', node: node.name, nodeId: node.id, prompt });
   });
 
   on('agent:thinking', ({ node, thinking }) => {

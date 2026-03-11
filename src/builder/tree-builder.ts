@@ -60,7 +60,6 @@ type ConditionFn = (context: TreeContext) => Promise<boolean> | boolean;
  *       b.action('charge', async () => NodeStatus.SUCCESS);
  *     });
  *     b.agent('confirm', {
- *       mode: 'structured',
  *       prompt: 'Generate an order confirmation message',
  *     });
  *   })
@@ -491,7 +490,6 @@ function parseCompositeArgs(
  *     });
  *
  *     b.agent('confirm', {
- *       mode: 'structured',
  *       prompt: 'Generate a brief order confirmation message',
  *       outputSchema: z.object({ message: z.string() }),
  *     });

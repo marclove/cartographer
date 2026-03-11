@@ -100,7 +100,6 @@ describe('TreeBuilder', () => {
         s
           .condition('check', () => true)
           .agent('classify', {
-            mode: 'structured',
             prompt: 'Classify this',
             outputSchema: z.object({ label: z.string() }),
           })

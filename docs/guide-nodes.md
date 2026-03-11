@@ -82,22 +82,16 @@ Typical uses: checking blackboard state, evaluating environment conditions, gati
 
 ## AgentNode
 
-`AgentNode` integrates Claude via the Anthropic Agent SDK. It supports two execution modes.
+`AgentNode` integrates Claude via the Anthropic Agent SDK. Every call is an agentic SDK invocation. Provide an `outputSchema` to get structured, schema-validated output.
 
-### Structured mode
+### Behavior
 
-Single-turn interaction with an optional Zod schema for typed output. Defaults to `effort: 'low'`. Good for classification, extraction, and formatting tasks.
+Every AgentNode automatically:
 
-### Unstructured mode
+- Attaches a blackboard MCP server so the agent can read and write shared state.
+- Writes the agent's result to `{name}:output` on the blackboard.
 
-Multi-turn interaction with tool use, MCP servers, and extended reasoning. Defaults to `effort: 'high'`. Good for complex reasoning and multi-step tasks.
-
-### Shared behavior
-
-Both modes automatically:
-
-- Attach a blackboard MCP server so the agent can read and write shared state.
-- Write the agent's result to `{name}:output` on the blackboard.
+All options -- `allowedTools`, `maxTurns`, `systemPrompt`, `mcpServers`, `permissionMode`, `maxBudgetUsd` -- are available regardless of whether `outputSchema` is set.
 
 ### Example
 
@@ -106,14 +100,13 @@ import { AgentNode } from 'cartographer';
 
 const classifier = new AgentNode({
   name: 'classify-intent',
-  mode: 'structured',
   prompt: (ctx) => `Classify this text: ${ctx.blackboard.get<string>('input')}`,
   model: 'haiku',
   effort: 'low',
 });
 ```
 
-For the full `AgentNodeConfig` reference, mode-specific options, and advanced patterns, see [Agent Integration](guide-agent-integration.md).
+For the full `AgentNodeConfig` reference and advanced patterns, see [Agent Integration](guide-agent-integration.md).
 
 ---
 

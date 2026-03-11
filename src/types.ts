@@ -105,7 +105,7 @@ export interface Blackboard {
  * - `agent:prompt` — Fired when an AgentNode resolves its prompt and is about to call the SDK.
  * - `agent:thinking` — Fired when the SDK produces a thinking block (chain-of-thought reasoning).
  * - `agent:text` — Fired when the SDK produces a text content block in an assistant message.
- * - `agent:tool_use` — Fired for each tool call in both structured and unstructured mode.
+ * - `agent:tool_use` — Fired for each tool call the agent makes.
  * - `agent:response` — Fired when the SDK returns a final successful result.
  * - `agent:error` — Fired when the SDK returns an error result (max turns, budget, execution error, etc.).
  * - `agent:stream` — Fired for each raw streaming delta event (text, thinking, input_json).
@@ -140,7 +140,7 @@ export interface TreeEvents {
   'node:enter': { node: BTreeNode; context: TreeContext };
   'node:exit': { node: BTreeNode; status: NodeStatus; context: TreeContext; durationMs: number };
   'node:error': { node: BTreeNode; error: Error; context: TreeContext };
-  'agent:prompt': { node: BTreeNode; prompt: string; mode: 'structured' | 'unstructured' };
+  'agent:prompt': { node: BTreeNode; prompt: string };
   'agent:thinking': { node: BTreeNode; thinking: string };
   'agent:text': { node: BTreeNode; text: string };
   'agent:tool_use': { node: BTreeNode; tool: string; input: unknown };
@@ -563,44 +563,40 @@ export interface ConditionNodeConfig {
 /**
  * Configuration for an `AgentNode` — a leaf node that calls the Claude SDK.
  *
- * Agent nodes operate in one of two modes:
+ * Every agent call is an agentic SDK invocation. The blackboard is always
+ * exposed via a built-in MCP server, and you can attach additional tools,
+ * MCP servers, system prompts, turn limits, and budget caps to any call.
  *
- * **Structured mode** — Sends a prompt and expects a response matching an
- * `outputSchema`. The parsed output is stored on the blackboard at
- * `{name}:output`. Use `mapResult` to derive the node status from the output.
+ * To request **structured output**, provide an `outputSchema`. The SDK
+ * validates the response against the schema and the parsed result is stored
+ * on the blackboard at `{name}:output`. You can combine structured output
+ * with tools, multi-turn interaction, and all other options.
  *
- * **Unstructured mode** — Runs a multi-turn Claude session with access to tools.
- * The agent can make tool calls, read/write the blackboard via MCP, and
- * work autonomously for up to `maxTurns` or `maxBudgetUsd`.
- *
- * Both modes support model selection, effort tuning, blackboard namespace
- * scoping, and result caching.
+ * Without `outputSchema`, the raw text response is stored on the blackboard.
  *
  * @example
  * ```ts
- * // Structured mode — classify user intent
- * const structured: AgentNodeConfig = {
+ * // Structured output — classify user intent
+ * const classifier = new AgentNode({
  *   name: 'classify-intent',
- *   mode: 'structured',
  *   prompt: (ctx) => `Classify: ${ctx.blackboard.get('userMessage')}`,
  *   outputSchema: z.object({ intent: z.string(), confidence: z.number() }),
  *   mapResult: (output) =>
  *     (output as { confidence: number }).confidence > 0.8
  *       ? NodeStatus.SUCCESS
  *       : NodeStatus.FAILURE,
- * };
+ * });
  *
- * // Unstructured mode — research and write a report
- * const unstructured: AgentNodeConfig = {
+ * // Multi-turn with tools — research and write a report
+ * const researcher = new AgentNode({
  *   name: 'research-agent',
- *   mode: 'unstructured',
  *   prompt: 'Research the topic and write a summary',
  *   systemPrompt: 'You are a research assistant.',
  *   allowedTools: ['web-search', 'read-url'],
  *   maxTurns: 10,
  *   maxBudgetUsd: 0.50,
  *   blackboardNamespace: 'research',
- * };
+ * });
  * ```
  */
 export interface AgentNodeConfig {
@@ -611,73 +607,49 @@ export interface AgentNodeConfig {
   name: string;
 
   /**
-   * The execution mode for this agent.
-   * - `'structured'` — Single-turn, schema-validated output.
-   * - `'unstructured'` — Multi-turn with tool use.
-   */
-  mode: 'structured' | 'unstructured';
-
-  /**
    * The prompt sent to Claude. Can be a static string or a function that
    * receives the tree context for dynamic prompt construction.
    */
   prompt: string | ((context: TreeContext) => string);
 
-  // Structured mode
+  // Structured output
 
   /**
-   * A Zod schema that the structured mode response must conform to.
-   * The validated output is stored on the blackboard at `{name}:output`.
-   * Only used in `'structured'` mode.
+   * A Zod schema that the response must conform to. When provided, the
+   * SDK validates the response and the parsed output is stored on the
+   * blackboard at `{name}:output`.
    */
   outputSchema?: z.ZodType;
 
   /**
-   * Maps the structured output to a `NodeStatus`. If omitted, the node
-   * returns `SUCCESS` when the SDK call succeeds.
-   * Only used in `'structured'` mode.
+   * Maps the output to a `NodeStatus`. If omitted, the node returns
+   * `SUCCESS` when the SDK call succeeds.
    */
   mapResult?: (output: unknown, context: TreeContext) => NodeStatus;
 
-  // Unstructured mode
+  // Tools and MCP
 
-  /**
-   * List of tool names the agent is allowed to use.
-   * Only used in `'unstructured'` mode.
-   */
+  /** List of tool names the agent is allowed to use. */
   allowedTools?: string[];
 
-  /**
-   * Controls how the agent handles permission prompts for tool use.
-   * Only used in `'unstructured'` mode.
-   */
+  /** Controls how the agent handles permission prompts for tool use. */
   permissionMode?: 'acceptEdits' | 'bypassPermissions' | 'default';
 
-  /**
-   * Maximum number of conversation turns before the agent stops.
-   * Only used in `'unstructured'` mode.
-   */
-  maxTurns?: number;
-
-  /**
-   * Maximum spend in USD before the agent stops.
-   * Only used in `'unstructured'` mode.
-   */
-  maxBudgetUsd?: number;
-
-  /**
-   * System prompt prepended to the conversation.
-   * Only used in `'unstructured'` mode.
-   */
-  systemPrompt?: string;
-
-  /**
-   * MCP server configurations to make available to the agent.
-   * Only used in `'unstructured'` mode.
-   */
+  /** Additional MCP servers made available alongside the blackboard server. */
   mcpServers?: Record<string, unknown>;
 
-  // Common
+  // Execution limits
+
+  /** Maximum number of conversation turns before the agent stops. */
+  maxTurns?: number;
+
+  /** Maximum spend in USD before the agent stops. */
+  maxBudgetUsd?: number;
+
+  // Agent behavior
+
+  /** System prompt prepended to the conversation. */
+  systemPrompt?: string;
 
   /** Which Claude model to use. Defaults to `'sonnet'`. */
   model?: 'sonnet' | 'opus' | 'haiku';

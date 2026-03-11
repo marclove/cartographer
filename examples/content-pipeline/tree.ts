@@ -27,20 +27,20 @@ import {
  *
  * Tree structure:
  *   sequence "triage"
- *   ├── agent "classify" (structured, haiku)
+ *   ├── agent "classify" (haiku, schema)
  *   ├── selector "route-by-category"
  *   │   ├── sequence "billing-path"
  *   │   │   ├── condition "is-billing"
- *   │   │   ├── agent "analyze-billing" (structured, haiku)
- *   │   │   └── retry(2) → agent "draft-billing-response" (unstructured, sonnet)
+ *   │   │   ├── agent "analyze-billing" (haiku, schema)
+ *   │   │   └── retry(2) → agent "draft-billing-response" (sonnet)
  *   │   ├── sequence "technical-path"
  *   │   │   ├── condition "is-technical"
- *   │   │   ├── retry(2) → agent "diagnose-issue" (unstructured, sonnet)
- *   │   │   └── agent "draft-technical-response" (structured, sonnet)
+ *   │   │   ├── retry(2) → agent "diagnose-issue" (sonnet)
+ *   │   │   └── agent "draft-technical-response" (sonnet, schema)
  *   │   └── sequence "general-path"
  *   │       ├── condition "is-general"
- *   │       └── agent "draft-general-response" (structured, haiku)
- *   ├── alwaysSucceed → guard(isUrgent) → agent "escalation-summary" (structured, haiku)
+ *   │       └── agent "draft-general-response" (haiku, schema)
+ *   ├── alwaysSucceed → guard(isUrgent) → agent "escalation-summary" (haiku, schema)
  *   └── action "emit-result"
  */
 export function buildContentPipeline() {
@@ -48,7 +48,6 @@ export function buildContentPipeline() {
     .sequence('triage', (b) => {
       // Step 1: Classify the ticket
       b.agent('classify', {
-        mode: 'structured',
         prompt: classifyPrompt,
         model: 'haiku',
         effort: 'low',
@@ -60,14 +59,12 @@ export function buildContentPipeline() {
         b.sequence('billing-path', (b) => {
           b.condition('is-billing', isBilling);
           b.agent('analyze-billing', {
-            mode: 'structured',
             prompt: analyzeBillingPrompt,
             model: 'haiku',
             outputSchema: BillingAnalysisSchema,
           });
           b.retry('draft-billing-retry', { maxAttempts: 2 }, (b) => {
             b.agent('draft-billing-response', {
-              mode: 'unstructured',
               prompt: draftBillingResponsePrompt,
               model: 'sonnet',
               maxTurns: 3,
@@ -79,14 +76,12 @@ export function buildContentPipeline() {
           b.condition('is-technical', isTechnical);
           b.retry('diagnose-retry', { maxAttempts: 2 }, (b) => {
             b.agent('diagnose-issue', {
-              mode: 'unstructured',
               prompt: diagnoseIssuePrompt,
               model: 'sonnet',
               maxTurns: 3,
             });
           });
           b.agent('draft-technical-response', {
-            mode: 'structured',
             prompt: draftTechnicalResponsePrompt,
             model: 'sonnet',
             outputSchema: ResponseSchema,
@@ -96,7 +91,6 @@ export function buildContentPipeline() {
         b.sequence('general-path', (b) => {
           b.condition('is-general', isGeneral);
           b.agent('draft-general-response', {
-            mode: 'structured',
             prompt: draftGeneralResponsePrompt,
             model: 'haiku',
             outputSchema: ResponseSchema,
@@ -110,7 +104,6 @@ export function buildContentPipeline() {
       b.alwaysSucceed('optional-escalation', (b) => {
         b.guard('escalation-gate', { condition: isUrgent }, (b) => {
           b.agent('escalation-summary', {
-            mode: 'structured',
             prompt: escalationPrompt,
             model: 'haiku',
             outputSchema: EscalationSchema,

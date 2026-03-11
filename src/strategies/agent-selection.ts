@@ -132,7 +132,7 @@ export class AgentSelectionStrategy implements SelectionStrategy {
 
     const prompt = buildStrategyPrompt(this.config, children, context);
     const nodeProxy = children[0] ?? ({ id: '', name: '' } as any);
-    context.events.emit('agent:prompt', { node: nodeProxy, prompt, mode: 'structured' });
+    context.events.emit('agent:prompt', { node: nodeProxy, prompt });
 
     const handler = createStrategyMessageHandler(nodeProxy, context.events);
     const result = await queryStructured(prompt, OrderingSchema, this.config, handler);

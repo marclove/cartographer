@@ -76,11 +76,10 @@ describe('createTreeLogger', () => {
 
   it('writes agent:prompt', () => {
     createTreeLogger(events, { filePath: 'out.log' });
-    events.emit('agent:prompt', { node: makeNode('ai'), prompt: 'Do something', mode: 'unstructured' });
+    events.emit('agent:prompt', { node: makeNode('ai'), prompt: 'Do something' });
 
     const [entry] = writtenEntries();
     expect(entry.event).toBe('agent:prompt');
-    expect(entry.mode).toBe('unstructured');
     expect(entry.prompt).toBe('Do something');
   });
 
@@ -249,7 +248,7 @@ describe('createTreeLogger', () => {
     stop();
 
     events.emit('node:enter', { node: makeNode('root'), context: makeContext() });
-    events.emit('agent:prompt', { node: makeNode('ai'), prompt: 'Hi', mode: 'structured' });
+    events.emit('agent:prompt', { node: makeNode('ai'), prompt: 'Hi' });
     expect(mockAppend).not.toHaveBeenCalled();
   });
 

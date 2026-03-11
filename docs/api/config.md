@@ -140,7 +140,7 @@ The loader recognizes the following node `type` values:
 |------|----------------|-----------------|
 | `action` | `name`, `ref` (registry key) | -- |
 | `condition` | `name`, `ref` (registry key) | -- |
-| `agent` | `name`, `mode`, `prompt` | `model`, `effort`, `outputSchema` (ref), `allowedTools`, `permissionMode`, `maxTurns`, `maxBudgetUsd`, `systemPrompt`, `blackboardNamespace` |
+| `agent` | `name`, `prompt` | `model`, `effort`, `outputSchema` (ref), `allowedTools`, `permissionMode`, `maxTurns`, `maxBudgetUsd`, `systemPrompt`, `blackboardNamespace` |
 | `selector` | `name` | `children`, `strategy.ref` |
 | `sequence` | `name` | `children`, `strategy.ref` |
 | `parallel` | `name` | `children`, `strategy.ref` |

@@ -23,7 +23,6 @@ describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
 
     const agent = new AgentNode({
       name: 'mcp-agent',
-      mode: 'unstructured',
       prompt:
         "Read the 'items' key from the blackboard. Join the items with commas into a single string and write it to the 'summary' key on the blackboard.",
       model: 'haiku',
@@ -53,7 +52,6 @@ describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
           return NodeStatus.SUCCESS;
         });
         b.agent('transformer', {
-          mode: 'unstructured',
           prompt:
             "Read the 'numbers' key from the blackboard. Calculate their sum and write it to the 'total' key on the blackboard.",
           model: 'haiku',
@@ -85,7 +83,6 @@ describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
 
     const agent = new AgentNode({
       name: 'safety-check',
-      mode: 'structured',
       prompt: 'Evaluate whether this database command is safe: "DROP TABLE users". Respond with safe: false if dangerous.',
       outputSchema: SafetySchema,
       model: 'haiku',
@@ -119,7 +116,6 @@ describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
 
     const agent = new AgentNode({
       name: 'cached-agent',
-      mode: 'structured',
       prompt: 'Return the number 42.',
       outputSchema: CountSchema,
       model: 'haiku',

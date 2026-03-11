@@ -1,6 +1,6 @@
 # Agent Integration
 
-AgentNode integrates Claude via the Agent SDK, bringing AI-powered reasoning into behavior trees. It supports two modes: **structured** for single-turn, schema-validated responses, and **unstructured** for multi-turn, tool-using interactions.
+AgentNode integrates Claude via the Agent SDK, bringing AI-powered reasoning into behavior trees. Every AgentNode call is an agentic SDK invocation. To get structured output, provide an `outputSchema`.
 
 ---
 
@@ -9,14 +9,13 @@ AgentNode integrates Claude via the Agent SDK, bringing AI-powered reasoning int
 ```typescript
 interface AgentNodeConfig {
   name: string;
-  mode: 'structured' | 'unstructured';
   prompt: string | ((context: TreeContext) => string);
 
-  // Structured mode
+  // Structured output (optional)
   outputSchema?: z.ZodType;
   mapResult?: (output: unknown, context: TreeContext) => NodeStatus;
 
-  // Unstructured mode
+  // Agent capabilities
   allowedTools?: string[];
   permissionMode?: 'acceptEdits' | 'bypassPermissions' | 'default';
   maxTurns?: number;
@@ -32,7 +31,7 @@ interface AgentNodeConfig {
 }
 ```
 
-Both modes share these behaviors:
+All AgentNode calls share these behaviors:
 
 - Auto-write results to `{name}:output` on the blackboard.
 - Auto-attach a blackboard MCP server (read/write/keys tools).
@@ -40,11 +39,45 @@ Both modes share these behaviors:
 
 ---
 
-## Structured Mode
+## Basic Usage
 
-Single-turn interaction. Default effort: `'low'`. When no `outputSchema` is provided, `maxTurns` is set to 1 internally. When `outputSchema` is provided, turns are uncapped so the SDK can complete structured output formatting.
+At its simplest, an AgentNode sends a prompt to Claude and writes the result to the blackboard:
 
-Best for: classification, extraction, formatting, data transformation.
+```typescript
+import { AgentNode } from 'cartographer';
+
+const researcher = new AgentNode({
+  name: 'research-topic',
+  prompt: (ctx) => `Research the following topic and write a summary.
+
+Topic: ${ctx.blackboard.get<string>('topic')}`,
+  model: 'sonnet',
+  maxTurns: 10,
+  maxBudgetUsd: 0.50,
+  systemPrompt: 'You are a research assistant. Be thorough but concise.',
+  permissionMode: 'acceptEdits',
+  allowedTools: ['mcp__web__search'],
+  mcpServers: {
+    web: webSearchServer,
+  },
+});
+```
+
+Details:
+
+- Emits `agent:tool_use` for each tool use block in assistant messages.
+- Emits `agent:error` when the SDK returns an error result (max turns, budget, execution error).
+- Merges user-provided `mcpServers` with the auto-attached blackboard server.
+- Merges user-provided `allowedTools` with `mcp__blackboard__*`.
+- Returns `SUCCESS` if the agent result subtype is `'success'`, `FAILURE` otherwise.
+
+---
+
+## Structured Output with `outputSchema`
+
+Provide an `outputSchema` to receive a response validated against a Zod schema. When `outputSchema` is set, the schema is converted to JSON Schema via `z.toJSONSchema()` and passed as `outputFormat`. The structured output is available as the first argument to `mapResult` and also stored at `{name}:output`.
+
+If `mapResult` is not provided, a successful agent call returns `SUCCESS`.
 
 ```typescript
 import { AgentNode, NodeStatus } from 'cartographer';
@@ -52,7 +85,6 @@ import { z } from 'zod';
 
 const classifier = new AgentNode({
   name: 'classify-intent',
-  mode: 'structured',
   prompt: (ctx) => `Classify the following user message into one of the categories.
 
 Message: ${ctx.blackboard.get<string>('userMessage')}`,
@@ -69,44 +101,7 @@ Message: ${ctx.blackboard.get<string>('userMessage')}`,
 });
 ```
 
-When `outputSchema` is provided, it is converted to JSON Schema via `z.toJSONSchema()` and passed as `outputFormat`. The structured output is available as the first argument to `mapResult` and also stored at `{name}:output`.
-
-If `mapResult` is not provided, structured mode always returns `SUCCESS` on a successful agent call.
-
----
-
-## Unstructured Mode
-
-Multi-turn interaction. Default effort: `'high'`. Supports tools, MCP servers, and system prompts.
-
-Best for: complex reasoning, code generation, multi-step tasks, tool-using agents.
-
-```typescript
-const researcher = new AgentNode({
-  name: 'research-topic',
-  mode: 'unstructured',
-  prompt: (ctx) => `Research the following topic and write a summary.
-
-Topic: ${ctx.blackboard.get<string>('topic')}`,
-  model: 'sonnet',
-  maxTurns: 10,
-  maxBudgetUsd: 0.50,
-  systemPrompt: 'You are a research assistant. Be thorough but concise.',
-  permissionMode: 'acceptEdits',
-  allowedTools: ['mcp__web__search'],
-  mcpServers: {
-    web: webSearchServer,
-  },
-});
-```
-
-Unstructured mode details:
-
-- Emits `agent:tool_use` for each tool use block in assistant messages (also emitted in structured mode).
-- Emits `agent:error` when the SDK returns an error result (max turns, budget, execution error).
-- Merges user-provided `mcpServers` with the auto-attached blackboard server.
-- Merges user-provided `allowedTools` with `mcp__blackboard__*`.
-- Returns `SUCCESS` if the agent result subtype is `'success'`, `FAILURE` otherwise.
+All options -- `allowedTools`, `maxTurns`, `systemPrompt`, `mcpServers`, `permissionMode`, `maxBudgetUsd` -- are available regardless of whether `outputSchema` is set.
 
 ---
 
@@ -137,11 +132,11 @@ The `prompt` field accepts either a string or a function `(context: TreeContext)
 ```typescript
 const summarizer = new AgentNode({
   name: 'summarize',
-  mode: 'structured',
   prompt: (ctx) => {
     const data = ctx.blackboard.get<string[]>('articles');
     return `Summarize these ${data?.length ?? 0} articles:\n${data?.join('\n')}`;
   },
+  outputSchema: z.object({ summary: z.string() }),
 });
 ```
 
@@ -184,7 +179,6 @@ Both `AgentNode` and the agent strategies accept a `cache: true` option.
 ```typescript
 // Agent node: call Claude once, return cached status on subsequent ticks
 b.agent('classify', {
-  mode: 'structured',
   prompt: 'Classify this ticket',
   model: 'haiku',
   cache: true,
@@ -213,7 +207,7 @@ Caches are cleared when the tree resets. With the scheduler, this means:
 
 Control costs with:
 
-- `maxBudgetUsd` on AgentNode (unstructured mode only).
+- `maxBudgetUsd` on AgentNode.
 - `effort: 'low'` for simple tasks.
 - `model: 'haiku'` for fast, inexpensive operations.
 - Track spending via `agent:response` and `agent:error` events (both include a `cost` field).
@@ -230,22 +224,20 @@ tree.events.on('agent:error', ({ node, subtype, cost }) => {
 
 ---
 
-## Decision Matrix
+## With vs Without `outputSchema`
 
-| Criterion | Structured | Unstructured |
+| Criterion | With `outputSchema` | Without `outputSchema` |
 |-----------|-----------|---------|
-| Turns | Single | Multi |
 | Output format | Zod schema to JSON | Free text |
-| Tools | Blackboard only | Custom tools + MCP |
-| Default effort | low | high |
-| Cost | Lower | Higher |
+| `mapResult` | Available | Not available |
+| Tools | All options available | All options available |
 | Use when | Classification, extraction, formatting | Research, code gen, complex reasoning |
 
 ---
 
 ## Worked Example: Classification Pipeline
 
-This example combines both modes in a single tree. A cheap structured call classifies a support ticket, then conditional routing decides whether to escalate to an unstructured handler. For a complete, runnable version of this pattern with Zod schemas, billing analysis, and escalation handling, see the [content pipeline example](../examples/README.md#content-pipeline).
+This example combines structured and unstructured agent calls in a single tree. A cheap structured call classifies a support ticket, then conditional routing decides whether to escalate to a more thorough handler. For a complete, runnable version of this pattern with Zod schemas, billing analysis, and escalation handling, see the [content pipeline example](../examples/README.md#content-pipeline).
 
 ```typescript
 import { TreeBuilder, NodeStatus, AgentNode } from 'cartographer';
@@ -253,9 +245,8 @@ import { z } from 'zod';
 
 const tree = new TreeBuilder('classification-pipeline')
   .sequence('classify-and-act', (b) => {
-    // Step 1: Classify with structured agent (fast, cheap)
+    // Step 1: Classify with structured output (fast, cheap)
     b.agent('classify', {
-      mode: 'structured',
       prompt: (ctx) => `Classify this support ticket: ${ctx.blackboard.get<string>('ticket')}`,
       model: 'haiku',
       effort: 'low',
@@ -272,9 +263,8 @@ const tree = new TreeBuilder('classification-pipeline')
           const result = ctx.blackboard.get<{ urgency: string }>('classify:output');
           return result?.urgency === 'high';
         });
-        // Step 3: Handle urgent with unstructured mode (thorough)
+        // Step 3: Handle urgent tickets thoroughly
         b.agent('handle-urgent', {
-          mode: 'unstructured',
           prompt: (ctx) => {
             const ticket = ctx.blackboard.get<string>('ticket');
             const classification = ctx.blackboard.get('classify:output');
@@ -302,4 +292,4 @@ const tree = new TreeBuilder('classification-pipeline')
 - [Composites and Strategies](guide-composites.md) -- Selector, sequence, parallel, and the strategy pattern.
 - [Decorator Nodes](guide-decorators.md) -- Inverter, retry, guard, timeout, and more.
 - [Building Trees](guide-building-trees.md) -- TreeBuilder, nesting, and construction patterns.
-- [Examples](../examples/README.md) -- complete runnable programs demonstrating both agent modes in realistic scenarios.
+- [Examples](../examples/README.md) -- complete runnable programs demonstrating agent nodes in realistic scenarios.

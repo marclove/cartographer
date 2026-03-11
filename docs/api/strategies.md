@@ -167,7 +167,7 @@ Emits `strategy:decision` with `strategy: 'agent-parallel'`, plus the full suite
 
 All three agent strategies emit the same `agent:*` events as `AgentNode` during their SDK calls. The event sequence for each strategy invocation is:
 
-1. `agent:prompt` — emitted before calling the SDK, with `mode: 'structured'`
+1. `agent:prompt` — emitted before calling the SDK
 2. Intermediate events as the SDK streams — `agent:thinking`, `agent:text`, `agent:tool_use`, `agent:stream`, `agent:message`, `agent:init`, `agent:status`, `agent:rate_limit`, `agent:tool_progress`
 3. `agent:response` (on success) or `agent:error` (on failure) — emitted when the SDK returns a result
 4. `strategy:decision` — emitted after a successful call with the parsed decision payload

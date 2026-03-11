@@ -20,7 +20,6 @@ describe('Agent Structured Mode Integration', { timeout: 30_000 }, () => {
 
     const agent = new AgentNode({
       name: 'sentiment-classifier',
-      mode: 'structured',
       prompt: 'Classify the sentiment of: "I absolutely love this product, it changed my life!"',
       outputSchema: SentimentSchema,
       model: 'haiku',
@@ -58,7 +57,6 @@ describe('Agent Structured Mode Integration', { timeout: 30_000 }, () => {
           return NodeStatus.SUCCESS;
         });
         b.agent('summarizer', {
-          mode: 'structured',
           prompt: (ctx) => {
             const text = ctx.blackboard.get<string>('input-text');
             return `Summarize this text in one short sentence and count the words in the original text: "${text}"`;

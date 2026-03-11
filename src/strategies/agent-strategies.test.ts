@@ -146,7 +146,7 @@ describe('AgentSelectionStrategy', () => {
     ctx.events.on('agent:prompt', spy);
     await strategy.order([mockNode('a')], ctx);
     expect(spy).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: 'structured' }),
+      expect.objectContaining({ prompt: expect.any(String) }),
     );
     expect(spy.mock.calls[0][0].prompt).toContain('Pick');
   });
@@ -305,7 +305,7 @@ describe('AgentExecutionStrategy', () => {
     await strategy.order([mockNode('a')], ctx);
 
     expect(promptSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: 'structured' }),
+      expect.objectContaining({ prompt: expect.any(String) }),
     );
     expect(responseSpy).toHaveBeenCalledWith(
       expect.objectContaining({ cost: 0.03 }),
@@ -362,7 +362,7 @@ describe('AgentParallelStrategy', () => {
     await strategy.policy([mockNode('a')], ctx);
 
     expect(promptSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: 'structured' }),
+      expect.objectContaining({ prompt: expect.any(String) }),
     );
     expect(responseSpy).toHaveBeenCalledWith(
       expect.objectContaining({ cost: 0.04 }),

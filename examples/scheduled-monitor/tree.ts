@@ -75,7 +75,6 @@ export function buildHealthMonitor(baseUrl: string) {
       b.alwaysSucceed('assess-with-fallback', (b) => {
         b.timeout('assess-timeout', { timeoutMs: 15_000 }, (b) => {
           b.agent('assess-health', {
-            mode: 'structured',
             prompt: assessHealthPrompt,
             model: 'haiku',
             effort: 'low',
@@ -94,7 +93,6 @@ export function buildHealthMonitor(baseUrl: string) {
             b.sequence('new-outage', (b) => {
               b.condition('no-active-incident', noActiveIncident);
               b.agent('draft-incident-report', {
-                mode: 'structured',
                 prompt: draftIncidentReportPrompt,
                 model: 'haiku',
                 outputSchema: IncidentReportSchema,
@@ -103,7 +101,6 @@ export function buildHealthMonitor(baseUrl: string) {
             // Ongoing outage: periodic status update (throttled)
             b.guard('throttle-updates', { condition: enoughTimeSinceLastUpdate }, (b) => {
               b.agent('draft-status-update', {
-                mode: 'structured',
                 prompt: draftStatusUpdatePrompt,
                 model: 'haiku',
                 outputSchema: StatusUpdateSchema,
@@ -119,7 +116,6 @@ export function buildHealthMonitor(baseUrl: string) {
         b.sequence('recovery-path', (b) => {
           b.condition('was-down-now-healthy', wasDownNowHealthy);
           b.agent('draft-resolution', {
-            mode: 'structured',
             prompt: draftResolutionPrompt,
             model: 'haiku',
             outputSchema: ResolutionSummarySchema,

@@ -7,7 +7,7 @@ Cartographer lets you compose AI agents, deterministic logic, and scheduled auto
 ## Features
 
 - **Classical behavior tree nodes** — Sequences, selectors, parallel nodes, and seven decorator types (retry, timeout, guard, inverter, repeat, always-succeed, always-fail).
-- **Agent nodes** — Structured mode for schema-validated single-turn responses, unstructured mode for multi-turn tool-using interactions.
+- **Agent nodes** — Agentic Claude SDK calls with optional `outputSchema` for structured, schema-validated output.
 - **Agent strategies** — Swap static child ordering or parallel policies for AI-driven decisions at runtime.
 - **Blackboard state management** — Shared key-value store with namespace scoping for inter-node communication.
 - **Event-driven observability** — Typed events for node lifecycle, agent calls, blackboard writes, and strategy decisions.
@@ -59,7 +59,6 @@ import { z } from "zod/v4";
 const tree = new TreeBuilder("classifier")
   .sequence("main", (b) => {
     b.agent("classify", {
-      mode: "structured",
       prompt: (ctx) => `Classify this ticket: ${ctx.blackboard.get<string>("ticket")}`,
       model: "haiku",
       effort: "low",
@@ -89,7 +88,7 @@ Full documentation is available in the [`docs/`](docs/) directory:
 - [Composites](docs/guide-composites.md) — Selectors, sequences, parallel nodes, and strategies.
 - [Decorators](docs/guide-decorators.md) — All seven decorator types with examples.
 - [Blackboard and Events](docs/guide-blackboard-and-events.md) — State management and observability.
-- [Agent Integration](docs/guide-agent-integration.md) — AgentNode modes, agent strategies, and MCP tools.
+- [Agent Integration](docs/guide-agent-integration.md) — AgentNode configuration, agent strategies, and MCP tools.
 - [Scheduler](docs/guide-scheduler.md) — Interval, cron, and one-shot scheduling.
 - [API Reference](docs/api/index.md) — Complete API documentation.
 

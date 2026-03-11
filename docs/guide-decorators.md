@@ -225,7 +225,6 @@ builder.guard('check-budget', {
   condition: (ctx) => (ctx.blackboard.get<number>('spent') ?? 0) < 1.0,
 }, (b) => {
   b.agent('expensive-agent', {
-    mode: 'unstructured',
     prompt: 'Analyze the data',
     maxBudgetUsd: 0.50,
   });

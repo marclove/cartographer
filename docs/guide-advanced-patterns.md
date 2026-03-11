@@ -446,7 +446,6 @@ root:
   children:
     - type: agent
       name: classify-intent
-      mode: structured
       prompt: "Classify the user's intent"
       outputSchema: intent-schema
       model: haiku
@@ -454,7 +453,6 @@ root:
       blackboardNamespace: classify
     - type: agent
       name: generate-response
-      mode: unstructured
       prompt: "Generate a response based on the classification"
       systemPrompt: "You are a helpful assistant"
       maxTurns: 5
@@ -495,7 +493,6 @@ root:
           # Classify with AI
           - type: agent
             name: classify
-            mode: structured
             prompt: "Classify this support ticket"
             outputSchema: ticket-classification
             model: haiku
@@ -532,6 +529,6 @@ root:
 ## Next Steps
 
 - [Building Trees](guide-building-trees.md) — Builder API, YAML config, and manual wiring compared side-by-side.
-- [Agent Integration](guide-agent-integration.md) — AgentNode modes, agent strategies, and MCP tool configuration.
+- [Agent Integration](guide-agent-integration.md) — AgentNode configuration, agent strategies, and MCP tool configuration.
 - [Error Handling and Resilience](guide-error-handling.md) — Recovery patterns and abort semantics.
 - [Testing Behavior Trees](guide-testing.md) — Test helpers and multi-tick test patterns.

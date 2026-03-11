@@ -98,7 +98,6 @@ describe('TreeLoader', () => {
       root: {
         type: 'agent',
         name: 'classify',
-        mode: 'structured',
         prompt: 'Classify this input',
         outputSchema: 'TestSchema',
         model: 'sonnet',

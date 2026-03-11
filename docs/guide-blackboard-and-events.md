@@ -116,7 +116,7 @@ Fired when a node's `execute()` throws. The node still emits `node:exit` with `F
 Fired before an `AgentNode` calls the Claude SDK.
 
 ```typescript
-{ node: BTreeNode; prompt: string; mode: 'structured' | 'unstructured' }
+{ node: BTreeNode; prompt: string }
 ```
 
 ### `agent:thinking`
@@ -137,7 +137,7 @@ Fired when the SDK produces a text content block in an assistant message.
 
 ### `agent:tool_use`
 
-Fired for each tool call in both structured and unstructured mode.
+Fired for each tool call made by the agent.
 
 ```typescript
 { node: BTreeNode; tool: string; input: unknown }
@@ -305,7 +305,7 @@ Each log line is a JSON object with a `ts` (ISO timestamp) and `event` field, pl
 
 ```jsonl
 {"ts":"2026-03-10T07:00:00.000Z","event":"node:enter","node":"classify"}
-{"ts":"2026-03-10T07:00:00.123Z","event":"agent:prompt","node":"classify","mode":"structured","prompt":"..."}
+{"ts":"2026-03-10T07:00:00.123Z","event":"agent:prompt","node":"classify","prompt":"..."}
 {"ts":"2026-03-10T07:00:01.456Z","event":"agent:response","node":"classify","result":{...},"cost":0.0012}
 {"ts":"2026-03-10T07:00:01.457Z","event":"node:exit","node":"classify","status":"success","durationMs":1457}
 ```

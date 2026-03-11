@@ -181,7 +181,7 @@ Event map defining every event a tree can emit.
 | `node:enter` | `{ node: BTreeNode; context: TreeContext }` |
 | `node:exit` | `{ node: BTreeNode; status: NodeStatus; context: TreeContext; durationMs: number }` |
 | `node:error` | `{ node: BTreeNode; error: Error; context: TreeContext }` |
-| `agent:prompt` | `{ node: BTreeNode; prompt: string; mode: 'structured' \| 'unstructured' }` |
+| `agent:prompt` | `{ node: BTreeNode; prompt: string }` |
 | `agent:thinking` | `{ node: BTreeNode; thinking: string }` |
 | `agent:text` | `{ node: BTreeNode; text: string }` |
 | `agent:tool_use` | `{ node: BTreeNode; tool: string; input: unknown }` |
