@@ -107,6 +107,13 @@ export class AgentNode extends BaseNode {
    */
   private cachedStatus: NodeStatus | null = null;
 
+  /**
+   * The `AbortController` for the currently in-flight SDK `query()` call.
+   * `null` when no call is in progress. Set at the start of `execute()`
+   * and cleared when it completes (success or failure).
+   */
+  private activeAbortController: AbortController | null = null;
+
   constructor(config: AgentNodeConfig) {
     super(config.name, config.id);
     this.config = config;
@@ -120,6 +127,18 @@ export class AgentNode extends BaseNode {
    */
   reset(): void {
     this.cachedStatus = null;
+    this.activeAbortController = null;
+  }
+
+  /**
+   * Abort the in-flight SDK request, if any.
+   *
+   * Called by `BehaviorTree.abort()` when the tree is aborted. Signals the
+   * `AbortController` passed to the SDK's `query()`, which cancels the
+   * underlying API request.
+   */
+  abort(): void {
+    this.activeAbortController?.abort();
   }
 
   protected async execute(context: TreeContext): Promise<NodeStatus> {
@@ -167,77 +186,87 @@ export class AgentNode extends BaseNode {
       }
     }
 
+    // Create a fresh AbortController for this execution so abort() can
+    // cancel the in-flight SDK request.
+    const abortController = new AbortController();
+    this.activeAbortController = abortController;
+
     const options: Record<string, unknown> = {
       ...userOptions,
       mcpServers,
       allowedTools,
       permissionMode: userOptions.permissionMode ?? 'default',
       ...(outputFormat && { outputFormat }),
+      abortController,
     };
 
-    for await (const message of query({ prompt, options } as any)) {
-      const msg = message as any;
+    try {
+      for await (const message of query({ prompt, options } as any)) {
+        const msg = message as any;
 
-      emitMessageEvents(msg, this, context.events);
+        emitMessageEvents(msg, this, context.events);
 
-      if (msg.type === 'result') {
-        const cost = msg.total_cost_usd;
+        if (msg.type === 'result') {
+          const cost = msg.total_cost_usd;
 
-        if (msg.subtype === 'success') {
-          // When outputFormat was provided, prefer the SDK's pre-parsed
-          // structured_output; fall back to JSON-parsing the raw result
-          // string, then the string itself.
-          let output: unknown;
-          if (userOptions.outputFormat) {
-            output = msg.structured_output;
-            if (output === undefined && typeof msg.result === 'string') {
-              try {
-                output = JSON.parse(msg.result);
-              } catch {
-                output = msg.result;
+          if (msg.subtype === 'success') {
+            // When outputFormat was provided, prefer the SDK's pre-parsed
+            // structured_output; fall back to JSON-parsing the raw result
+            // string, then the string itself.
+            let output: unknown;
+            if (userOptions.outputFormat) {
+              output = msg.structured_output;
+              if (output === undefined && typeof msg.result === 'string') {
+                try {
+                  output = JSON.parse(msg.result);
+                } catch {
+                  output = msg.result;
+                }
               }
+            } else {
+              output = msg.result;
             }
-          } else {
-            output = msg.result;
+
+            context.events.emit('agent:response', {
+              node: this,
+              result: output,
+              cost,
+            });
+
+            if (output !== undefined) {
+              const ns = this.config.blackboardNamespace;
+              const key = ns ? `${ns}:${this.name}:output` : `${this.name}:output`;
+              context.blackboard.set(key, output);
+            }
+
+            if (this.config.mapResult) {
+              const status = this.config.mapResult(output, context);
+              if (this.config.cache) {
+                this.cachedStatus = status;
+              }
+              return status;
+            }
+
+            if (this.config.cache) {
+              this.cachedStatus = NodeStatus.SUCCESS;
+            }
+            return NodeStatus.SUCCESS;
           }
 
-          context.events.emit('agent:response', {
+          context.events.emit('agent:error', {
             node: this,
-            result: output,
+            subtype: msg.subtype,
+            errors: msg.errors,
+            permissionDenials: msg.permission_denials,
             cost,
           });
-
-          if (output !== undefined) {
-            const ns = this.config.blackboardNamespace;
-            const key = ns ? `${ns}:${this.name}:output` : `${this.name}:output`;
-            context.blackboard.set(key, output);
-          }
-
-          if (this.config.mapResult) {
-            const status = this.config.mapResult(output, context);
-            if (this.config.cache) {
-              this.cachedStatus = status;
-            }
-            return status;
-          }
-
-          if (this.config.cache) {
-            this.cachedStatus = NodeStatus.SUCCESS;
-          }
-          return NodeStatus.SUCCESS;
+          return NodeStatus.FAILURE;
         }
-
-        context.events.emit('agent:error', {
-          node: this,
-          subtype: msg.subtype,
-          errors: msg.errors,
-          permissionDenials: msg.permission_denials,
-          cost,
-        });
-        return NodeStatus.FAILURE;
       }
-    }
 
-    return NodeStatus.FAILURE;
+      return NodeStatus.FAILURE;
+    } finally {
+      this.activeAbortController = null;
+    }
   }
 }

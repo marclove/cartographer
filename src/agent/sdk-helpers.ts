@@ -56,6 +56,7 @@ export async function queryStructured<T extends z.ZodType>(
   schema: T,
   config: AgentStrategyConfig,
   onMessage?: (msg: unknown) => void,
+  abortController?: AbortController,
 ): Promise<z.infer<T> | null> {
   try {
     // Strip the $schema meta-property — the Claude SDK does not accept it.
@@ -68,6 +69,7 @@ export async function queryStructured<T extends z.ZodType>(
         outputFormat: { type: 'json_schema', schema: jsonSchema },
         model: userOptions.model ?? 'sonnet',
         effort: userOptions.effort ?? 'low',
+        ...(abortController && { abortController }),
       },
     } as any)) {
       const msg = message as any;

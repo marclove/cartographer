@@ -249,6 +249,82 @@ describe('AgentNode - unstructured output', () => {
   });
 });
 
+describe('AgentNode - abort support', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('passes an AbortController to the SDK options', async () => {
+    let capturedAbortController: AbortController | undefined;
+
+    // Mock query to capture the options and simulate a long-running call
+    mockQuery.mockImplementation(({ options }: any) => {
+      capturedAbortController = options.abortController;
+      return mockMessages([
+        { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 },
+      ]) as any;
+    });
+
+    const node = new AgentNode({ name: 'abortable', prompt: 'Do work' });
+    const ctx = createContext();
+    await node.tick(ctx);
+
+    expect(capturedAbortController).toBeInstanceOf(AbortController);
+    expect(capturedAbortController!.signal.aborted).toBe(false);
+
+    // After execute completes, activeAbortController is cleared,
+    // so abort() is a no-op (does not throw)
+    node.abort();
+  });
+
+  it('abort() signals the AbortController during an in-flight call', async () => {
+    let capturedAbortController: AbortController | undefined;
+    let resolveMessage!: () => void;
+
+    // Mock query that yields one message then waits — giving us time to call abort()
+    mockQuery.mockImplementation(({ options }: any) => {
+      capturedAbortController = options.abortController;
+      return (async function* () {
+        // Wait for the test to call abort() before yielding the result
+        await new Promise<void>((resolve) => { resolveMessage = resolve; });
+        yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+      })() as any;
+    });
+
+    const node = new AgentNode({ name: 'inflight', prompt: 'Do work' });
+    const ctx = createContext();
+    const tickPromise = node.tick(ctx);
+
+    // The SDK call is in-flight — abort should signal the controller
+    node.abort();
+    expect(capturedAbortController!.signal.aborted).toBe(true);
+
+    // Let the mock finish so the tick completes
+    resolveMessage();
+    await tickPromise;
+  });
+
+  it('creates a fresh AbortController per execute() call', async () => {
+    const controllers: AbortController[] = [];
+
+    mockQuery.mockImplementation(({ options }: any) => {
+      controllers.push(options.abortController);
+      return mockMessages([
+        { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 },
+      ]) as any;
+    });
+
+    const node = new AgentNode({ name: 'fresh-ac', prompt: 'Do work' });
+    const ctx = createContext();
+
+    await node.tick(ctx);
+    await node.tick(ctx);
+
+    expect(controllers).toHaveLength(2);
+    expect(controllers[0]).not.toBe(controllers[1]);
+  });
+});
+
 describe('AgentNode - observability events', () => {
   beforeEach(() => {
     vi.clearAllMocks();
