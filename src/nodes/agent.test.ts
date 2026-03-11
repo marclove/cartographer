@@ -172,6 +172,23 @@ describe('AgentNode - unstructured output', () => {
     expect(ctx.blackboard.get('runner:output')).toBe('All tests pass');
   });
 
+  it('writes result to namespaced key when blackboardNamespace is set', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      { type: 'result', subtype: 'success', result: 'namespaced result', total_cost_usd: 0.02 },
+    ]) as any);
+
+    const node = new AgentNode({
+      name: 'runner',
+      prompt: 'Run tests',
+      blackboardNamespace: 'integration',
+    });
+
+    const ctx = createContext();
+    await node.tick(ctx);
+    expect(ctx.blackboard.get('integration:runner:output')).toBe('namespaced result');
+    expect(ctx.blackboard.get('runner:output')).toBeUndefined();
+  });
+
   it('emits agent:response event', async () => {
     mockQuery.mockReturnValue(mockMessages([
       { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.03 },

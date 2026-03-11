@@ -207,7 +207,9 @@ export class AgentNode extends BaseNode {
           });
 
           if (output !== undefined) {
-            context.blackboard.set(`${this.name}:output`, output);
+            const ns = this.config.blackboardNamespace;
+            const key = ns ? `${ns}:${this.name}:output` : `${this.name}:output`;
+            context.blackboard.set(key, output);
           }
 
           if (this.config.mapResult) {
