@@ -7,7 +7,7 @@ AgentNode integrates Claude via the Agent SDK, bringing AI-powered reasoning int
 ## AgentNode Config
 
 ```typescript
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import type { Options } from "@anthropic-ai/claude-agent-sdk";
 
 interface AgentNodeConfig {
   name: string;
@@ -19,7 +19,7 @@ interface AgentNodeConfig {
 }
 ```
 
-The `options` field accepts any property from the Agent SDK's `Options` type -- `model`, `effort`, `outputFormat`, `allowedTools`, `mcpServers`, `systemPrompt`, `maxTurns`, `maxBudgetUsd`, `permissionMode`, and many more. See the [Agent SDK documentation](https://github.com/anthropics/claude-agent-sdk) for the full list of available options.
+The `options` field accepts any property from the Agent SDK's `Options` type -- `model`, `effort`, `outputFormat`, `allowedTools`, `mcpServers`, `systemPrompt`, `maxTurns`, `maxBudgetUsd`, `permissionMode`, and many more. See the [Agent SDK documentation](https://platform.claude.com/docs/en/agent-sdk/typescript#options) for the full list of available options.
 
 All AgentNode calls share these behaviors:
 
@@ -34,20 +34,20 @@ All AgentNode calls share these behaviors:
 At its simplest, an AgentNode sends a prompt to Claude and writes the result to the blackboard:
 
 ```typescript
-import { AgentNode } from 'cartographer';
+import { AgentNode } from "cartographer";
 
 const researcher = new AgentNode({
-  name: 'research-topic',
+  name: "research-topic",
   prompt: (ctx) => `Research the following topic and write a summary.
 
-Topic: ${ctx.blackboard.get<string>('topic')}`,
+Topic: ${ctx.blackboard.get<string>("topic")}`,
   options: {
-    model: 'claude-sonnet-4-6',
+    model: "claude-sonnet-4-6",
     maxTurns: 10,
-    maxBudgetUsd: 0.50,
-    systemPrompt: 'You are a research assistant. Be thorough but concise.',
-    permissionMode: 'acceptEdits',
-    allowedTools: ['mcp__web__search'],
+    maxBudgetUsd: 0.5,
+    systemPrompt: "You are a research assistant. Be thorough but concise.",
+    permissionMode: "acceptEdits",
+    allowedTools: ["mcp__web__search"],
     mcpServers: {
       web: webSearchServer,
     },
@@ -74,23 +74,25 @@ If you're using Zod, convert your schema with `z.toJSONSchema()`. Cartographer a
 If `mapResult` is not provided, a successful agent call returns `SUCCESS`.
 
 ```typescript
-import { z } from 'zod/v4';
-import { AgentNode, NodeStatus } from 'cartographer';
+import { z } from "zod/v4";
+import { AgentNode, NodeStatus } from "cartographer";
 
 const classifier = new AgentNode({
-  name: 'classify-intent',
+  name: "classify-intent",
   prompt: (ctx) => `Classify the following user message into one of the categories.
 
-Message: ${ctx.blackboard.get<string>('userMessage')}`,
+Message: ${ctx.blackboard.get<string>("userMessage")}`,
   options: {
-    model: 'claude-haiku-4-5-20251001',
-    effort: 'low',
+    model: "claude-haiku-4-5-20251001",
+    effort: "low",
     outputFormat: {
-      type: 'json_schema',
-      schema: z.toJSONSchema(z.object({
-        category: z.enum(['question', 'complaint', 'feedback', 'other']),
-        confidence: z.number(),
-      })) as any,
+      type: "json_schema",
+      schema: z.toJSONSchema(
+        z.object({
+          category: z.enum(["question", "complaint", "feedback", "other"]),
+          confidence: z.number(),
+        }),
+      ) as any,
     },
   },
   mapResult: (output, ctx) => {
@@ -109,7 +111,7 @@ All SDK options are available regardless of whether `outputFormat` is set.
 `createBlackboardMcpServer(blackboard, namespace?)` creates an MCP server that is automatically attached to every AgentNode.
 
 ```typescript
-import { createBlackboardMcpServer } from 'cartographer';
+import { createBlackboardMcpServer } from "cartographer";
 ```
 
 The server exposes three tools:
@@ -129,17 +131,17 @@ This bridges the gap between deterministic BT nodes and AI-powered reasoning, al
 The `prompt` field accepts either a string or a function `(context: TreeContext) => string`. Use functions to interpolate blackboard state:
 
 ```typescript
-import { z } from 'zod/v4';
+import { z } from "zod/v4";
 
 const summarizer = new AgentNode({
-  name: 'summarize',
+  name: "summarize",
   prompt: (ctx) => {
-    const data = ctx.blackboard.get<string[]>('articles');
-    return `Summarize these ${data?.length ?? 0} articles:\n${data?.join('\n')}`;
+    const data = ctx.blackboard.get<string[]>("articles");
+    return `Summarize these ${data?.length ?? 0} articles:\n${data?.join("\n")}`;
   },
   options: {
     outputFormat: {
-      type: 'json_schema',
+      type: "json_schema",
       schema: z.toJSONSchema(z.object({ summary: z.string() })) as any,
     },
   },
@@ -155,7 +157,7 @@ Agent strategies use Claude to make composite-level decisions. See [guide-compos
 ### Config
 
 ```typescript
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import type { Options } from "@anthropic-ai/claude-agent-sdk";
 
 interface AgentStrategyConfig {
   prompt: string | ((children: BTreeNode[], context: TreeContext) => string);
@@ -165,7 +167,7 @@ interface AgentStrategyConfig {
 }
 ```
 
-The `options` field accepts the same Agent SDK `Options` as `AgentNodeConfig`. Agent strategies default to `model: 'sonnet'` and `effort: 'low'` when not specified.
+The `options` field accepts the same [Agent SDK `Options`](https://platform.claude.com/docs/en/agent-sdk/typescript#options) as `AgentNodeConfig`. Agent strategies default to `model: 'sonnet'` and `effort: 'low'` when not specified.
 
 ### Implementations
 
@@ -187,20 +189,20 @@ Both `AgentNode` and the agent strategies accept a `cache: true` option.
 
 ```typescript
 // Agent node: call Claude once, return cached status on subsequent ticks
-b.agent('classify', {
-  prompt: 'Classify this ticket',
-  options: { model: 'claude-haiku-4-5-20251001' },
+b.agent("classify", {
+  prompt: "Classify this ticket",
+  options: { model: "claude-haiku-4-5-20251001" },
   cache: true,
 });
 ```
 
-**Agent strategy caching:** Composites (sequence, selector) already guarantee intra-cycle order stability — the strategy is consulted once when an execution cycle starts and the order is committed until the cycle completes (SUCCESS/FAILURE) or the node is reset. The `cache` flag on strategies controls whether the decision persists *across* execution cycles. Without it, a new cycle re-consults the strategy. With it, the same decision is reused until `reset()`.
+**Agent strategy caching:** Composites (sequence, selector) already guarantee intra-cycle order stability — the strategy is consulted once when an execution cycle starts and the order is committed until the cycle completes (SUCCESS/FAILURE) or the node is reset. The `cache` flag on strategies controls whether the decision persists _across_ execution cycles. Without it, a new cycle re-consults the strategy. With it, the same decision is reused until `reset()`.
 
 ```typescript
 // Agent strategy: reuse the ordering across execution cycles until reset()
 const strategy = new AgentSelectionStrategy({
-  prompt: 'Pick the best approach',
-  options: { model: 'claude-haiku-4-5-20251001' },
+  prompt: "Pick the best approach",
+  options: { model: "claude-haiku-4-5-20251001" },
   cache: true,
 });
 ```
@@ -222,11 +224,11 @@ Control costs with:
 - Track spending via `agent:response` and `agent:error` events (both include a `cost` field).
 
 ```typescript
-tree.events.on('agent:response', ({ node, cost }) => {
+tree.events.on("agent:response", ({ node, cost }) => {
   console.log(`${node.name}: $${cost?.toFixed(4)}`);
 });
 
-tree.events.on('agent:error', ({ node, subtype, cost }) => {
+tree.events.on("agent:error", ({ node, subtype, cost }) => {
   console.log(`${node.name} failed (${subtype}): $${cost?.toFixed(4)}`);
 });
 ```
@@ -235,12 +237,12 @@ tree.events.on('agent:error', ({ node, subtype, cost }) => {
 
 ## With vs Without `outputFormat`
 
-| Criterion | With `outputFormat` | Without `outputFormat` |
-|-----------|-----------|---------|
-| Output format | JSON schema validated | Free text |
-| `mapResult` | Available | Available |
-| Tools | All options available | All options available |
-| Use when | Classification, extraction, formatting | Research, code gen, complex reasoning |
+| Criterion     | With `outputFormat`                    | Without `outputFormat`                |
+| ------------- | -------------------------------------- | ------------------------------------- |
+| Output format | JSON schema validated                  | Free text                             |
+| `mapResult`   | Available                              | Available                             |
+| Tools         | All options available                  | All options available                 |
+| Use when      | Classification, extraction, formatting | Research, code gen, complex reasoning |
 
 ---
 
@@ -249,50 +251,52 @@ tree.events.on('agent:error', ({ node, subtype, cost }) => {
 This example combines structured and unstructured agent calls in a single tree. A cheap structured call classifies a support ticket, then conditional routing decides whether to escalate to a more thorough handler. For a complete, runnable version of this pattern with Zod schemas, billing analysis, and escalation handling, see the [content pipeline example](../examples/README.md#content-pipeline).
 
 ```typescript
-import { z } from 'zod/v4';
-import { TreeBuilder, NodeStatus, AgentNode } from 'cartographer';
+import { z } from "zod/v4";
+import { TreeBuilder, NodeStatus, AgentNode } from "cartographer";
 
-const tree = new TreeBuilder('classification-pipeline')
-  .sequence('classify-and-act', (b) => {
+const tree = new TreeBuilder("classification-pipeline")
+  .sequence("classify-and-act", (b) => {
     // Step 1: Classify with structured output (fast, cheap)
-    b.agent('classify', {
-      prompt: (ctx) => `Classify this support ticket: ${ctx.blackboard.get<string>('ticket')}`,
+    b.agent("classify", {
+      prompt: (ctx) => `Classify this support ticket: ${ctx.blackboard.get<string>("ticket")}`,
       options: {
-        model: 'claude-haiku-4-5-20251001',
-        effort: 'low',
+        model: "claude-haiku-4-5-20251001",
+        effort: "low",
         outputFormat: {
-          type: 'json_schema',
-          schema: z.toJSONSchema(z.object({
-            category: z.enum(['billing', 'technical', 'general']),
-            urgency: z.enum(['low', 'medium', 'high']),
-          })) as any,
+          type: "json_schema",
+          schema: z.toJSONSchema(
+            z.object({
+              category: z.enum(["billing", "technical", "general"]),
+              urgency: z.enum(["low", "medium", "high"]),
+            }),
+          ) as any,
         },
       },
     });
 
     // Step 2: Route based on classification
-    b.selector('route', (b) => {
-      b.sequence('urgent-path', (b) => {
-        b.condition('is-urgent', (ctx) => {
-          const result = ctx.blackboard.get<{ urgency: string }>('classify:output');
-          return result?.urgency === 'high';
+    b.selector("route", (b) => {
+      b.sequence("urgent-path", (b) => {
+        b.condition("is-urgent", (ctx) => {
+          const result = ctx.blackboard.get<{ urgency: string }>("classify:output");
+          return result?.urgency === "high";
         });
         // Step 3: Handle urgent tickets thoroughly
-        b.agent('handle-urgent', {
+        b.agent("handle-urgent", {
           prompt: (ctx) => {
-            const ticket = ctx.blackboard.get<string>('ticket');
-            const classification = ctx.blackboard.get('classify:output');
+            const ticket = ctx.blackboard.get<string>("ticket");
+            const classification = ctx.blackboard.get("classify:output");
             return `Draft an urgent response for this ${JSON.stringify(classification)} ticket: ${ticket}`;
           },
           options: {
-            model: 'claude-sonnet-4-6',
+            model: "claude-sonnet-4-6",
             maxTurns: 5,
             maxBudgetUsd: 0.25,
           },
         });
       });
-      b.action('handle-normal', async (ctx) => {
-        console.log('Queued for standard processing');
+      b.action("handle-normal", async (ctx) => {
+        console.log("Queued for standard processing");
         return NodeStatus.SUCCESS;
       });
     });

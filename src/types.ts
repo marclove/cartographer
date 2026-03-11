@@ -482,7 +482,8 @@ export interface AgentStrategyConfig {
    * SDK options passed directly to the Claude Agent SDK `query()` call.
    *
    * Use this to configure model, effort, thinking, tools, MCP servers,
-   * and any other SDK option. Defaults applied when not set:
+   * and [any other SDK option](https://platform.claude.com/docs/en/agent-sdk/typescript#options).
+   * Defaults applied when not set:
    * - `model`: `'sonnet'`
    * - `effort`: `'low'`
    */
@@ -649,7 +650,7 @@ export interface AgentNodeConfig {
    * SDK options passed directly to the Claude Agent SDK `query()` call.
    *
    * Use this to configure model, effort, thinking, tools, MCP servers,
-   * system prompt, output format, budget limits, and any other SDK option.
+   * system prompt, output format, budget limits, and [any other SDK option](https://platform.claude.com/docs/en/agent-sdk/typescript#options).
    * The blackboard MCP server and its tools are always injected automatically.
    */
   options?: Partial<Options>;

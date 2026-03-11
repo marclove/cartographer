@@ -7,7 +7,7 @@ All node classes are exported from the `cartographer` package.
 ## BaseNode
 
 ```typescript
-import { BaseNode } from 'cartographer';
+import { BaseNode } from "cartographer";
 ```
 
 Abstract class implementing `BTreeNode`. Base for all built-in nodes.
@@ -22,10 +22,10 @@ Called via `super(name)` in subclasses.
 
 ### Properties
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | `string` (readonly) | Auto-generated UUID |
-| `name` | `string` (readonly) | Human-readable name, set via constructor |
+| Property | Type                | Description                              |
+| -------- | ------------------- | ---------------------------------------- |
+| `id`     | `string` (readonly) | Auto-generated UUID                      |
+| `name`   | `string` (readonly) | Human-readable name, set via constructor |
 
 ### Public Methods
 
@@ -55,11 +55,11 @@ Subclasses implement this to define tick behavior.
 ### Example
 
 ```typescript
-import { BaseNode, NodeStatus, TreeContext } from 'cartographer';
+import { BaseNode, NodeStatus, TreeContext } from "cartographer";
 
 class MyNode extends BaseNode {
   constructor() {
-    super('my-node');
+    super("my-node");
   }
 
   protected async execute(ctx: TreeContext): Promise<NodeStatus> {
@@ -73,7 +73,7 @@ class MyNode extends BaseNode {
 ## ActionNode
 
 ```typescript
-import { ActionNode } from 'cartographer';
+import { ActionNode } from "cartographer";
 ```
 
 Leaf node that delegates execution to a user-supplied function.
@@ -86,20 +86,20 @@ new ActionNode(config: ActionNodeConfig)
 
 ### ActionNodeConfig
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | `string` | Yes | Node name |
-| `action` | `(context: TreeContext) => Promise<NodeStatus> \| NodeStatus` | Yes | Function invoked on each tick. Return value becomes the node status. |
+| Field    | Type                                                          | Required | Description                                                          |
+| -------- | ------------------------------------------------------------- | -------- | -------------------------------------------------------------------- |
+| `name`   | `string`                                                      | Yes      | Node name                                                            |
+| `action` | `(context: TreeContext) => Promise<NodeStatus> \| NodeStatus` | Yes      | Function invoked on each tick. Return value becomes the node status. |
 
 ### Example
 
 ```typescript
-import { ActionNode, NodeStatus } from 'cartographer';
+import { ActionNode, NodeStatus } from "cartographer";
 
 const node = new ActionNode({
-  name: 'greet',
+  name: "greet",
   action: (ctx) => {
-    ctx.blackboard.set('greeting', 'hello');
+    ctx.blackboard.set("greeting", "hello");
     return NodeStatus.SUCCESS;
   },
 });
@@ -110,7 +110,7 @@ const node = new ActionNode({
 ## ConditionNode
 
 ```typescript
-import { ConditionNode } from 'cartographer';
+import { ConditionNode } from "cartographer";
 ```
 
 Leaf node that evaluates a boolean predicate. Returns `SUCCESS` when the predicate is `true`, `FAILURE` when `false`. Never returns `RUNNING`.
@@ -123,19 +123,19 @@ new ConditionNode(config: ConditionNodeConfig)
 
 ### ConditionNodeConfig
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | `string` | Yes | Node name |
-| `condition` | `(context: TreeContext) => Promise<boolean> \| boolean` | Yes | Predicate function. `true` maps to `SUCCESS`, `false` maps to `FAILURE`. |
+| Field       | Type                                                    | Required | Description                                                              |
+| ----------- | ------------------------------------------------------- | -------- | ------------------------------------------------------------------------ |
+| `name`      | `string`                                                | Yes      | Node name                                                                |
+| `condition` | `(context: TreeContext) => Promise<boolean> \| boolean` | Yes      | Predicate function. `true` maps to `SUCCESS`, `false` maps to `FAILURE`. |
 
 ### Example
 
 ```typescript
-import { ConditionNode } from 'cartographer';
+import { ConditionNode } from "cartographer";
 
 const node = new ConditionNode({
-  name: 'is-ready',
-  condition: (ctx) => ctx.blackboard.get<boolean>('ready') === true,
+  name: "is-ready",
+  condition: (ctx) => ctx.blackboard.get<boolean>("ready") === true,
 });
 ```
 
@@ -144,7 +144,7 @@ const node = new ConditionNode({
 ## AgentNode
 
 ```typescript
-import { AgentNode } from 'cartographer';
+import { AgentNode } from "cartographer";
 ```
 
 Leaf node that invokes the Claude Agent SDK. Every call is an agentic SDK invocation. SDK options are passed directly via the `options` field, giving you access to the full range of Agent SDK capabilities.
@@ -157,14 +157,14 @@ new AgentNode(config: AgentNodeConfig)
 
 ### AgentNodeConfig
 
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `name` | `string` | Yes | -- | Node name |
-| `prompt` | `string \| ((context: TreeContext) => string)` | Yes | -- | Prompt sent to Claude. Can be a static string or a function that builds the prompt from context. |
-| `mapResult` | `(output: unknown, context: TreeContext) => NodeStatus` | No | -- | Maps the agent output to a `NodeStatus`. When omitted, any successful response returns `SUCCESS`. |
-| `blackboardNamespace` | `string` | No | -- | When set, the auto-attached blackboard MCP server operates on a scoped namespace instead of the full blackboard. |
-| `cache` | `boolean` | No | `false` | When `true`, the node calls Claude once and returns the cached status on subsequent ticks. Cleared on `reset()`. |
-| `options` | `Partial<Options>` | No | -- | Agent SDK options passed directly to the SDK. Includes `model`, `effort`, `outputFormat`, `allowedTools`, `mcpServers`, `systemPrompt`, `maxTurns`, `maxBudgetUsd`, `permissionMode`, and [many more](https://github.com/anthropics/claude-agent-sdk). |
+| Field                 | Type                                                    | Required | Default | Description                                                                                                                                                                                                                                                              |
+| --------------------- | ------------------------------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`                | `string`                                                | Yes      | --      | Node name                                                                                                                                                                                                                                                                |
+| `prompt`              | `string \| ((context: TreeContext) => string)`          | Yes      | --      | Prompt sent to Claude. Can be a static string or a function that builds the prompt from context.                                                                                                                                                                         |
+| `mapResult`           | `(output: unknown, context: TreeContext) => NodeStatus` | No       | --      | Maps the agent output to a `NodeStatus`. When omitted, any successful response returns `SUCCESS`.                                                                                                                                                                        |
+| `blackboardNamespace` | `string`                                                | No       | --      | When set, the auto-attached blackboard MCP server operates on a scoped namespace instead of the full blackboard.                                                                                                                                                         |
+| `cache`               | `boolean`                                               | No       | `false` | When `true`, the node calls Claude once and returns the cached status on subsequent ticks. Cleared on `reset()`.                                                                                                                                                         |
+| `options`             | `Partial<Options>`                                      | No       | --      | Agent SDK options passed directly to the SDK. Includes `model`, `effort`, `outputFormat`, `allowedTools`, `mcpServers`, `systemPrompt`, `maxTurns`, `maxBudgetUsd`, `permissionMode`, and [many more](https://platform.claude.com/docs/en/agent-sdk/typescript#options). |
 
 ### Behavior
 
@@ -179,28 +179,28 @@ new AgentNode(config: AgentNodeConfig)
 ### Example
 
 ```typescript
-import { z } from 'zod/v4';
-import { AgentNode } from 'cartographer';
+import { z } from "zod/v4";
+import { AgentNode } from "cartographer";
 
 const classifier = new AgentNode({
-  name: 'classify',
-  prompt: 'Classify the following text.',
+  name: "classify",
+  prompt: "Classify the following text.",
   options: {
-    model: 'claude-haiku-4-5-20251001',
+    model: "claude-haiku-4-5-20251001",
     outputFormat: {
-      type: 'json_schema',
+      type: "json_schema",
       schema: z.toJSONSchema(z.object({ label: z.string() })) as any,
     },
   },
 });
 
 const coder = new AgentNode({
-  name: 'implement-feature',
-  prompt: (ctx) => `Implement: ${ctx.blackboard.get<string>('task')}`,
+  name: "implement-feature",
+  prompt: (ctx) => `Implement: ${ctx.blackboard.get<string>("task")}`,
   options: {
-    model: 'claude-sonnet-4-6',
-    allowedTools: ['Read', 'Edit', 'Bash'],
-    permissionMode: 'acceptEdits',
+    model: "claude-sonnet-4-6",
+    allowedTools: ["Read", "Edit", "Bash"],
+    permissionMode: "acceptEdits",
     maxTurns: 20,
   },
 });

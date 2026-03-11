@@ -7,7 +7,7 @@ Strategy interfaces control how composite nodes select, order, and execute their
 ### SelectionStrategy
 
 ```typescript
-import type { SelectionStrategy } from 'cartographer';
+import type { SelectionStrategy } from "cartographer";
 
 interface SelectionStrategy {
   order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]>;
@@ -20,7 +20,7 @@ Used by `SelectorNode`. Returns children in the order they should be tried. The 
 ### ExecutionStrategy
 
 ```typescript
-import type { ExecutionStrategy } from 'cartographer';
+import type { ExecutionStrategy } from "cartographer";
 
 interface ExecutionStrategy {
   order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]>;
@@ -33,7 +33,7 @@ Used by `SequenceNode`. Returns children in execution order. The optional `reset
 ### ParallelStrategy
 
 ```typescript
-import type { ParallelStrategy } from 'cartographer';
+import type { ParallelStrategy } from "cartographer";
 
 interface ParallelStrategy {
   policy(children: BTreeNode[], context: TreeContext): Promise<ParallelPolicy>;
@@ -46,7 +46,7 @@ Used by `ParallelNode`. Returns the success/failure policy. The optional `reset(
 ### ParallelPolicy
 
 ```typescript
-import type { ParallelPolicy } from 'cartographer';
+import type { ParallelPolicy } from "cartographer";
 
 interface ParallelPolicy {
   successCount?: number;
@@ -58,8 +58,8 @@ interface ParallelPolicy {
 ### AgentStrategyConfig
 
 ```typescript
-import type { AgentStrategyConfig } from 'cartographer';
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentStrategyConfig } from "cartographer";
+import type { Options } from "@anthropic-ai/claude-agent-sdk";
 
 interface AgentStrategyConfig {
   prompt: string | ((children: BTreeNode[], context: TreeContext) => string);
@@ -69,19 +69,19 @@ interface AgentStrategyConfig {
 }
 ```
 
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `prompt` | `string \| function` | Yes | — | Base prompt for Claude. Function receives children and context. |
-| `childDescriptions` | `Record<string, string>` | No | — | Maps child name to human description |
-| `cache` | `boolean` | No | `false` | When `true`, the strategy caches its decision across execution cycles. Composites already guarantee intra-cycle stability (strategy is called once per cycle). This flag controls whether the result persists after a cycle completes. Cleared on `reset()`. |
-| `options` | `Partial<Options>` | No | — | Agent SDK options passed directly to the SDK. Defaults to `model: 'sonnet'` and `effort: 'low'` when not specified. |
+| Field               | Type                     | Required | Default | Description                                                                                                                                                                                                                                                  |
+| ------------------- | ------------------------ | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `prompt`            | `string \| function`     | Yes      | —       | Base prompt for Claude. Function receives children and context.                                                                                                                                                                                              |
+| `childDescriptions` | `Record<string, string>` | No       | —       | Maps child name to human description                                                                                                                                                                                                                         |
+| `cache`             | `boolean`                | No       | `false` | When `true`, the strategy caches its decision across execution cycles. Composites already guarantee intra-cycle stability (strategy is called once per cycle). This flag controls whether the result persists after a cycle completes. Cleared on `reset()`. |
+| `options`           | `Partial<Options>`       | No       | —       | [Agent SDK options](https://platform.claude.com/docs/en/agent-sdk/typescript#options) passed directly to the SDK. Defaults to `model: 'sonnet'` and `effort: 'low'` when not specified.                                                                      |
 
 ## Default Strategies
 
 ### DefaultSelectionStrategy
 
 ```typescript
-import { DefaultSelectionStrategy } from 'cartographer';
+import { DefaultSelectionStrategy } from "cartographer";
 ```
 
 Constructor: `new DefaultSelectionStrategy()`
@@ -91,7 +91,7 @@ Returns children in original order (pass-through).
 ### DefaultExecutionStrategy
 
 ```typescript
-import { DefaultExecutionStrategy } from 'cartographer';
+import { DefaultExecutionStrategy } from "cartographer";
 ```
 
 Constructor: `new DefaultExecutionStrategy()`
@@ -101,7 +101,7 @@ Returns children in original order (pass-through).
 ### DefaultParallelStrategy
 
 ```typescript
-import { DefaultParallelStrategy } from 'cartographer';
+import { DefaultParallelStrategy } from "cartographer";
 ```
 
 Constructor: `new DefaultParallelStrategy(policy?: ParallelPolicy)`
@@ -111,9 +111,9 @@ If `policy` is provided, returns it. Otherwise defaults to `{ successCount: chil
 Example:
 
 ```typescript
-new DefaultParallelStrategy({ successCount: 2 })
-new DefaultParallelStrategy({ successPercentage: 75 })
-new DefaultParallelStrategy({ failureCount: 1 })
+new DefaultParallelStrategy({ successCount: 2 });
+new DefaultParallelStrategy({ successPercentage: 75 });
+new DefaultParallelStrategy({ failureCount: 1 });
 ```
 
 ## Agent Strategies
@@ -129,7 +129,7 @@ On agent failure (SDK error, invalid response), all gracefully fall back to defa
 ### AgentSelectionStrategy
 
 ```typescript
-import { AgentSelectionStrategy } from 'cartographer';
+import { AgentSelectionStrategy } from "cartographer";
 ```
 
 Constructor: `new AgentSelectionStrategy(config: AgentStrategyConfig)`
@@ -141,7 +141,7 @@ Emits `strategy:decision` with `strategy: 'agent-selection'`, plus the full suit
 ### AgentExecutionStrategy
 
 ```typescript
-import { AgentExecutionStrategy } from 'cartographer';
+import { AgentExecutionStrategy } from "cartographer";
 ```
 
 Constructor: `new AgentExecutionStrategy(config: AgentStrategyConfig)`
@@ -153,7 +153,7 @@ Emits `strategy:decision` with `strategy: 'agent-execution'`, plus the full suit
 ### AgentParallelStrategy
 
 ```typescript
-import { AgentParallelStrategy } from 'cartographer';
+import { AgentParallelStrategy } from "cartographer";
 ```
 
 Constructor: `new AgentParallelStrategy(config: AgentStrategyConfig)`
@@ -179,14 +179,14 @@ If the SDK throws an exception (as opposed to returning an error result), no `ag
 
 ```typescript
 const strategy = new AgentSelectionStrategy({
-  prompt: 'Choose the best data source',
+  prompt: "Choose the best data source",
   options: {
-    model: 'claude-haiku-4-5-20251001',
-    effort: 'low',
+    model: "claude-haiku-4-5-20251001",
+    effort: "low",
   },
   childDescriptions: {
-    'cache': 'Fast, possibly stale',
-    'api': 'Fresh, slower',
+    cache: "Fast, possibly stale",
+    api: "Fresh, slower",
   },
 });
 ```

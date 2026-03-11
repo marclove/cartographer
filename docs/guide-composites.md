@@ -32,14 +32,14 @@ The strategy is consulted once per execution cycle. The committed order is stabl
 ### Example
 
 ```typescript
-import { SelectorNode, ActionNode, NodeStatus } from 'cartographer';
+import { SelectorNode, ActionNode, NodeStatus } from "cartographer";
 
 const selector = new SelectorNode({
-  name: 'try-sources',
+  name: "try-sources",
   children: [
-    new ActionNode({ name: 'try-cache', action: tryCache }),
-    new ActionNode({ name: 'try-api', action: tryApi }),
-    new ActionNode({ name: 'use-default', action: useDefault }),
+    new ActionNode({ name: "try-cache", action: tryCache }),
+    new ActionNode({ name: "try-api", action: tryApi }),
+    new ActionNode({ name: "use-default", action: useDefault }),
   ],
 });
 ```
@@ -143,7 +143,7 @@ The optional `reset()` method is called by composites during their own `reset()`
 Agent strategies use Claude to make runtime decisions about child ordering or parallel policy. All three accept the same configuration:
 
 ```typescript
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import type { Options } from "@anthropic-ai/claude-agent-sdk";
 
 interface AgentStrategyConfig {
   prompt: string | ((children: BTreeNode[], context: TreeContext) => string);
@@ -153,7 +153,7 @@ interface AgentStrategyConfig {
 }
 ```
 
-The `options` field accepts any property from the Agent SDK's `Options` type. Agent strategies default to `model: 'sonnet'` and `effort: 'low'` when not specified.
+The `options` field accepts any property from the [Agent SDK's `Options` type](https://platform.claude.com/docs/en/agent-sdk/typescript#options). Agent strategies default to `model: 'sonnet'` and `effort: 'low'` when not specified.
 
 - **`AgentSelectionStrategy`** — Claude reorders selector children based on context.
 - **`AgentExecutionStrategy`** — Claude reorders sequence children based on context.
@@ -167,40 +167,44 @@ Agent strategies emit `agent:*` observability events throughout their SDK calls 
 
 Composites handle intra-cycle order stability automatically: the strategy is consulted once when a new execution cycle begins, and the returned order is committed until the cycle completes (SUCCESS/FAILURE) or the node is reset. This means the strategy is never called redundantly while a child is RUNNING.
 
-When `cache: true` is set on the config, the strategy also caches its decision *across* execution cycles. After a cycle completes and a new one starts, the cached result is reused without calling Claude again. The cache is cleared when `reset()` is called on the composite.
+When `cache: true` is set on the config, the strategy also caches its decision _across_ execution cycles. After a cycle completes and a new one starts, the cached result is reused without calling Claude again. The cache is cleared when `reset()` is called on the composite.
 
 ```typescript
 const strategy = new AgentExecutionStrategy({
-  prompt: 'Order these deployment steps for the current environment',
-  options: { model: 'claude-haiku-4-5-20251001' },
-  cache: true,  // Reuse across cycles; cleared on reset()
+  prompt: "Order these deployment steps for the current environment",
+  options: { model: "claude-haiku-4-5-20251001" },
+  cache: true, // Reuse across cycles; cleared on reset()
 });
 ```
 
 **Example with agent strategy:**
 
 ```typescript
-import { TreeBuilder, AgentSelectionStrategy } from 'cartographer';
+import { TreeBuilder, AgentSelectionStrategy } from "cartographer";
 
-const tree = new TreeBuilder('smart-selector')
-  .selector('pick-best', {
-    strategy: new AgentSelectionStrategy({
-      prompt: 'Pick the best data source based on current state',
-      options: {
-        model: 'claude-haiku-4-5-20251001',
-        effort: 'low',
-      },
-      childDescriptions: {
-        'try-cache': 'Fast but may be stale',
-        'try-api': 'Always fresh but slower',
-        'use-default': 'Hardcoded fallback value',
-      },
-    }),
-  }, (b) => {
-    b.action('try-cache', tryCache);
-    b.action('try-api', tryApi);
-    b.action('use-default', useDefault);
-  })
+const tree = new TreeBuilder("smart-selector")
+  .selector(
+    "pick-best",
+    {
+      strategy: new AgentSelectionStrategy({
+        prompt: "Pick the best data source based on current state",
+        options: {
+          model: "claude-haiku-4-5-20251001",
+          effort: "low",
+        },
+        childDescriptions: {
+          "try-cache": "Fast but may be stale",
+          "try-api": "Always fresh but slower",
+          "use-default": "Hardcoded fallback value",
+        },
+      }),
+    },
+    (b) => {
+      b.action("try-cache", tryCache);
+      b.action("try-api", tryApi);
+      b.action("use-default", useDefault);
+    },
+  )
   .build();
 ```
 
@@ -209,15 +213,15 @@ const tree = new TreeBuilder('smart-selector')
 Implement the relevant interface and pass your strategy to the composite config. The example below prioritizes a child whose name matches a blackboard value:
 
 ```typescript
-import type { SelectionStrategy, BTreeNode, TreeContext } from 'cartographer';
+import type { SelectionStrategy, BTreeNode, TreeContext } from "cartographer";
 
 class PriorityStrategy implements SelectionStrategy {
   async order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]> {
-    const priority = context.blackboard.get<string>('priority');
+    const priority = context.blackboard.get<string>("priority");
     if (priority) {
-      const prioritized = children.find(c => c.name === priority);
+      const prioritized = children.find((c) => c.name === priority);
       if (prioritized) {
-        return [prioritized, ...children.filter(c => c !== prioritized)];
+        return [prioritized, ...children.filter((c) => c !== prioritized)];
       }
     }
     return children;
