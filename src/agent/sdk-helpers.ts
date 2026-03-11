@@ -56,9 +56,20 @@ export async function queryStructured<T extends z.ZodType>(
   schema: T,
   config: AgentStrategyConfig,
   onMessage?: (msg: unknown) => void,
-  abortController?: AbortController,
+  signal?: AbortSignal,
 ): Promise<z.infer<T> | null> {
   try {
+    // Bridge the caller's AbortSignal to the AbortController the SDK expects.
+    let abortController: AbortController | undefined;
+    if (signal) {
+      abortController = new AbortController();
+      if (signal.aborted) {
+        abortController.abort();
+      } else {
+        signal.addEventListener('abort', () => abortController!.abort(), { once: true });
+      }
+    }
+
     // Strip the $schema meta-property — the Claude SDK does not accept it.
     const { $schema, ...jsonSchema } = z.toJSONSchema(schema) as Record<string, unknown>;
     const userOptions = config.options ?? {};

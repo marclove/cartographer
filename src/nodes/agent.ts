@@ -187,8 +187,16 @@ export class AgentNode extends BaseNode {
     }
 
     // Create a fresh AbortController for this execution so abort() can
-    // cancel the in-flight SDK request.
+    // cancel the in-flight SDK request. Bridge the tree's abort signal so
+    // that BehaviorTree.abort() also cancels this SDK call.
     const abortController = new AbortController();
+    if (context.signal) {
+      if (context.signal.aborted) {
+        abortController.abort();
+      } else {
+        context.signal.addEventListener('abort', () => abortController.abort(), { once: true });
+      }
+    }
     this.activeAbortController = abortController;
 
     const options: Record<string, unknown> = {

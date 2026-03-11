@@ -124,7 +124,7 @@ export class AgentParallelStrategy implements ParallelStrategy {
     context.events.emit('agent:prompt', { node: nodeProxy, prompt });
 
     const handler = createStrategyMessageHandler(nodeProxy, context.events);
-    const result = await queryStructured(prompt, PolicySchema, this.config, handler);
+    const result = await queryStructured(prompt, PolicySchema, this.config, handler, context.signal);
 
     // SDK call failed — fall back to the strictest default (all must succeed)
     // so the parallel node remains safe and predictable.

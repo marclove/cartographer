@@ -127,7 +127,7 @@ export class AgentExecutionStrategy implements ExecutionStrategy {
     context.events.emit('agent:prompt', { node: nodeProxy, prompt });
 
     const handler = createStrategyMessageHandler(nodeProxy, context.events);
-    const result = await queryStructured(prompt, OrderingSchema, this.config, handler);
+    const result = await queryStructured(prompt, OrderingSchema, this.config, handler, context.signal);
 
     // SDK call failed — fall back to original order so the sequence can proceed.
     if (!result) {

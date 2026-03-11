@@ -254,6 +254,25 @@ describe('AgentSelectionStrategy', () => {
     // SDK exception means the callback never fires, so no agent:error either
     expect(errorSpy).not.toHaveBeenCalled();
   });
+
+  it('passes context.signal through to the SDK', async () => {
+    let capturedOptions: any;
+    mockQuery.mockImplementation(({ options }: any) => {
+      capturedOptions = options;
+      return mockMessages([
+        { type: 'result', subtype: 'success', structured_output: { ordering: ['a'], reasoning: 'ok' }, total_cost_usd: 0.01 },
+      ]) as any;
+    });
+
+    const ac = new AbortController();
+    const ctx = createContext();
+    ctx.signal = ac.signal;
+
+    const strategy = new AgentSelectionStrategy({ prompt: 'Pick' });
+    await strategy.order([mockNode('a')], ctx);
+
+    expect(capturedOptions.abortController).toBeInstanceOf(AbortController);
+  });
 });
 
 describe('AgentExecutionStrategy', () => {
@@ -310,6 +329,25 @@ describe('AgentExecutionStrategy', () => {
     expect(responseSpy).toHaveBeenCalledWith(
       expect.objectContaining({ cost: 0.03 }),
     );
+  });
+
+  it('passes context.signal through to the SDK', async () => {
+    let capturedOptions: any;
+    mockQuery.mockImplementation(({ options }: any) => {
+      capturedOptions = options;
+      return mockMessages([
+        { type: 'result', subtype: 'success', structured_output: { ordering: ['a'], reasoning: 'ok' }, total_cost_usd: 0.01 },
+      ]) as any;
+    });
+
+    const ac = new AbortController();
+    const ctx = createContext();
+    ctx.signal = ac.signal;
+
+    const strategy = new AgentExecutionStrategy({ prompt: 'Order' });
+    await strategy.order([mockNode('a')], ctx);
+
+    expect(capturedOptions.abortController).toBeInstanceOf(AbortController);
   });
 });
 
@@ -391,6 +429,25 @@ describe('AgentParallelStrategy', () => {
         errors: ['timeout'],
       }),
     );
+  });
+
+  it('passes context.signal through to the SDK', async () => {
+    let capturedOptions: any;
+    mockQuery.mockImplementation(({ options }: any) => {
+      capturedOptions = options;
+      return mockMessages([
+        { type: 'result', subtype: 'success', structured_output: { policy: { successCount: 1 }, reasoning: 'ok' }, total_cost_usd: 0.01 },
+      ]) as any;
+    });
+
+    const ac = new AbortController();
+    const ctx = createContext();
+    ctx.signal = ac.signal;
+
+    const strategy = new AgentParallelStrategy({ prompt: 'Set policy' });
+    await strategy.policy([mockNode('a')], ctx);
+
+    expect(capturedOptions.abortController).toBeInstanceOf(AbortController);
   });
 });
 

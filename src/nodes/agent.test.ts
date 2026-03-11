@@ -323,6 +323,35 @@ describe('AgentNode - abort support', () => {
     expect(controllers).toHaveLength(2);
     expect(controllers[0]).not.toBe(controllers[1]);
   });
+
+  it('aborts the SDK call when context.signal is aborted', async () => {
+    let capturedAbortController: AbortController | undefined;
+    let resolveMessage!: () => void;
+
+    mockQuery.mockImplementation(({ options }: any) => {
+      capturedAbortController = options.abortController;
+      return (async function* () {
+        await new Promise<void>((resolve) => { resolveMessage = resolve; });
+        yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+      })() as any;
+    });
+
+    // Create a context with an abort signal (as BehaviorTree does)
+    const treeAbortController = new AbortController();
+    const ctx = createContext();
+    ctx.signal = treeAbortController.signal;
+
+    const node = new AgentNode({ name: 'signal-abort', prompt: 'Do work' });
+    const tickPromise = node.tick(ctx);
+
+    // Abort via the context signal (simulating BehaviorTree.abort())
+    // without calling node.abort() directly
+    treeAbortController.abort();
+    expect(capturedAbortController!.signal.aborted).toBe(true);
+
+    resolveMessage();
+    await tickPromise;
+  });
 });
 
 describe('AgentNode - observability events', () => {
