@@ -4,7 +4,7 @@
 
 **Goal:** Add a `contextOverrides` mechanism to `BaseNode` so that any node can override `TreeContext` fields for itself and its descendants. This is the foundation for per-subtree elicitation handlers and future context-scoped features.
 
-**Important constraint:** The `events` field on `TreeContext` must **never** be overridable. The tree-level event emitter is the single source of truth for observability — all nodes in the tree must emit to the same emitter regardless of context overrides. The merge logic must explicitly preserve the original `events`.
+**Important constraint:** The `events` and `blackboard` fields on `TreeContext` must **never** be overridable via context overrides. The tree-level event emitter is the single source of truth for observability — all nodes must emit to the same emitter. The tree-level blackboard is the single shared data store — per-subtree blackboard *scoping* (via `ScopedBlackboard`) is a future feature that requires a different mechanism (a transform derived from the incoming context, not a static replacement). The merge logic must explicitly preserve both `events` and `blackboard` from the incoming context.
 
 **Depends on:** None
 
@@ -19,8 +19,8 @@ describe('contextOverrides', () => {
   it('merges contextOverrides onto the context passed to execute()', async () => {
     const node = new TestNode('node');
     const context = createContext();
-    const customBlackboard = new MapBlackboard();
-    node.setContextOverrides({ blackboard: customBlackboard });
+    const handler = vi.fn();
+    node.setContextOverrides({ onElicitation: handler } as Partial<TreeContext>);
 
     let receivedContext: TreeContext | undefined;
     node.executeFn = async (ctx) => {
@@ -30,8 +30,9 @@ describe('contextOverrides', () => {
 
     await node.tick(context);
 
-    expect(receivedContext!.blackboard).toBe(customBlackboard);
+    expect(receivedContext!.onElicitation).toBe(handler);
     expect(receivedContext!.events).toBe(context.events);
+    expect(receivedContext!.blackboard).toBe(context.blackboard);
   });
 
   it('passes the original context when no overrides are set', async () => {
@@ -68,14 +69,11 @@ describe('contextOverrides', () => {
     expect(otherSpy).not.toHaveBeenCalled();
   });
 
-  it('mergeContextOverrides adds to existing overrides', async () => {
+  it('always preserves the original blackboard even when overrides include blackboard', async () => {
     const node = new TestNode('node');
     const context = createContext();
-    const customBlackboard = new MapBlackboard();
-    const handler = vi.fn();
-
-    node.setContextOverrides({ blackboard: customBlackboard });
-    node.mergeContextOverrides({ onElicitation: handler } as Partial<TreeContext>);
+    const otherBlackboard = new MapBlackboard();
+    node.setContextOverrides({ blackboard: otherBlackboard } as Partial<TreeContext>);
 
     let receivedContext: TreeContext | undefined;
     node.executeFn = async (ctx) => {
@@ -85,8 +83,30 @@ describe('contextOverrides', () => {
 
     await node.tick(context);
 
-    expect(receivedContext!.blackboard).toBe(customBlackboard);
-    expect(receivedContext!.onElicitation).toBe(handler);
+    // blackboard is never overridden — the tree-level blackboard is always used
+    expect(receivedContext!.blackboard).toBe(context.blackboard);
+    expect(receivedContext!.blackboard).not.toBe(otherBlackboard);
+  });
+
+  it('mergeContextOverrides adds to existing overrides', async () => {
+    const node = new TestNode('node');
+    const context = createContext();
+    const handler1 = vi.fn();
+    const handler2 = vi.fn();
+
+    node.setContextOverrides({ onElicitation: handler1 } as Partial<TreeContext>);
+    node.mergeContextOverrides({ onElicitation: handler2 } as Partial<TreeContext>);
+
+    let receivedContext: TreeContext | undefined;
+    node.executeFn = async (ctx) => {
+      receivedContext = ctx;
+      return NodeStatus.SUCCESS;
+    };
+
+    await node.tick(context);
+
+    // mergeContextOverrides overwrites existing keys
+    expect(receivedContext!.onElicitation).toBe(handler2);
   });
 });
 ```
@@ -126,8 +146,11 @@ protected contextOverrides?: Partial<TreeContext>;
  * Fields set here will be shallow-merged onto the incoming TreeContext
  * before this node's execute() and before passing context to children.
  *
- * Note: `events` is never overridable — the tree-level event emitter is
- * always preserved to guarantee a single observability point for the entire tree.
+ * Note: `events` and `blackboard` are never overridable. The tree-level
+ * event emitter is always preserved to guarantee a single observability
+ * point. The tree-level blackboard is always preserved as the single
+ * shared data store (per-subtree scoping is a future feature requiring
+ * a different mechanism).
  */
 setContextOverrides(overrides: Partial<TreeContext>): void {
   this.contextOverrides = overrides;
@@ -146,7 +169,7 @@ mergeContextOverrides(overrides: Partial<TreeContext>): void {
 ```typescript
 async tick(context: TreeContext): Promise<NodeStatus> {
   const effectiveContext = this.contextOverrides
-    ? { ...context, ...this.contextOverrides, events: context.events }
+    ? { ...context, ...this.contextOverrides, events: context.events, blackboard: context.blackboard }
     : context;
 
   effectiveContext.events.emit('node:enter', { node: this, context: effectiveContext });
@@ -171,7 +194,7 @@ async tick(context: TreeContext): Promise<NodeStatus> {
 }
 ```
 
-The key line is `events: context.events` — this always wins over any override, ensuring a single event emitter for the entire tree.
+The pinned fields `events: context.events` and `blackboard: context.blackboard` always win over any override, ensuring a single event emitter and single shared blackboard for the entire tree.
 
 ### Step 4: Run tests to verify they pass
 

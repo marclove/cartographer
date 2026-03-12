@@ -17,11 +17,11 @@ Introduce **context layering** — a mechanism where any node in the tree can ov
 ```ts
 // BaseNode.tick()
 const effectiveContext = this.contextOverrides
-  ? { ...context, ...this.contextOverrides, events: context.events }
+  ? { ...context, ...this.contextOverrides, events: context.events, blackboard: context.blackboard }
   : context;
 ```
 
-**Critical invariant:** The `events` field is *never* overridable. The tree-level event emitter is always preserved regardless of context overrides, guaranteeing a single observability point for the entire tree. The merge explicitly pins `events: context.events` after the spread.
+**Critical invariant:** The `events` and `blackboard` fields are *never* overridable. The tree-level event emitter is always preserved, guaranteeing a single observability point for the entire tree. The tree-level blackboard is always preserved as the single shared data store. Per-subtree blackboard *scoping* (via `ScopedBlackboard`) is a future feature that requires a different mechanism — a transform derived from the incoming context at tick time, not a static replacement. The merge explicitly pins both `events: context.events` and `blackboard: context.blackboard` after the spread.
 
 No changes to any composite or decorator `execute()` method. The merge happens once in `BaseNode.tick()`.
 
