@@ -13,6 +13,14 @@ class TestNode extends BaseNode {
     super(name, id);
   }
 
+  setContextOverrides(overrides: Partial<TreeContext>): void {
+    this.contextOverrides = overrides;
+  }
+
+  mergeContextOverrides(overrides: Partial<TreeContext>): void {
+    this.contextOverrides = { ...this.contextOverrides, ...overrides };
+  }
+
   protected async execute(context: TreeContext): Promise<NodeStatus> {
     return this.executeFn(context);
   }
@@ -115,5 +123,100 @@ describe('BaseNode', () => {
   it('returns empty children array by default', () => {
     const node = new TestNode('leaf');
     expect(node.children).toEqual([]);
+  });
+
+  describe('contextOverrides', () => {
+    it('merges contextOverrides onto the context passed to execute()', async () => {
+      const node = new TestNode('node');
+      const context = createContext();
+      const handler = vi.fn();
+      node.setContextOverrides({ onElicitation: handler } as Partial<TreeContext>);
+
+      let receivedContext: TreeContext | undefined;
+      node.executeFn = async (ctx) => {
+        receivedContext = ctx;
+        return NodeStatus.SUCCESS;
+      };
+
+      await node.tick(context);
+
+      expect(receivedContext!.onElicitation).toBe(handler);
+      expect(receivedContext!.events).toBe(context.events);
+      expect(receivedContext!.blackboard).toBe(context.blackboard);
+    });
+
+    it('passes the original context when no overrides are set', async () => {
+      const node = new TestNode('node');
+      const context = createContext();
+
+      let receivedContext: TreeContext | undefined;
+      node.executeFn = async (ctx) => {
+        receivedContext = ctx;
+        return NodeStatus.SUCCESS;
+      };
+
+      await node.tick(context);
+
+      expect(receivedContext!.blackboard).toBe(context.blackboard);
+      expect(receivedContext!.events).toBe(context.events);
+    });
+
+    it('always preserves the original events emitter even when overrides include events', async () => {
+      const node = new TestNode('node');
+      const context = createContext();
+      const otherEvents = new EventEmitter<TreeEvents>();
+      node.setContextOverrides({ events: otherEvents } as Partial<TreeContext>);
+
+      const originalSpy = vi.fn();
+      const otherSpy = vi.fn();
+      context.events.on('node:enter', originalSpy);
+      otherEvents.on('node:enter', otherSpy);
+
+      await node.tick(context);
+
+      // events is never overridden — all events go to the tree-level emitter
+      expect(originalSpy).toHaveBeenCalledOnce();
+      expect(otherSpy).not.toHaveBeenCalled();
+    });
+
+    it('always preserves the original blackboard even when overrides include blackboard', async () => {
+      const node = new TestNode('node');
+      const context = createContext();
+      const otherBlackboard = new MapBlackboard();
+      node.setContextOverrides({ blackboard: otherBlackboard } as Partial<TreeContext>);
+
+      let receivedContext: TreeContext | undefined;
+      node.executeFn = async (ctx) => {
+        receivedContext = ctx;
+        return NodeStatus.SUCCESS;
+      };
+
+      await node.tick(context);
+
+      // blackboard is never overridden — the tree-level blackboard is always used
+      expect(receivedContext!.blackboard).toBe(context.blackboard);
+      expect(receivedContext!.blackboard).not.toBe(otherBlackboard);
+    });
+
+    it('mergeContextOverrides adds to existing overrides', async () => {
+      const node = new TestNode('node');
+      const context = createContext();
+      const handler1 = vi.fn();
+      const handler2 = vi.fn();
+
+      node.setContextOverrides({ onElicitation: handler1 } as Partial<TreeContext>);
+      node.mergeContextOverrides({ onElicitation: handler2 } as Partial<TreeContext>);
+
+      let receivedContext: TreeContext | undefined;
+      node.executeFn = async (ctx) => {
+        receivedContext = ctx;
+        return NodeStatus.SUCCESS;
+      };
+
+      await node.tick(context);
+
+      // mergeContextOverrides overwrites existing keys
+      expect(receivedContext!.onElicitation).toBe(handler2);
+    });
   });
 });

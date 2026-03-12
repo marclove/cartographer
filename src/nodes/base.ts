@@ -53,6 +53,22 @@ export abstract class BaseNode implements BTreeNode {
   readonly name: string;
 
   /**
+   * Optional context overrides for this node and its descendants.
+   *
+   * When set, these fields are shallow-merged onto the incoming `TreeContext`
+   * in `tick()` before calling `execute()`. Children receive the merged
+   * context, and their own overrides layer on top — closest override wins,
+   * like React Context providers.
+   *
+   * `events` and `blackboard` are never overridable. The tree-level event
+   * emitter is always preserved to guarantee a single observability point.
+   * The tree-level blackboard is always preserved as the single shared data
+   * store (per-subtree scoping is a future feature requiring a different
+   * mechanism).
+   */
+  protected contextOverrides?: Partial<TreeContext>;
+
+  /**
    * The direct children of this node.
    *
    * Returns an empty array by default (leaf nodes). Composites and
@@ -65,6 +81,28 @@ export abstract class BaseNode implements BTreeNode {
   constructor(name: string, id?: string) {
     this.id = id ?? uuidv4();
     this.name = name;
+  }
+
+  /**
+   * Set context overrides for this node and its descendants.
+   * Fields set here will be shallow-merged onto the incoming TreeContext
+   * before this node's execute() and before passing context to children.
+   *
+   * Note: `events` and `blackboard` are never overridable. The tree-level
+   * event emitter is always preserved to guarantee a single observability
+   * point. The tree-level blackboard is always preserved as the single
+   * shared data store (per-subtree scoping is a future feature requiring
+   * a different mechanism).
+   */
+  setContextOverrides(overrides: Partial<TreeContext>): void {
+    this.contextOverrides = overrides;
+  }
+
+  /**
+   * Merge additional context overrides onto any existing overrides.
+   */
+  mergeContextOverrides(overrides: Partial<TreeContext>): void {
+    this.contextOverrides = { ...this.contextOverrides, ...overrides };
   }
 
   /**
@@ -86,21 +124,25 @@ export abstract class BaseNode implements BTreeNode {
    *   threw an exception.
    */
   async tick(context: TreeContext): Promise<NodeStatus> {
-    context.events.emit('node:enter', { node: this, context });
+    const effectiveContext = this.contextOverrides
+      ? { ...context, ...this.contextOverrides, events: context.events, blackboard: context.blackboard }
+      : context;
+
+    effectiveContext.events.emit('node:enter', { node: this, context: effectiveContext });
     const start = performance.now();
 
     try {
-      const status = await this.execute(context);
+      const status = await this.execute(effectiveContext);
       const durationMs = performance.now() - start;
-      context.events.emit('node:exit', { node: this, status, context, durationMs });
+      effectiveContext.events.emit('node:exit', { node: this, status, context: effectiveContext, durationMs });
       return status;
     } catch (error) {
       const durationMs = performance.now() - start;
-      context.events.emit('node:error', { node: this, error: error as Error, context });
-      context.events.emit('node:exit', {
+      effectiveContext.events.emit('node:error', { node: this, error: error as Error, context: effectiveContext });
+      effectiveContext.events.emit('node:exit', {
         node: this,
         status: NodeStatus.FAILURE,
-        context,
+        context: effectiveContext,
         durationMs,
       });
       return NodeStatus.FAILURE;
