@@ -1,6 +1,6 @@
 # Examples
 
-Runnable examples demonstrating Cartographer's capabilities. Each example is a self-contained TypeScript program that makes real Claude API calls and exercises the framework end-to-end.
+Runnable examples demonstrating Cartographer's capabilities. Each example exports a factory function compatible with the `cartographer` CLI and exercises the framework end-to-end with real Claude API calls.
 
 ## Prerequisites
 
@@ -10,9 +10,41 @@ Runnable examples demonstrating Cartographer's capabilities. Each example is a s
 
 ## Running
 
+### Content Pipeline
+
 ```bash
-npx tsx examples/content-pipeline/index.ts
-npx tsx examples/scheduled-monitor/index.ts
+cartographer run examples/content-pipeline/index.ts
+```
+
+To provide a custom ticket (instead of the built-in sample), pass a ticket string as a positional argument:
+
+```bash
+cartographer run examples/content-pipeline/index.ts -- "My billing is wrong..."
+```
+
+### Scheduled Monitor
+
+The monitor requires a `HEALTH_URL` pointing at the services to check. A bundled test server simulates three services with different failure profiles.
+
+**Terminal 1** — start the test server:
+
+```bash
+npx tsx examples/scheduled-monitor/serve.ts
+```
+
+**Terminal 2** — run the monitor, pointing at the test server:
+
+```bash
+HEALTH_URL=http://localhost:<port> cartographer run examples/scheduled-monitor/index.ts
+```
+
+Or use an env file:
+
+```bash
+# .env
+HEALTH_URL=http://localhost:4000
+
+cartographer run examples/scheduled-monitor/index.ts --env-file .env
 ```
 
 ## Content Pipeline

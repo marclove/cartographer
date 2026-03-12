@@ -42,11 +42,16 @@ export class TimeoutNode extends BaseNode {
       }, this.timeoutMs);
     });
 
-    const result = await Promise.race([this.child.tick(context), timeoutPromise]);
+    const childTickPromise = this.child.tick(context);
+    const result = await Promise.race([childTickPromise, timeoutPromise]);
     clearTimeout(timerId!);
 
     if (timedOut) {
       this.child.abort();
+      // Wait for the child's tick to settle so its node:exit event
+      // fires before the timeout returns. BaseNode.tick() never rejects
+      // (it catches errors internally), but we guard with .catch anyway.
+      await childTickPromise.catch(() => {});
     }
 
     return result;

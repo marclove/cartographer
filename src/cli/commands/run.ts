@@ -26,8 +26,19 @@ export async function runCommand(options: RunOptions): Promise<never> {
   // Build RunContext
   const runContext: RunContext = { env, args };
 
-  // Import user module via tsx
+  // Import user module — register tsx loader for TypeScript files
   const modulePath = resolve(file);
+  if (modulePath.endsWith('.ts')) {
+    try {
+      const tsx = await import('tsx/esm/api');
+      tsx.register();
+    } catch {
+      process.stderr.write(
+        'Error: tsx is required to load .ts files. Install it with: npm i -D tsx\n',
+      );
+      process.exit(1);
+    }
+  }
   let factory: (ctx: RunContext) => TreeRunConfig;
   try {
     const mod = await import(modulePath);
