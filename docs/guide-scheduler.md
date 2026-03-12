@@ -272,3 +272,4 @@ Tree returns SUCCESS, scheduler stops.
 - [API Reference: TreeScheduler](api/scheduler.md) -- full type signatures and method details for TreeScheduler and related types.
 - [API Reference Overview](api/index.md) -- all exports at a glance.
 - [Scheduled Monitor Example](../examples/README.md#scheduled-monitor) -- a complete runnable program that uses `TreeScheduler` with `resetBetweenTicks: false` to monitor services, detect outages, and manage incidents across ticks.
+- [CLI Runner](guide-cli.md) -- run scheduled trees from the command line with `cartographer run`.

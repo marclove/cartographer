@@ -22,6 +22,7 @@ Your background determines the fastest path through these docs.
 | **New to behavior trees**                         | Read [Concepts](concepts.md) for BT fundamentals, then [Getting Started](getting-started.md) to build your first tree.                        |
 | **Familiar with BTs but new to Claude Agent SDK** | Skim [Getting Started](getting-started.md), then jump to [Agent Integration](guide-agent-integration.md) for AgentNode modes and MCP tooling. |
 | **Looking for API details**                       | Go directly to the [API Reference](api/index.md).                                                                                             |
+| **Want to run trees from the CLI?**               | See the [CLI Runner](guide-cli.md) guide for `cartographer run`, `inspect`, and `init`.                                                        |
 
 ## Table of Contents
 
@@ -38,6 +39,7 @@ Your background determines the fastest path through these docs.
 - [Elicitation](guide-elicitation.md) -- Handling MCP server input requests at tree, subtree, and node levels.
 - [TreeContext and Context Layering](guide-context.md) -- How TreeContext propagates through the tree and how to override fields per subtree.
 - [Scheduler](guide-scheduler.md) -- TreeScheduler: interval, cron, and one-shot scheduling.
+- [CLI Runner](guide-cli.md) -- Running, inspecting, and scaffolding trees from the command line.
 - [Error Handling and Resilience](guide-error-handling.md) -- Error containment, retry/timeout stacking, abort signals, and scheduler error recovery.
 - [Testing Behavior Trees](guide-testing.md) -- Test contexts, helper functions, event verification, and multi-tick test patterns.
 - [Advanced Patterns](guide-advanced-patterns.md) -- Custom nodes, custom strategies, multi-tick resumption internals, parallel policies, advanced blackboard patterns, and advanced YAML.
@@ -57,3 +59,4 @@ Your background determines the fastest path through these docs.
 - [Builder](api/builder.md) -- `TreeBuilder`, `CompositeBuilder`, `SingleChildBuilder`.
 - [Config](api/config.md) -- `TreeLoader`, `TreeRegistry`.
 - [Scheduler](api/scheduler.md) -- `TreeScheduler`, `SchedulerConfig`, `SchedulerEvents`.
+- [CLI](api/cli.md) -- `RunContext`, `TreeRunConfig`, `FormatterOptions`, `createFormatter`.

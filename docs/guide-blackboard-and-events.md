@@ -350,3 +350,4 @@ The function returns a cleanup callback that removes all listeners. Call it when
 - [Agent Integration](guide-agent-integration.md) -- connecting LLM agents to behavior tree nodes.
 - [Building Trees](guide-building-trees.md) -- `TreeBuilder`, nesting, and construction patterns.
 - [Decorator Nodes](guide-decorators.md) -- inverter, retry, guard, timeout, and more.
+- [CLI Runner](guide-cli.md) -- the CLI formatter consumes tree events to render structured output.

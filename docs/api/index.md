@@ -45,6 +45,9 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `SchedulerConfig` | Configuration for `TreeScheduler` |
 | `SchedulerEvents` | Event map for scheduler lifecycle events |
 | `TreeLoggerOptions` | Configuration for `createTreeLogger` |
+| `RunContext` | Context provided to CLI tree factory functions |
+| `TreeRunConfig` | Configuration returned by CLI tree factory functions |
+| `FormatterOptions` | Configuration for CLI output formatter |
 
 ## [Core](core.md)
 
@@ -129,3 +132,12 @@ Re-exported from the internal type definitions. See individual reference pages f
 | --- | --- |
 | `createTreeLogger` | Attaches to a tree's event emitter and appends structured NDJSON log entries to a file. See [Structured Logging](../guide-blackboard-and-events.md#structured-logging-with-createtreelogger). |
 | `TreeLoggerOptions` | Configuration type for `createTreeLogger`. |
+
+## [CLI](cli.md)
+
+| Export | Description |
+| --- | --- |
+| `RunContext` | Context provided by the CLI to tree factory functions (env vars + positional args). |
+| `TreeRunConfig` | Configuration returned by factory functions (tree, schedule, stopping conditions). |
+| `FormatterOptions` | Options for `createFormatter` (json, verbose, quiet modes). |
+| `createFormatter` | Subscribes to tree events and renders structured output to stdout. Returns a cleanup function. |

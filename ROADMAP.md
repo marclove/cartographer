@@ -1,6 +1,6 @@
 # Cartographer Roadmap
 
-## Phase 1: CLI Runner (current)
+## Phase 1: CLI Runner (Implemented)
 
 Non-interactive CLI for running, inspecting, and scaffolding behavior trees from the command line. Structured text and JSON output for observing tree execution.
 
@@ -28,10 +28,10 @@ Full interactive terminal UI for real-time tree observation and control.
 
 ## Decisions Log
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Phased approach | Phase 1 non-interactive, Phase 2 TUI | Validate runner design before committing to TUI framework |
-| User contract | Factory function → TreeRunConfig | Allows dynamic construction, closures, full TS type checking |
-| TS loading | tsx | Already a dependency, fast, handles ESM + TS without pre-compilation |
-| Distribution | Same `cartographer` package | Simpler for users — one install gets library + CLI |
-| Arg parsing | Minimal custom parser | Command set is small and fixed; no need for yargs/commander weight |
+| Decision        | Choice                               | Rationale                                                            |
+| --------------- | ------------------------------------ | -------------------------------------------------------------------- |
+| Phased approach | Phase 1 non-interactive, Phase 2 TUI | Validate runner design before committing to TUI framework            |
+| User contract   | Factory function → TreeRunConfig     | Allows dynamic construction, closures, full TS type checking         |
+| TS loading      | tsx                                  | Already a dependency, fast, handles ESM + TS without pre-compilation |
+| Distribution    | Same `cartographer` package          | Simpler for users — one install gets library + CLI                   |
+| Arg parsing     | Minimal custom parser                | Command set is small and fixed; no need for yargs/commander weight   |

@@ -13,6 +13,8 @@ This guide walks you through installing Cartographer and building your first beh
 npm install cartographer
 ```
 
+This also installs the `cartographer` CLI binary -- see the [CLI Runner guide](guide-cli.md) for running trees from the command line.
+
 ## Your First Tree
 
 The example below creates a sequence with two actions: one writes a value to the blackboard, and the other reads it back.
@@ -85,4 +87,5 @@ Both approaches produce identical trees. The builder is convenient for most case
 - [Core Concepts](concepts.md) -- understand the execution model, blackboard, and node lifecycle.
 - [Building Trees](guide-building-trees.md) -- deeper coverage of `TreeBuilder`, nesting, and composition patterns.
 - [Node Reference](guide-nodes.md) -- catalog of built-in node types (actions, conditions, sequences, selectors, decorators).
+- [CLI Runner](guide-cli.md) -- run, inspect, and scaffold trees from the command line.
 - [Examples](../examples/README.md) -- two complete, runnable programs that exercise the framework end-to-end with real Claude API calls.
