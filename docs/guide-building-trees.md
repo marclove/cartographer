@@ -105,10 +105,27 @@ const tree = new TreeBuilder('content-pipeline')
 
 **CompositeBuilder methods:** `action`, `condition`, `agent`, `selector`, `sequence`, `parallel`, `inverter`, `repeat`, `retry`, `alwaysSucceed`, `alwaysFail`, `timeout`, `guard`.
 
-Composite nodes accept an optional strategy object:
+Composite nodes accept an optional options object for strategies and context overrides:
 
 ```typescript
 b.selector('name', { strategy: myStrategy }, (b) => { ... });
+```
+
+The `context` option applies context overrides to a subtree, which is how you scope configuration like elicitation handlers to specific branches:
+
+```typescript
+b.sequence('scoped', { context: { onElicitation: myHandler } }, (b) => {
+  b.agent('worker', { prompt: 'work' }); // inherits myHandler
+});
+```
+
+`TreeBuilder` also exposes `onElicitation()` for setting a tree-wide default:
+
+```typescript
+const tree = new TreeBuilder('my-tree')
+  .onElicitation(handler)
+  .sequence('root', (b) => { ... })
+  .build();
 ```
 
 ---

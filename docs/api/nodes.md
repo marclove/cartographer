@@ -46,6 +46,18 @@ No-op by default. Override in subclasses that hold state between ticks.
 
 No-op by default. Override in subclasses that have in-progress work to cancel.
 
+#### `setContextOverrides(overrides: Partial<TreeContext>): void`
+
+Replace the node's context overrides. These overrides are shallow-merged onto the `TreeContext` at the start of each `tick()`, so all descendants of this node see the overridden values. `events` and `blackboard` are pinned and cannot be overridden.
+
+#### `mergeContextOverrides(overrides: Partial<TreeContext>): void`
+
+Merge additional overrides into any existing context overrides. Useful when multiple sources each contribute overrides (e.g., a tree-level `onElicitation` plus a subtree-level override).
+
+### Context Layering
+
+When a node has context overrides set, `tick()` creates an effective context by shallow-merging the overrides onto the incoming `TreeContext` before executing. Two fields are pinned and never overridden: `events` (ensures all events reach the tree-level emitter) and `blackboard` (preserves the shared state store). The closest override to a node wins — a child's override takes precedence over a parent's.
+
 ### Protected Abstract Method
 
 #### `execute(context: TreeContext): Promise<NodeStatus>`
@@ -175,6 +187,16 @@ new AgentNode(config: AgentNodeConfig)
 - Custom `options.mcpServers` and `options.allowedTools` are merged with the blackboard server config.
 - If the `outputFormat.schema` contains a `$schema` meta-property (as produced by `z.toJSONSchema()`), it is automatically stripped before passing to the SDK.
 - Emits the full set of agent observability events: `agent:prompt`, `agent:thinking`, `agent:text`, `agent:tool_use`, `agent:response`, `agent:error`, `agent:stream`, `agent:message`, `agent:tool_progress`, `agent:init`, `agent:status`, and `agent:rate_limit`. See [TreeEvents](core.md#treeevents-interface) for payload details.
+
+### Elicitation Handling
+
+`AgentNode` always provides an `onElicitation` callback to the SDK. The handler is resolved with the following precedence:
+
+1. **Node-level** — `options.onElicitation` on the `AgentNodeConfig`.
+2. **Context-level** — `context.onElicitation`, inherited through context layering from a parent node or tree-level config.
+3. **Auto-decline** — If no handler is found at any level, the request is declined and an `agent:elicitation_declined` event is emitted with the request payload.
+
+See [Elicitation](../guide-agent-integration.md#elicitation) for usage examples.
 
 ### Example
 

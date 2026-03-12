@@ -150,6 +150,103 @@ const summarizer = new AgentNode({
 
 ---
 
+## Elicitation
+
+MCP servers can request user input during agent execution — for example, an OAuth server asking for credentials, or a form server requesting configuration values. The Agent SDK surfaces these as *elicitation requests*. By default, `AgentNode` silently declines all elicitation requests, but you can provide handlers at multiple levels.
+
+### Tree-Level Handler
+
+Set a default handler for all `AgentNode` instances in the tree using `TreeBuilder.onElicitation()` or `BehaviorTreeConfig.onElicitation`:
+
+```typescript
+import { TreeBuilder, NodeStatus } from 'cartographer';
+import type { OnElicitation } from 'cartographer';
+
+const handler: OnElicitation = async (request, { signal }) => {
+  console.log(`Server "${request.serverName}" requests: ${request.message}`);
+  // Return user-provided values
+  return { action: 'accept', content: { token: 'my-api-key' } };
+};
+
+const tree = new TreeBuilder('with-elicitation')
+  .onElicitation(handler)
+  .sequence('main', (b) => {
+    b.agent('worker', { prompt: 'Do work that may require auth' });
+  })
+  .build();
+```
+
+### Per-Subtree Handler
+
+Use context overrides to scope a handler to a specific branch of the tree. The closest handler to an `AgentNode` wins:
+
+```typescript
+const tree = new TreeBuilder('scoped-elicitation')
+  .onElicitation(defaultHandler) // tree-level fallback
+  .sequence('main', (b) => {
+    // This subtree uses a different handler
+    b.sequence('oauth-branch', { context: { onElicitation: oauthHandler } }, (b) => {
+      b.agent('oauth-agent', { prompt: 'Connect to OAuth service' });
+    });
+
+    // This agent inherits the tree-level handler
+    b.agent('other-agent', { prompt: 'Other work' });
+  })
+  .build();
+```
+
+### Node-Level Handler
+
+For maximum specificity, set `onElicitation` directly in the agent's `options`:
+
+```typescript
+b.agent('specific-agent', {
+  prompt: 'Work requiring credentials',
+  options: {
+    onElicitation: async (request) => {
+      return { action: 'accept', content: { apiKey: process.env.API_KEY } };
+    },
+  },
+});
+```
+
+### Handler Precedence
+
+`AgentNode` resolves the elicitation handler with this priority:
+
+1. `options.onElicitation` (node-level)
+2. `context.onElicitation` (inherited through context layering)
+3. Auto-decline with `agent:elicitation_declined` event
+
+### Decline Events
+
+When no handler exists at any level, the request is automatically declined and an `agent:elicitation_declined` event is emitted. Use this for logging or alerting:
+
+```typescript
+tree.events.on('agent:elicitation_declined', ({ node, request }) => {
+  console.warn(
+    `Elicitation from "${request.serverName}" declined by "${node.name}": ${request.message}`
+  );
+});
+```
+
+### Elicitation Types
+
+The SDK provides two elicitation modes:
+
+- `form` — The server requests structured input via a JSON schema (`requestedSchema`).
+- `url` — The server directs the user to a URL (e.g., an OAuth authorization page).
+
+The handler returns `{ action, content? }` where `action` is one of `'accept'`, `'decline'`, or `'cancel'`.
+
+```typescript
+import type { OnElicitation, ElicitationRequest } from 'cartographer';
+```
+
+Both types are re-exported from the package for convenience.
+
+---
+
 ## Agent Strategies
 
 Agent strategies use Claude to make composite-level decisions. See [guide-composites.md](guide-composites.md) for the strategy pattern overview.

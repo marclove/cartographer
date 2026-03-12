@@ -207,6 +207,16 @@ Fired when the SDK reports a rate limit event.
 { node: BTreeNode; info: unknown }
 ```
 
+### `agent:elicitation_declined`
+
+Fired when an `AgentNode` receives an elicitation request but no handler is configured at any level (node, context, or tree). The request is automatically declined.
+
+```typescript
+{ node: BTreeNode; request: ElicitationRequest }
+```
+
+See [Elicitation](guide-agent-integration.md#elicitation) for how to provide handlers.
+
 ### `blackboard:write`
 
 Fired when a blackboard write occurs (if emitted by the source).

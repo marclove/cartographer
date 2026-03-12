@@ -211,8 +211,11 @@ export interface TypedEventEmitter<TEvents extends { [K in keyof TEvents]: unkno
  * The execution context passed to every node during a tree tick.
  *
  * A single `TreeContext` is created at the start of each `BehaviorTree.tick()`
- * call and flows unchanged through every node in the tree. It carries shared
- * state (blackboard), the event system, and an optional abort signal.
+ * call and propagated through every node in the tree. Nodes with context
+ * overrides (see {@link BaseNode.setContextOverrides}) shallow-merge their
+ * overrides onto the context before passing it to descendants — the `events`
+ * and `blackboard` fields are pinned and never overridden. The context carries
+ * shared state (blackboard), the event system, and an optional abort signal.
  *
  * @example
  * ```ts

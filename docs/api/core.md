@@ -35,6 +35,7 @@ import { BehaviorTree } from 'cartographer';
 | `name` | `string` | Yes | Tree name |
 | `root` | `BTreeNode` | Yes | Root node |
 | `blackboard` | `Blackboard` | No | Defaults to `new MapBlackboard()` |
+| `onElicitation` | `OnElicitation` | No | Default elicitation handler for all `AgentNode` descendants. When set, the root node's context overrides are updated so the handler is inherited throughout the tree. See [Elicitation](guide-agent-integration.md#elicitation). |
 
 ### Properties
 
@@ -140,13 +141,14 @@ Contract for shared state storage used by all tree nodes.
 import type { TreeContext } from 'cartographer';
 ```
 
-Passed to every node on each tick.
+Propagated to every node on each tick. Nodes with context overrides shallow-merge their overrides before passing the context to descendants — `events` and `blackboard` are pinned and never overridden. See [Context Layering](../guide-advanced-patterns.md#context-layering).
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `blackboard` | `Blackboard` | Shared state accessible to all nodes |
 | `events` | `TypedEventEmitter<TreeEvents>` | Event system for emitting tree-level events |
 | `signal` | `AbortSignal \| undefined` | Abort signal propagated from `BehaviorTree` |
+| `onElicitation` | `OnElicitation \| undefined` | Elicitation handler inherited through context layering. `AgentNode` uses this when no node-level handler is set. See [Elicitation](guide-agent-integration.md#elicitation). |
 
 ---
 
@@ -194,4 +196,5 @@ Event map defining every event a tree can emit.
 | `agent:status` | `{ node: BTreeNode; status: string }` |
 | `agent:rate_limit` | `{ node: BTreeNode; info: unknown }` |
 | `blackboard:write` | `{ key: string; value: unknown; source: string }` |
+| `agent:elicitation_declined` | `{ node: BTreeNode; request: ElicitationRequest }` |
 | `strategy:decision` | `{ composite: BTreeNode; strategy: string; decision: unknown }` |
