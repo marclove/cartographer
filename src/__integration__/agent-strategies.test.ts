@@ -6,6 +6,7 @@ import { ParallelNode } from '../composites/parallel.js';
 import { AgentExecutionStrategy } from '../strategies/agent-execution.js';
 import { AgentParallelStrategy } from '../strategies/agent-parallel.js';
 import { AgentSelectionStrategy } from '../strategies/agent-selection.js';
+import { BehaviorTree } from '../core/behavior-tree.js';
 import { createContext, collectEvents } from './helpers.js';
 import { queryStructured } from '../agent/sdk-helpers.js';
 
@@ -144,5 +145,39 @@ describe('Agent Strategies Integration (Mocked SDK)', () => {
     await strategy.order(children, ctx);
 
     expect(mockedQueryStructured).toHaveBeenCalledTimes(2);
+  });
+
+  it('BehaviorTree.abort() propagates through strategy queryStructured calls', async () => {
+    let capturedSignal: AbortSignal | undefined;
+    let resolveQuery!: () => void;
+
+    // Block inside queryStructured so we can abort the tree mid-call
+    mockedQueryStructured.mockImplementation(async (_prompt, _schema, _config, _handler, signal) => {
+      capturedSignal = signal as AbortSignal | undefined;
+      await new Promise<void>((resolve) => { resolveQuery = resolve; });
+      return { ordering: ['a', 'b'], reasoning: 'default' };
+    });
+
+    const tree = new BehaviorTree({
+      name: 'strategy-abort-test',
+      root: new SequenceNode({
+        name: 'signal-seq',
+        children: [
+          new ActionNode({ name: 'a', action: () => NodeStatus.SUCCESS }),
+          new ActionNode({ name: 'b', action: () => NodeStatus.SUCCESS }),
+        ],
+        strategy: new AgentExecutionStrategy({ prompt: 'Order' }),
+      }),
+    });
+
+    const tickPromise = tree.tick();
+
+    // Strategy is blocked in queryStructured — abort the tree
+    tree.abort();
+    expect(capturedSignal).toBeInstanceOf(AbortSignal);
+    expect(capturedSignal!.aborted).toBe(true);
+
+    resolveQuery();
+    await tickPromise;
   });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NodeStatus } from '../types.js';
 import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
@@ -7,6 +7,17 @@ import { RetryNode } from '../decorators/retry.js';
 import { TreeScheduler } from '../scheduler/tree-scheduler.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { createContext, AbortTrackingNode } from './helpers.js';
+
+vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+  query: vi.fn(),
+  createSdkMcpServer: vi.fn(() => ({})),
+  tool: vi.fn((_name: string, _desc: string, _schema: unknown, handler: unknown) => handler),
+}));
+
+import { AgentNode } from '../nodes/agent.js';
+import { query } from '@anthropic-ai/claude-agent-sdk';
+
+const mockQuery = vi.mocked(query);
 
 describe('Abort Signal Integration', () => {
   it('sequence resumes at RUNNING child after abort — second child is never reached', async () => {
@@ -119,6 +130,33 @@ describe('Abort Signal Integration', () => {
     expect(scheduler.isRunning).toBe(false);
     expect(stopEvents).toHaveLength(1);
     expect((stopEvents[0] as any).reason).toBe('manual');
+  });
+
+  it('BehaviorTree.abort() cancels AgentNode in-flight SDK call via context.signal', async () => {
+    let capturedAbortController: AbortController | undefined;
+    let resolveMessage!: () => void;
+
+    mockQuery.mockImplementation(({ options }: any) => {
+      capturedAbortController = options.abortController;
+      return (async function* () {
+        await new Promise<void>((resolve) => { resolveMessage = resolve; });
+        yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+      })() as any;
+    });
+
+    const tree = new BehaviorTree({
+      name: 'agent-abort-test',
+      root: new AgentNode({ name: 'agent', prompt: 'Do work' }),
+    });
+
+    const tickPromise = tree.tick();
+
+    // The SDK call is in-flight — abort the tree (not the node directly)
+    tree.abort();
+    expect(capturedAbortController!.signal.aborted).toBe(true);
+
+    resolveMessage();
+    await tickPromise;
   });
 
   it('AbortSignal in async actions — action respects ctx.signal', async () => {
