@@ -80,5 +80,8 @@ export { emitMessageEvents, createStrategyMessageHandler, wrapElicitation } from
 export { createTreeLogger } from './tree-logger.js';
 export type { TreeLoggerOptions } from './tree-logger.js';
 
+// CLI types
+export type { RunContext, TreeRunConfig } from './cli/types.js';
+
 // SDK re-exports
 export type { OnElicitation, ElicitationRequest } from '@anthropic-ai/claude-agent-sdk';
