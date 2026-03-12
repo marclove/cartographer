@@ -1,0 +1,15 @@
+{
+	"permissions": {
+		"allow": [
+			"Bash(git:*)",
+			"Bash(ls:*)",
+			"Bash(node:*)",
+			"Bash(wc:*)",
+			"Bash(tree:*)",
+			"Bash(grep:*)",
+			"Read(node_modules/@anthropic-ai/**)",
+			"Bash(find node_modules/@modelcontextprotocol:*",
+			"Bash(find node_modules/@anthropic-ai:*"
+		]
+	}
+}
