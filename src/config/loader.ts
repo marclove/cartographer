@@ -159,7 +159,7 @@ interface TreeConfig {
  * |---|---|---|
  * | `action` | `ref` | — |
  * | `condition` | `ref` | — |
- * | `agent` | `prompt` | `blackboardNamespace`, `cache`, `options` (SDK options object) |
+ * | `agent` | `prompt` | `blackboardNamespace`, `cache`, `options` (SDK [`Options`](https://platform.claude.com/docs/en/agent-sdk/typescript#options) — see note below) |
  * | `selector` | — | `strategy.ref`, `children` |
  * | `sequence` | — | `strategy.ref`, `children` |
  * | `parallel` | — | `strategy.ref`, `children` |
@@ -170,6 +170,32 @@ interface TreeConfig {
  * | `alwaysFail` | `child` | — |
  * | `timeout` | `child`, `timeoutMs` | — |
  * | `guard` | `child`, `conditionRef` | — |
+ *
+ * ## Non-serializable `options` keys (agent nodes)
+ *
+ * The `options` field on `agent` nodes maps to the SDK's [`Options`](https://platform.claude.com/docs/en/agent-sdk/typescript#options) type.
+ * When defining trees in YAML, only JSON-serializable values can be used.
+ * The following `Options` keys accept **functions or class instances** and
+ * therefore **cannot** be specified in YAML tree definitions:
+ *
+ * | Key | Why it is not serializable |
+ * |---|---|
+ * | `abortController` | `AbortController` instance (also managed internally by `AgentNode`) |
+ * | `canUseTool` | Callback function |
+ * | `hooks` | Contains callback functions |
+ * | `onElicitation` | Callback function |
+ * | `stderr` | Callback function |
+ * | `spawnClaudeCodeProcess` | Callback function |
+ * | `toolConfig` | May contain callback functions |
+ *
+ * Use the programmatic API ({@link AgentNode} constructor or {@link TreeBuilder})
+ * when you need to set any of the above options.
+ *
+ * All other `Options` keys — such as `model`, `effort`, `maxTurns`,
+ * `maxBudgetUsd`, `systemPrompt`, `allowedTools`, `disallowedTools`,
+ * `mcpServers`, `outputFormat`, `permissionMode`, and `thinking` — are
+ * plain strings, numbers, booleans, or JSON-compatible objects and work
+ * fine in YAML.
  *
  * @example
  * ```ts
