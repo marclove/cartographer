@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { TreeBuilder } from './tree-builder.js';
 import { NodeStatus } from '../types.js';
 import type { TreeContext } from '../types.js';
@@ -141,5 +141,133 @@ describe('TreeBuilder', () => {
       )
       .build();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
+  });
+
+  describe('onElicitation', () => {
+    it('passes onElicitation to BehaviorTreeConfig via build()', async () => {
+      const handler = vi.fn();
+
+      const tree = new TreeBuilder('test')
+        .onElicitation(handler)
+        .action('a', (ctx) => {
+          expect(ctx.onElicitation).toBe(handler);
+          return NodeStatus.SUCCESS;
+        })
+        .build();
+
+      await tree.tick();
+    });
+  });
+
+  describe('context overrides on composites', () => {
+    it('sets contextOverrides on a sequence node via CompositeBuilder', async () => {
+      const handler = vi.fn();
+      let receivedCtx: TreeContext | undefined;
+      const tree = new TreeBuilder('test')
+        .sequence('seq', { context: { onElicitation: handler } }, (b) => {
+          b.action('a', (ctx) => { receivedCtx = ctx; return NodeStatus.SUCCESS; });
+        })
+        .build();
+
+      await tree.tick();
+      expect(receivedCtx!.onElicitation).toBe(handler);
+    });
+
+    it('sets contextOverrides on a selector node via CompositeBuilder', async () => {
+      const handler = vi.fn();
+      let receivedCtx: TreeContext | undefined;
+      const tree = new TreeBuilder('test')
+        .selector('sel', { context: { onElicitation: handler } }, (b) => {
+          b.action('a', (ctx) => { receivedCtx = ctx; return NodeStatus.SUCCESS; });
+        })
+        .build();
+
+      await tree.tick();
+      expect(receivedCtx!.onElicitation).toBe(handler);
+    });
+
+    it('sets contextOverrides on a parallel node via CompositeBuilder', async () => {
+      const handler = vi.fn();
+      let receivedCtx: TreeContext | undefined;
+      const tree = new TreeBuilder('test')
+        .parallel('par', { context: { onElicitation: handler } }, (b) => {
+          b.action('a', (ctx) => { receivedCtx = ctx; return NodeStatus.SUCCESS; });
+        })
+        .build();
+
+      await tree.tick();
+      expect(receivedCtx!.onElicitation).toBe(handler);
+    });
+  });
+
+  describe('context overrides on decorators', () => {
+    it('sets contextOverrides on a retry node', async () => {
+      const handler = vi.fn();
+      let receivedCtx: TreeContext | undefined;
+      const tree = new TreeBuilder('test')
+        .retry('r', { maxAttempts: 2, context: { onElicitation: handler } }, (b) => {
+          b.action('a', (ctx) => { receivedCtx = ctx; return NodeStatus.SUCCESS; });
+        })
+        .build();
+
+      await tree.tick();
+      expect(receivedCtx!.onElicitation).toBe(handler);
+    });
+
+    it('sets contextOverrides on a repeat node', async () => {
+      const handler = vi.fn();
+      let receivedCtx: TreeContext | undefined;
+      const tree = new TreeBuilder('test')
+        .repeat('rep', { count: 1, context: { onElicitation: handler } }, (b) => {
+          b.action('a', (ctx) => { receivedCtx = ctx; return NodeStatus.SUCCESS; });
+        })
+        .build();
+
+      await tree.tick();
+      expect(receivedCtx!.onElicitation).toBe(handler);
+    });
+
+    it('sets contextOverrides on a timeout node', async () => {
+      const handler = vi.fn();
+      let receivedCtx: TreeContext | undefined;
+      const tree = new TreeBuilder('test')
+        .timeout('t', { timeoutMs: 1000, context: { onElicitation: handler } }, (b) => {
+          b.action('a', (ctx) => { receivedCtx = ctx; return NodeStatus.SUCCESS; });
+        })
+        .build();
+
+      await tree.tick();
+      expect(receivedCtx!.onElicitation).toBe(handler);
+    });
+
+    it('sets contextOverrides on a guard node', async () => {
+      const handler = vi.fn();
+      let receivedCtx: TreeContext | undefined;
+      const tree = new TreeBuilder('test')
+        .guard('g', { condition: () => true, context: { onElicitation: handler } }, (b) => {
+          b.action('a', (ctx) => { receivedCtx = ctx; return NodeStatus.SUCCESS; });
+        })
+        .build();
+
+      await tree.tick();
+      expect(receivedCtx!.onElicitation).toBe(handler);
+    });
+  });
+
+  describe('context overrides via SingleChildBuilder', () => {
+    it('sets contextOverrides on a nested sequence inside a decorator', async () => {
+      const handler = vi.fn();
+      let receivedCtx: TreeContext | undefined;
+      const tree = new TreeBuilder('test')
+        .retry('r', { maxAttempts: 2 }, (b) => {
+          b.sequence('seq', { context: { onElicitation: handler } }, (b) => {
+            b.action('a', (ctx) => { receivedCtx = ctx; return NodeStatus.SUCCESS; });
+          });
+        })
+        .build();
+
+      await tree.tick();
+      expect(receivedCtx!.onElicitation).toBe(handler);
+    });
   });
 });
