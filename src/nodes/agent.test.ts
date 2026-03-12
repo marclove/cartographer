@@ -598,3 +598,89 @@ describe('AgentNode - observability events', () => {
     );
   });
 });
+
+describe('AgentNode - onElicitation wrapping', () => {
+  const testRequest = {
+    serverName: 'test-server',
+    message: 'Please provide credentials',
+    mode: 'form' as const,
+    requestedSchema: { type: 'object', properties: { api_key: { type: 'string' } } },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('delegates to context.onElicitation when no node-level handler is set', async () => {
+    const contextHandler = vi.fn().mockResolvedValue({ action: 'accept', content: { api_key: 'sk-123' } });
+
+    mockQuery.mockImplementation(async function* (args: any) {
+      const handler = args.options.onElicitation;
+      if (handler) {
+        await handler(testRequest, { signal: new AbortController().signal });
+      }
+      yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+    } as any);
+
+    const node = new AgentNode({ name: 'test', prompt: 'test' });
+    const context = createContext();
+    context.onElicitation = contextHandler;
+
+    await node.tick(context);
+
+    expect(contextHandler).toHaveBeenCalledWith(testRequest, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  });
+
+  it('prefers node-level options.onElicitation over context.onElicitation', async () => {
+    const nodeHandler = vi.fn().mockResolvedValue({ action: 'accept' });
+    const contextHandler = vi.fn().mockResolvedValue({ action: 'accept' });
+
+    mockQuery.mockImplementation(async function* (args: any) {
+      await args.options.onElicitation(testRequest, { signal: new AbortController().signal });
+      yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+    } as any);
+
+    const node = new AgentNode({ name: 'test', prompt: 'test', options: { onElicitation: nodeHandler } });
+    const context = createContext();
+    context.onElicitation = contextHandler;
+
+    await node.tick(context);
+
+    expect(nodeHandler).toHaveBeenCalled();
+    expect(contextHandler).not.toHaveBeenCalled();
+  });
+
+  it('emits agent:elicitation_declined when no handler exists', async () => {
+    let capturedResult: any;
+    mockQuery.mockImplementation(async function* (args: any) {
+      capturedResult = await args.options.onElicitation(testRequest, { signal: new AbortController().signal });
+      yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+    } as any);
+
+    const node = new AgentNode({ name: 'test', prompt: 'test' });
+    const context = createContext();
+    const declineSpy = vi.fn();
+    context.events.on('agent:elicitation_declined', declineSpy);
+
+    await node.tick(context);
+
+    expect(declineSpy).toHaveBeenCalledWith({
+      node,
+      request: testRequest,
+    });
+    expect(capturedResult).toEqual({ action: 'decline' });
+  });
+
+  it('always provides onElicitation to the SDK options', async () => {
+    let capturedOptions: any;
+    mockQuery.mockImplementation(async function* (args: any) {
+      capturedOptions = args.options;
+      yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+    } as any);
+
+    const node = new AgentNode({ name: 'test', prompt: 'test' });
+    await node.tick(createContext());
+
+    expect(capturedOptions.onElicitation).toBeTypeOf('function');
+  });
+});

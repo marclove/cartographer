@@ -2,6 +2,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { BaseNode } from './base.js';
 import { NodeStatus } from '../types.js';
 import type { AgentNodeConfig, TreeContext } from '../types.js';
+import type { ElicitationRequest } from '@anthropic-ai/claude-agent-sdk';
 import { createBlackboardMcpServer } from '../agent/blackboard-mcp.js';
 import { emitMessageEvents } from '../agent/sdk-helpers.js';
 
@@ -199,13 +200,33 @@ export class AgentNode extends BaseNode {
     }
     this.activeAbortController = abortController;
 
+    // Resolve elicitation handler: node-level > context-level > decline with event
+    const userElicitationHandler = userOptions.onElicitation ?? context.onElicitation;
+
+    const wrappedOnElicitation = async (
+      request: ElicitationRequest,
+      opts: { signal: AbortSignal },
+    ) => {
+      if (userElicitationHandler) {
+        return userElicitationHandler(request, opts);
+      }
+      context.events.emit('agent:elicitation_declined', {
+        node: this,
+        request,
+      });
+      return { action: 'decline' as const };
+    };
+
+    const { onElicitation: _nodeElicitation, ...restUserOptions } = userOptions;
+
     const options: Record<string, unknown> = {
-      ...userOptions,
+      ...restUserOptions,
       mcpServers,
       allowedTools,
-      permissionMode: userOptions.permissionMode ?? 'default',
+      permissionMode: restUserOptions.permissionMode ?? 'default',
       ...(outputFormat && { outputFormat }),
       abortController,
+      onElicitation: wrappedOnElicitation,
     };
 
     try {
