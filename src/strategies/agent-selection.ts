@@ -1,6 +1,6 @@
 import { z } from 'zod/v4';
 import type { SelectionStrategy, BTreeNode, TreeContext, AgentStrategyConfig } from '../types.js';
-import { queryStructured, buildStrategyPrompt, createStrategyMessageHandler } from '../agent/sdk-helpers.js';
+import { queryStructured, buildStrategyPrompt, createStrategyMessageHandler, wrapElicitation } from '../agent/sdk-helpers.js';
 
 /**
  * The schema Claude must conform to when returning an ordering decision.
@@ -123,6 +123,12 @@ export class AgentSelectionStrategy implements SelectionStrategy {
    * SDK, and maps the returned names back to node references. Falls back to
    * the original `children` array if the SDK call fails or returns no
    * recognisable child names.
+   *
+   * Elicitation is handled consistently with `AgentNode`: the handler is
+   * resolved as `config.options.onElicitation ?? context.onElicitation`,
+   * wrapped via {@link wrapElicitation}, and forwarded to the SDK. If no
+   * handler exists, elicitation requests are declined and an
+   * `agent:elicitation_declined` event is emitted.
    */
   async order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]> {
     if (this.config.cache && this.cachedOrder !== null) {
@@ -134,7 +140,9 @@ export class AgentSelectionStrategy implements SelectionStrategy {
     context.events.emit('agent:prompt', { node: nodeProxy, prompt });
 
     const handler = createStrategyMessageHandler(nodeProxy, context.events);
-    const result = await queryStructured(prompt, OrderingSchema, this.config, handler, context.signal);
+    const elicitationHandler = this.config.options?.onElicitation ?? context.onElicitation;
+    const wrappedElicitation = wrapElicitation(elicitationHandler, nodeProxy, context.events);
+    const result = await queryStructured(prompt, OrderingSchema, this.config, handler, context.signal, wrappedElicitation);
 
     // SDK call failed — fall back to original order so the selector can proceed.
     if (!result) {

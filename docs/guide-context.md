@@ -29,7 +29,7 @@ interface TreeContext {
 | `blackboard`     | Shared key-value store for inter-node communication. All nodes read from and write to this store.  |
 | `events`         | Event emitter for observability. All `node:*` and `agent:*` events flow through this emitter.      |
 | `signal`         | Set automatically by `BehaviorTree` when `abort()` is called. Nodes check `signal?.aborted` to bail out of long-running work. |
-| `onElicitation`  | Handler for MCP server elicitation requests. See [Elicitation](guide-elicitation.md).               |
+| `onElicitation`  | Handler for MCP server elicitation requests. Consumed by `AgentNode` and agent strategies. See [Elicitation](guide-elicitation.md). |
 
 ### Creating a Context
 
@@ -55,7 +55,7 @@ The context flows top-down through the tree. Composite nodes pass it to each chi
 
 ## Context Layering
 
-Context layering lets any `BaseNode` override `TreeContext` fields for itself and all its descendants. This is how per-subtree elicitation handlers, and any future per-subtree configuration, are implemented.
+Context layering lets any `BaseNode` override `TreeContext` fields for itself and all its descendants. This is how per-subtree elicitation handlers are implemented — both `AgentNode` and agent strategies (`AgentSelectionStrategy`, `AgentExecutionStrategy`, `AgentParallelStrategy`) read `context.onElicitation` during their SDK calls.
 
 ### How It Works
 

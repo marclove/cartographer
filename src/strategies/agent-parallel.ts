@@ -1,6 +1,6 @@
 import { z } from 'zod/v4';
 import type { ParallelStrategy, ParallelPolicy, BTreeNode, TreeContext, AgentStrategyConfig } from '../types.js';
-import { queryStructured, buildStrategyPrompt, createStrategyMessageHandler } from '../agent/sdk-helpers.js';
+import { queryStructured, buildStrategyPrompt, createStrategyMessageHandler, wrapElicitation } from '../agent/sdk-helpers.js';
 
 /**
  * The schema Claude must conform to when returning a policy decision.
@@ -113,6 +113,12 @@ export class AgentParallelStrategy implements ParallelStrategy {
    * SDK, and returns the policy from Claude's structured response. Falls back
    * to `{ successCount: children.length }` (all children must succeed) if
    * the SDK call fails.
+   *
+   * Elicitation is handled consistently with `AgentNode`: the handler is
+   * resolved as `config.options.onElicitation ?? context.onElicitation`,
+   * wrapped via {@link wrapElicitation}, and forwarded to the SDK. If no
+   * handler exists, elicitation requests are declined and an
+   * `agent:elicitation_declined` event is emitted.
    */
   async policy(children: BTreeNode[], context: TreeContext): Promise<ParallelPolicy> {
     if (this.config.cache && this.cachedPolicy !== null) {
@@ -124,7 +130,9 @@ export class AgentParallelStrategy implements ParallelStrategy {
     context.events.emit('agent:prompt', { node: nodeProxy, prompt });
 
     const handler = createStrategyMessageHandler(nodeProxy, context.events);
-    const result = await queryStructured(prompt, PolicySchema, this.config, handler, context.signal);
+    const elicitationHandler = this.config.options?.onElicitation ?? context.onElicitation;
+    const wrappedElicitation = wrapElicitation(elicitationHandler, nodeProxy, context.events);
+    const result = await queryStructured(prompt, PolicySchema, this.config, handler, context.signal, wrappedElicitation);
 
     // SDK call failed — fall back to the strictest default (all must succeed)
     // so the parallel node remains safe and predictable.

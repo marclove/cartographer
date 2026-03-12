@@ -126,6 +126,8 @@ All agent strategies use Claude to make decisions. They call `buildStrategyPromp
 
 On agent failure (SDK error, invalid response), all gracefully fall back to default behavior.
 
+All three strategies handle elicitation consistently with `AgentNode`. During each SDK call, the handler is resolved as `config.options.onElicitation ?? context.onElicitation`, wrapped via `wrapElicitation()`, and forwarded to `queryStructured()`. If no handler exists at any level, elicitation requests are automatically declined and an `agent:elicitation_declined` event is emitted. See the [Elicitation guide](../guide-elicitation.md) for handler levels and precedence.
+
 ### AgentSelectionStrategy
 
 ```typescript
@@ -168,8 +170,9 @@ All three agent strategies emit the same `agent:*` events as `AgentNode` during 
 
 1. `agent:prompt` — emitted before calling the SDK
 2. Intermediate events as the SDK streams — `agent:thinking`, `agent:text`, `agent:tool_use`, `agent:stream`, `agent:message`, `agent:init`, `agent:status`, `agent:rate_limit`, `agent:tool_progress`
-3. `agent:response` (on success) or `agent:error` (on failure) — emitted when the SDK returns a result
-4. `strategy:decision` — emitted after a successful call with the parsed decision payload
+3. `agent:elicitation_declined` — emitted if an MCP server requests elicitation and no handler is configured
+4. `agent:response` (on success) or `agent:error` (on failure) — emitted when the SDK returns a result
+5. `strategy:decision` — emitted after a successful call with the parsed decision payload
 
 Since strategies don't own a node, all event payloads use `children[0]` as the `node` reference — the same proxy pattern used by `strategy:decision`.
 
@@ -190,3 +193,19 @@ const strategy = new AgentSelectionStrategy({
   },
 });
 ```
+
+## Helper Functions
+
+### wrapElicitation
+
+```typescript
+import { wrapElicitation } from "cartographer";
+
+function wrapElicitation(
+  handler: OnElicitation | undefined,
+  node: BTreeNode,
+  events: TypedEventEmitter<TreeEvents>,
+): OnElicitation;
+```
+
+Wraps an optional elicitation handler so the SDK always receives a function. If `handler` is defined, delegates to it. Otherwise emits `agent:elicitation_declined` and returns `{ action: 'decline' }`. Used internally by `AgentNode` and all three agent strategies; exported for custom strategy implementations.

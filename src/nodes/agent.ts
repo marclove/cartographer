@@ -2,9 +2,8 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { BaseNode } from './base.js';
 import { NodeStatus } from '../types.js';
 import type { AgentNodeConfig, TreeContext } from '../types.js';
-import type { ElicitationRequest } from '@anthropic-ai/claude-agent-sdk';
 import { createBlackboardMcpServer } from '../agent/blackboard-mcp.js';
-import { emitMessageEvents } from '../agent/sdk-helpers.js';
+import { emitMessageEvents, wrapElicitation } from '../agent/sdk-helpers.js';
 
 /**
  * A leaf node that calls the Claude SDK when ticked.
@@ -97,6 +96,7 @@ import { emitMessageEvents } from '../agent/sdk-helpers.js';
  * | `agent:init` | When the SDK emits a session init message |
  * | `agent:status` | When the SDK emits a status change |
  * | `agent:rate_limit` | When the SDK reports a rate limit event |
+ * | `agent:elicitation_declined` | When an MCP server requests elicitation and no handler is configured |
  */
 export class AgentNode extends BaseNode {
   private config: AgentNodeConfig;
@@ -202,20 +202,7 @@ export class AgentNode extends BaseNode {
 
     // Resolve elicitation handler: node-level > context-level > decline with event
     const userElicitationHandler = userOptions.onElicitation ?? context.onElicitation;
-
-    const wrappedOnElicitation = async (
-      request: ElicitationRequest,
-      opts: { signal: AbortSignal },
-    ) => {
-      if (userElicitationHandler) {
-        return userElicitationHandler(request, opts);
-      }
-      context.events.emit('agent:elicitation_declined', {
-        node: this,
-        request,
-      });
-      return { action: 'decline' as const };
-    };
+    const wrappedOnElicitation = wrapElicitation(userElicitationHandler, this, context.events);
 
     const { onElicitation: _nodeElicitation, ...restUserOptions } = userOptions;
 

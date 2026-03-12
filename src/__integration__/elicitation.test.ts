@@ -29,6 +29,57 @@ function setupMockQuery() {
   } as any);
 }
 
+import { AgentSelectionStrategy } from '../strategies/agent-selection.js';
+
+describe('Strategy elicitation integration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('strategy inherits onElicitation from tree context', async () => {
+    const handler = vi.fn().mockResolvedValue({ action: 'accept', content: { token: 'abc' } });
+
+    // Mock that triggers elicitation during the strategy SDK call, then
+    // returns a valid ordering so the selector succeeds. The second call
+    // is for the AgentNode itself (the action child selected by the strategy).
+    let callCount = 0;
+    mockQuery.mockImplementation(async function* (args: any) {
+      callCount++;
+      const onElicit = args.options.onElicitation;
+      if (callCount === 1 && onElicit) {
+        // Strategy SDK call — invoke elicitation
+        await onElicit(testRequest, { signal: new AbortController().signal });
+      }
+      if (callCount === 1) {
+        // Strategy call — return ordering
+        yield {
+          type: 'result',
+          subtype: 'success',
+          structured_output: { ordering: ['worker'], reasoning: 'only one' },
+          total_cost_usd: 0.01,
+        };
+      } else {
+        // Agent call
+        yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+      }
+    } as any);
+
+    const tree = new TreeBuilder('test')
+      .onElicitation(handler)
+      .selector('root', { strategy: new AgentSelectionStrategy({ prompt: 'Pick best' }) }, (b) => {
+        b.agent('worker', { prompt: 'do work' });
+      })
+      .build();
+
+    await tree.tick();
+
+    expect(handler).toHaveBeenCalledWith(
+      testRequest,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+});
+
 describe('Elicitation integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();

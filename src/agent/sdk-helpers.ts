@@ -1,6 +1,44 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod/v4';
+import type { OnElicitation } from '@anthropic-ai/claude-agent-sdk';
 import type { BTreeNode, TreeContext, TreeEvents, TypedEventEmitter, AgentStrategyConfig } from '../types.js';
+
+/**
+ * Wrap an optional elicitation handler so the SDK always receives a function.
+ *
+ * Both {@link AgentNode} and the three agent strategies
+ * (`AgentSelectionStrategy`, `AgentExecutionStrategy`,
+ * `AgentParallelStrategy`) use this to ensure consistent elicitation
+ * behaviour across all SDK calls. If a user-provided handler exists it is
+ * called directly; otherwise the wrapper emits an
+ * `agent:elicitation_declined` event and returns `{ action: 'decline' }`.
+ *
+ * **Resolution order (performed by the caller, not this function):**
+ * 1. `config.options.onElicitation` — highest priority (node or strategy level)
+ * 2. `context.onElicitation` — inherited through context layering
+ * 3. `undefined` — triggers the decline-and-emit fallback inside the wrapper
+ *
+ * @param handler - The resolved elicitation handler, or `undefined` if none
+ *   was provided at any level.
+ * @param node - The node associated with the SDK call. Used in the
+ *   `agent:elicitation_declined` event payload. For strategies, this is
+ *   typically `children[0]` (the proxy node).
+ * @param events - The tree's event emitter, used to emit
+ *   `agent:elicitation_declined` when no handler exists.
+ * @returns An `OnElicitation` function safe to pass directly to the SDK's
+ *   `query()` options.
+ */
+export function wrapElicitation(
+  handler: OnElicitation | undefined,
+  node: BTreeNode,
+  events: TypedEventEmitter<TreeEvents>,
+): OnElicitation {
+  return async (request, opts) => {
+    if (handler) return handler(request, opts);
+    events.emit('agent:elicitation_declined', { node, request });
+    return { action: 'decline' as const };
+  };
+}
 
 /**
  * Call the Claude SDK with a structured JSON schema output requirement and
@@ -34,6 +72,15 @@ import type { BTreeNode, TreeContext, TreeEvents, TypedEventEmitter, AgentStrate
  *   Converted to JSON Schema internally (with the `$schema` meta-property
  *   stripped before passing to the SDK).
  * @param config - Strategy config providing `model` and `effort` overrides.
+ * @param onMessage - Optional callback invoked for every raw SDK message.
+ *   Typically the return value of {@link createStrategyMessageHandler}.
+ * @param signal - Optional `AbortSignal` from the tree context. Bridged to
+ *   an `AbortController` that the SDK accepts.
+ * @param onElicitation - Optional elicitation handler forwarded to the SDK's
+ *   `query()` options. When provided, the SDK calls it if an MCP server
+ *   requests user input. Callers should use {@link wrapElicitation} to
+ *   produce this value so the SDK always receives a handler (with
+ *   decline-and-emit fallback when no user handler exists).
  * @returns The validated output typed as `z.infer<T>`, or `null` on failure.
  *
  * @example
@@ -57,6 +104,7 @@ export async function queryStructured<T extends z.ZodType>(
   config: AgentStrategyConfig,
   onMessage?: (msg: unknown) => void,
   signal?: AbortSignal,
+  onElicitation?: OnElicitation,
 ): Promise<z.infer<T> | null> {
   try {
     // Bridge the caller's AbortSignal to the AbortController the SDK expects.
@@ -81,6 +129,7 @@ export async function queryStructured<T extends z.ZodType>(
         model: userOptions.model ?? 'sonnet',
         effort: userOptions.effort ?? 'low',
         ...(abortController && { abortController }),
+        ...(onElicitation && { onElicitation }),
       },
     } as any)) {
       const msg = message as any;

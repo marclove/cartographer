@@ -451,6 +451,206 @@ describe('AgentParallelStrategy', () => {
   });
 });
 
+describe('onElicitation wrapping', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const testRequest = {
+    serverName: 'test-mcp-server',
+    message: 'Please authenticate',
+    mode: 'form' as const,
+    requestedSchema: { type: 'object', properties: { token: { type: 'string' } } },
+  };
+
+  function setupElicitationMock() {
+    mockQuery.mockImplementation(async function* (args: any) {
+      const handler = args.options.onElicitation;
+      if (handler) {
+        await handler(testRequest, { signal: new AbortController().signal });
+      }
+      yield {
+        type: 'result',
+        subtype: 'success',
+        structured_output: { ordering: ['a'], reasoning: 'ok' },
+        total_cost_usd: 0.01,
+      };
+    } as any);
+  }
+
+  function setupElicitationMockParallel() {
+    mockQuery.mockImplementation(async function* (args: any) {
+      const handler = args.options.onElicitation;
+      if (handler) {
+        await handler(testRequest, { signal: new AbortController().signal });
+      }
+      yield {
+        type: 'result',
+        subtype: 'success',
+        structured_output: { policy: { successCount: 1 }, reasoning: 'ok' },
+        total_cost_usd: 0.01,
+      };
+    } as any);
+  }
+
+  describe('AgentSelectionStrategy', () => {
+    it('delegates to context.onElicitation', async () => {
+      setupElicitationMock();
+      const handler = vi.fn().mockResolvedValue({ action: 'accept', content: { token: 'abc' } });
+      const ctx = createContext();
+      ctx.onElicitation = handler;
+
+      const strategy = new AgentSelectionStrategy({ prompt: 'Pick' });
+      await strategy.order([mockNode('a')], ctx);
+
+      expect(handler).toHaveBeenCalledWith(testRequest, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    });
+
+    it('prefers config.options.onElicitation over context.onElicitation', async () => {
+      setupElicitationMock();
+      const contextHandler = vi.fn().mockResolvedValue({ action: 'accept' });
+      const configHandler = vi.fn().mockResolvedValue({ action: 'accept' });
+      const ctx = createContext();
+      ctx.onElicitation = contextHandler;
+
+      const strategy = new AgentSelectionStrategy({ prompt: 'Pick', options: { onElicitation: configHandler } });
+      await strategy.order([mockNode('a')], ctx);
+
+      expect(configHandler).toHaveBeenCalled();
+      expect(contextHandler).not.toHaveBeenCalled();
+    });
+
+    it('emits agent:elicitation_declined when no handler exists', async () => {
+      setupElicitationMock();
+      const ctx = createContext();
+      const spy = vi.fn();
+      ctx.events.on('agent:elicitation_declined', spy);
+
+      const strategy = new AgentSelectionStrategy({ prompt: 'Pick' });
+      await strategy.order([mockNode('a')], ctx);
+
+      expect(spy).toHaveBeenCalledWith(expect.objectContaining({ request: testRequest }));
+    });
+
+    it('always provides onElicitation to SDK', async () => {
+      let capturedOptions: any;
+      mockQuery.mockImplementation(async function* (args: any) {
+        capturedOptions = args.options;
+        yield { type: 'result', subtype: 'success', structured_output: { ordering: ['a'], reasoning: 'ok' }, total_cost_usd: 0.01 };
+      } as any);
+
+      const strategy = new AgentSelectionStrategy({ prompt: 'Pick' });
+      await strategy.order([mockNode('a')], createContext());
+
+      expect(typeof capturedOptions.onElicitation).toBe('function');
+    });
+  });
+
+  describe('AgentExecutionStrategy', () => {
+    it('delegates to context.onElicitation', async () => {
+      setupElicitationMock();
+      const handler = vi.fn().mockResolvedValue({ action: 'accept', content: { token: 'abc' } });
+      const ctx = createContext();
+      ctx.onElicitation = handler;
+
+      const strategy = new AgentExecutionStrategy({ prompt: 'Order' });
+      await strategy.order([mockNode('a')], ctx);
+
+      expect(handler).toHaveBeenCalledWith(testRequest, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    });
+
+    it('prefers config.options.onElicitation over context.onElicitation', async () => {
+      setupElicitationMock();
+      const contextHandler = vi.fn().mockResolvedValue({ action: 'accept' });
+      const configHandler = vi.fn().mockResolvedValue({ action: 'accept' });
+      const ctx = createContext();
+      ctx.onElicitation = contextHandler;
+
+      const strategy = new AgentExecutionStrategy({ prompt: 'Order', options: { onElicitation: configHandler } });
+      await strategy.order([mockNode('a')], ctx);
+
+      expect(configHandler).toHaveBeenCalled();
+      expect(contextHandler).not.toHaveBeenCalled();
+    });
+
+    it('emits agent:elicitation_declined when no handler exists', async () => {
+      setupElicitationMock();
+      const ctx = createContext();
+      const spy = vi.fn();
+      ctx.events.on('agent:elicitation_declined', spy);
+
+      const strategy = new AgentExecutionStrategy({ prompt: 'Order' });
+      await strategy.order([mockNode('a')], ctx);
+
+      expect(spy).toHaveBeenCalledWith(expect.objectContaining({ request: testRequest }));
+    });
+
+    it('always provides onElicitation to SDK', async () => {
+      let capturedOptions: any;
+      mockQuery.mockImplementation(async function* (args: any) {
+        capturedOptions = args.options;
+        yield { type: 'result', subtype: 'success', structured_output: { ordering: ['a'], reasoning: 'ok' }, total_cost_usd: 0.01 };
+      } as any);
+
+      const strategy = new AgentExecutionStrategy({ prompt: 'Order' });
+      await strategy.order([mockNode('a')], createContext());
+
+      expect(typeof capturedOptions.onElicitation).toBe('function');
+    });
+  });
+
+  describe('AgentParallelStrategy', () => {
+    it('delegates to context.onElicitation', async () => {
+      setupElicitationMockParallel();
+      const handler = vi.fn().mockResolvedValue({ action: 'accept', content: { token: 'abc' } });
+      const ctx = createContext();
+      ctx.onElicitation = handler;
+
+      const strategy = new AgentParallelStrategy({ prompt: 'Set policy' });
+      await strategy.policy([mockNode('a')], ctx);
+
+      expect(handler).toHaveBeenCalledWith(testRequest, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    });
+
+    it('prefers config.options.onElicitation over context.onElicitation', async () => {
+      setupElicitationMockParallel();
+      const contextHandler = vi.fn().mockResolvedValue({ action: 'accept' });
+      const configHandler = vi.fn().mockResolvedValue({ action: 'accept' });
+      const ctx = createContext();
+      ctx.onElicitation = contextHandler;
+
+      const strategy = new AgentParallelStrategy({ prompt: 'Set policy', options: { onElicitation: configHandler } });
+      await strategy.policy([mockNode('a')], ctx);
+
+      expect(configHandler).toHaveBeenCalled();
+      expect(contextHandler).not.toHaveBeenCalled();
+    });
+
+    it('emits agent:elicitation_declined when no handler exists', async () => {
+      setupElicitationMockParallel();
+      const ctx = createContext();
+      const spy = vi.fn();
+      ctx.events.on('agent:elicitation_declined', spy);
+
+      const strategy = new AgentParallelStrategy({ prompt: 'Set policy' });
+      await strategy.policy([mockNode('a')], ctx);
+
+      expect(spy).toHaveBeenCalledWith(expect.objectContaining({ request: testRequest }));
+    });
+
+    it('always provides onElicitation to SDK', async () => {
+      let capturedOptions: any;
+      mockQuery.mockImplementation(async function* (args: any) {
+        capturedOptions = args.options;
+        yield { type: 'result', subtype: 'success', structured_output: { policy: { successCount: 1 }, reasoning: 'ok' }, total_cost_usd: 0.01 };
+      } as any);
+
+      const strategy = new AgentParallelStrategy({ prompt: 'Set policy' });
+      await strategy.policy([mockNode('a')], createContext());
+
+      expect(typeof capturedOptions.onElicitation).toBe('function');
+    });
+  });
+});
+
 describe('emitMessageEvents', () => {
   it('emits agent:message for every message', () => {
     const events = new EventEmitter<TreeEvents>();

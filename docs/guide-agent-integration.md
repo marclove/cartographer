@@ -187,6 +187,8 @@ All three use `buildStrategyPrompt()`, which constructs a prompt including child
 
 Agent strategies emit the full suite of `agent:*` observability events during their SDK calls — `agent:prompt` before calling Claude, intermediate events like `agent:thinking` and `agent:text` as the SDK streams, and `agent:response` or `agent:error` when the result arrives. After a successful call, they also emit `strategy:decision` with the parsed decision payload. This means any observer listening for `agent:*` events (including `createTreeLogger`) automatically captures strategy SDK interactions with no additional setup.
 
+Agent strategies also handle elicitation consistently with `AgentNode`. They inherit `onElicitation` from the tree context (set via `TreeBuilder.onElicitation()` or context overrides) and support per-strategy overrides via `config.options.onElicitation`. When no handler is available, elicitation requests are declined and an `agent:elicitation_declined` event is emitted. See the [Elicitation guide](guide-elicitation.md) for details.
+
 ---
 
 ## Caching

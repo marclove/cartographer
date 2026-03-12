@@ -1,12 +1,12 @@
 # Elicitation
 
-MCP servers can request user input during agent execution — for example, an OAuth server asking for credentials, or a form server requesting configuration values. The Agent SDK surfaces these as *elicitation requests*. By default, `AgentNode` silently declines all elicitation requests, but you can provide handlers at three levels with clear precedence rules.
+MCP servers can request user input during agent execution — for example, an OAuth server asking for credentials, or a form server requesting configuration values. The Agent SDK surfaces these as *elicitation requests*. By default, all SDK calls — both `AgentNode` executions and agent strategy decisions — silently decline elicitation requests, but you can provide handlers at three levels with clear precedence rules.
 
 ---
 
 ## What Is Elicitation?
 
-When an `AgentNode` invokes Claude via the Agent SDK, the MCP servers attached to that agent may need information from the user. The SDK models this as an *elicitation request*: the server sends a message describing what it needs, and the handler responds with a result.
+When Claude is invoked via the Agent SDK — whether through an `AgentNode` or an agent strategy (`AgentSelectionStrategy`, `AgentExecutionStrategy`, `AgentParallelStrategy`) — the MCP servers attached to that call may need information from the user. The SDK models this as an *elicitation request*: the server sends a message describing what it needs, and the handler responds with a result.
 
 ```typescript
 import type { OnElicitation, ElicitationRequest } from 'cartographer';
@@ -16,12 +16,14 @@ Both types are re-exported from `@anthropic-ai/claude-agent-sdk` for convenience
 
 An `ElicitationRequest` contains:
 
-| Field             | Description                                                       |
-| ----------------- | ----------------------------------------------------------------- |
-| `serverName`      | Name of the MCP server requesting input.                          |
-| `message`         | Human-readable description of what the server needs.              |
-| `mode`            | Either `'form'` (structured input via JSON schema) or `'url'` (directs user to a URL, e.g. OAuth). |
-| `requestedSchema` | When `mode` is `'form'`, the JSON schema describing expected input fields. |
+| Field              | Type                       | Description                                                       |
+| ------------------ | -------------------------- | ----------------------------------------------------------------- |
+| `serverName`       | `string`                   | Name of the MCP server requesting input.                          |
+| `message`          | `string`                   | Human-readable description of what the server needs.              |
+| `mode`             | `'form' \| 'url'`         | Optional. `'form'` for structured input, `'url'` for browser-based auth (e.g. OAuth). |
+| `requestedSchema`  | `Record<string, unknown>`  | Optional. JSON schema describing expected input fields (only for `'form'` mode). |
+| `url`              | `string`                   | Optional. URL to open (only for `'url'` mode).                    |
+| `elicitationId`    | `string`                   | Optional. Correlation ID for URL elicitations.                    |
 
 A handler returns `{ action, content? }` where `action` is one of:
 
@@ -33,19 +35,22 @@ A handler returns `{ action, content? }` where `action` is one of:
 
 ## Handler Levels
 
-Cartographer supports three levels of elicitation handlers, from broadest to most specific.
+Cartographer supports three levels of elicitation handlers, from broadest to most specific. These apply uniformly to both `AgentNode` executions and agent strategy SDK calls.
 
 ### Tree-Level Handler
 
-Set a default handler for all `AgentNode` instances in the tree using `TreeBuilder.onElicitation()` or `BehaviorTreeConfig.onElicitation`:
+Set a default handler for all `AgentNode` instances and agent strategies in the tree using `TreeBuilder.onElicitation()` or `BehaviorTreeConfig.onElicitation`:
 
 ```typescript
 import { TreeBuilder } from 'cartographer';
 import type { OnElicitation } from 'cartographer';
 
 const handler: OnElicitation = async (request, { signal }) => {
-  console.log(`Server "${request.serverName}" requests: ${request.message}`);
-  return { action: 'accept', content: { token: 'my-api-key' } };
+  // Only respond to requests from the expected MCP server
+  if (request.serverName === 'auth-server' && request.mode === 'form') {
+    return { action: 'accept', content: { token: 'my-api-key' } };
+  }
+  return { action: 'decline' };
 };
 
 const tree = new TreeBuilder('with-elicitation')
@@ -56,7 +61,7 @@ const tree = new TreeBuilder('with-elicitation')
   .build();
 ```
 
-The tree-level handler is wired to the root node's context overrides internally. Every `AgentNode` in the tree inherits it through context propagation.
+The tree-level handler is wired to the root node's context overrides internally. Every `AgentNode` and agent strategy in the tree inherits it through context propagation.
 
 ### Per-Subtree Handler
 
@@ -88,7 +93,10 @@ b.agent('specific-agent', {
   prompt: 'Work requiring credentials',
   options: {
     onElicitation: async (request) => {
-      return { action: 'accept', content: { apiKey: process.env.API_KEY } };
+      if (request.serverName === 'credentials-server' && request.mode === 'form') {
+        return { action: 'accept', content: { apiKey: process.env.API_KEY } };
+      }
+      return { action: 'decline' };
     },
   },
 });
@@ -98,30 +106,30 @@ b.agent('specific-agent', {
 
 ## Handler Precedence
 
-`AgentNode` resolves the elicitation handler with this priority:
+Both `AgentNode` and agent strategies resolve the elicitation handler with the same priority:
 
-1. **`options.onElicitation`** (node-level) — highest priority
+1. **`options.onElicitation`** (node-level or `config.options.onElicitation` for strategies) — highest priority
 2. **`context.onElicitation`** (inherited through context layering) — middle priority
 3. **Auto-decline** with `agent:elicitation_declined` event — fallback
 
-The resolution logic in `AgentNode`:
+The resolution logic is shared via the `wrapElicitation` helper:
 
 ```typescript
-const userElicitationHandler = options.onElicitation ?? context.onElicitation;
+import { wrapElicitation } from 'cartographer';
 
-if (userElicitationHandler) {
-  return userElicitationHandler(request, opts);
-}
-// No handler — decline and emit event
-context.events.emit('agent:elicitation_declined', { node, request });
-return { action: 'decline' };
+// Both AgentNode and strategies resolve the same way:
+const userHandler = options.onElicitation ?? context.onElicitation;
+const wrapped = wrapElicitation(userHandler, node, context.events);
+
+// `wrapped` always returns a response — delegates to `userHandler` if
+// present, otherwise emits agent:elicitation_declined and declines.
 ```
 
 ---
 
 ## Decline Events
 
-When no handler exists at any level, the request is automatically declined and an `agent:elicitation_declined` event is emitted. Use this for logging or alerting:
+When no handler exists at any level, the request is automatically declined and an `agent:elicitation_declined` event is emitted. This applies to both `AgentNode` calls and agent strategy SDK calls. Use this for logging or alerting:
 
 ```typescript
 tree.events.on('agent:elicitation_declined', ({ node, request }) => {
@@ -135,8 +143,52 @@ The event payload contains:
 
 | Field     | Type                 | Description                     |
 | --------- | -------------------- | ------------------------------- |
-| `node`    | `BTreeNode`          | The AgentNode that declined.    |
+| `node`    | `BTreeNode`          | The node that declined. For `AgentNode`, this is the agent itself. For strategies, this is `children[0]` (the proxy node). |
 | `request` | `ElicitationRequest` | The original elicitation request. |
+
+---
+
+## Elicitation in Agent Strategies
+
+Agent strategies (`AgentSelectionStrategy`, `AgentExecutionStrategy`, `AgentParallelStrategy`) make their own SDK calls via `queryStructured()`. These calls now handle elicitation using the same resolution and wrapping logic as `AgentNode`.
+
+Strategies resolve their handler as `config.options.onElicitation ?? context.onElicitation`. Since strategies receive the `TreeContext` from their parent composite, a tree-level or subtree-level handler is automatically inherited:
+
+```typescript
+import { TreeBuilder, AgentSelectionStrategy } from 'cartographer';
+
+const tree = new TreeBuilder('with-strategy-elicitation')
+  .onElicitation(async (request) => {
+    // This handler is called for both the strategy's SDK call
+    // and the AgentNode's SDK call — only accept known servers
+    if (request.serverName === 'auth-server' && request.mode === 'form') {
+      return { action: 'accept', content: { token: process.env.API_KEY } };
+    }
+    return { action: 'decline' };
+  })
+  .selector('pick', { strategy: new AgentSelectionStrategy({ prompt: 'Pick best' }) }, (b) => {
+    b.agent('worker-a', { prompt: 'Plan A' });
+    b.agent('worker-b', { prompt: 'Plan B' });
+  })
+  .build();
+```
+
+You can also set a strategy-specific handler via `config.options.onElicitation`, which takes precedence over the context-level handler:
+
+```typescript
+const strategy = new AgentSelectionStrategy({
+  prompt: 'Pick best approach',
+  options: {
+    onElicitation: async (request) => {
+      // Only used during this strategy's SDK call
+      if (request.serverName === 'config-server' && request.mode === 'form') {
+        return { action: 'accept', content: { apiKey: '...' } };
+      }
+      return { action: 'decline' };
+    },
+  },
+});
+```
 
 ---
 
@@ -150,8 +202,7 @@ The server requests structured input via a JSON schema. The `requestedSchema` fi
 
 ```typescript
 const formHandler: OnElicitation = async (request) => {
-  if (request.mode === 'form') {
-    // Inspect request.requestedSchema for field definitions
+  if (request.serverName === 'db-server' && request.mode === 'form') {
     return {
       action: 'accept',
       content: { username: 'admin', password: process.env.DB_PASS },
@@ -167,7 +218,7 @@ The server directs the user to a URL (e.g., an OAuth authorization page):
 
 ```typescript
 const urlHandler: OnElicitation = async (request) => {
-  if (request.mode === 'url') {
+  if (request.serverName === 'oauth-server' && request.mode === 'url') {
     // request.message contains the URL or instructions
     console.log(`Please visit: ${request.message}`);
     // After user completes the flow, accept with any tokens received
