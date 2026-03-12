@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { BehaviorTree } from './behavior-tree.js';
 import { NodeStatus } from '../types.js';
+import type { TreeContext } from '../types.js';
 import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { MapBlackboard } from './blackboard.js';
@@ -187,6 +188,26 @@ describe('BehaviorTree', () => {
 
     expect(spy).toHaveBeenCalledOnce();
     expect(spy).toHaveBeenCalledWith({ tree: 'my-tree' });
+  });
+
+  it('sets onElicitation as contextOverrides on the root when provided in config', async () => {
+    const handler = vi.fn();
+    let receivedContext: TreeContext | undefined;
+
+    const tree = new BehaviorTree({
+      name: 'test',
+      root: new ActionNode({
+        name: 'root',
+        action: (ctx) => {
+          receivedContext = ctx;
+          return NodeStatus.SUCCESS;
+        },
+      }),
+      onElicitation: handler,
+    });
+
+    await tree.tick();
+    expect(receivedContext!.onElicitation).toBe(handler);
   });
 
   it('nodes share the same blackboard through context', async () => {

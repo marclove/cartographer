@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import type { Options, OnElicitation, ElicitationRequest } from '@anthropic-ai/claude-agent-sdk';
 
 // --- Node Status ---
 
@@ -170,6 +170,7 @@ export interface TreeEvents {
   'tree:abort': { tree: string };
   'blackboard:write': { key: string; value: unknown; source: string };
   'strategy:decision': { composite: BTreeNode; strategy: string; decision: unknown };
+  'agent:elicitation_declined': { node: BTreeNode; request: ElicitationRequest };
 }
 
 /**
@@ -238,6 +239,13 @@ export interface TreeContext {
    * Nodes can check `signal?.aborted` to bail out of long-running work.
    */
   signal?: AbortSignal;
+
+  /**
+   * Handler for MCP elicitation requests. Inherited by descendant nodes
+   * via context layering — set on a composite or the tree config and all
+   * AgentNode descendants will use it unless a closer ancestor overrides it.
+   */
+  onElicitation?: OnElicitation;
 }
 
 // --- Node Interface ---
@@ -888,6 +896,13 @@ export interface BehaviorTreeConfig {
    * is created automatically.
    */
   blackboard?: Blackboard;
+
+  /**
+   * Default handler for MCP elicitation requests.
+   * Applied as a context override on the root node, so all AgentNodes
+   * in the tree inherit it unless a closer ancestor overrides it.
+   */
+  onElicitation?: OnElicitation;
 }
 
 // --- Scheduler ---

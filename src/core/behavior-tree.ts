@@ -2,6 +2,7 @@ import { NodeStatus } from '../types.js';
 import type { BehaviorTreeConfig, BTreeNode, Blackboard, TreeContext, TreeEvents } from '../types.js';
 import { EventEmitter } from './event-emitter.js';
 import { MapBlackboard } from './blackboard.js';
+import { BaseNode } from '../nodes/base.js';
 
 /**
  * The top-level runner for a behavior tree.
@@ -68,6 +69,9 @@ export class BehaviorTree {
     this.events = new EventEmitter<TreeEvents>();
     this.abortController = new AbortController();
     BehaviorTree.validateUniqueIds(this.root);
+    if (config.onElicitation && this.root instanceof BaseNode) {
+      this.root.mergeContextOverrides({ onElicitation: config.onElicitation });
+    }
     this.events.emit('tree:init', { tree: this.name, root: this.root.name });
   }
 
