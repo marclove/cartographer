@@ -183,7 +183,7 @@ interface TreeConfig {
  * | `abortController` | `AbortController` instance (also managed internally by `AgentNode`) |
  * | `canUseTool` | Callback function |
  * | `hooks` | Contains callback functions |
- * | `onElicitation` | Callback function |
+ * | `onElicitation` | Callback function (set at tree level via `BehaviorTreeConfig.onElicitation` or per-subtree via context overrides) |
  * | `stderr` | Callback function |
  * | `spawnClaudeCodeProcess` | Callback function |
  * | `toolConfig` | May contain callback functions |
