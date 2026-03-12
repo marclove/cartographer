@@ -35,10 +35,12 @@ Your background determines the fastest path through these docs.
 - [Decorators](guide-decorators.md) -- All seven decorator nodes with examples.
 - [Blackboard and Events](guide-blackboard-and-events.md) -- State management with MapBlackboard, observability via the event emitter, and structured NDJSON logging.
 - [Agent Integration](guide-agent-integration.md) -- AgentNode modes, agent strategies, and MCP tool configuration.
+- [Elicitation](guide-elicitation.md) -- Handling MCP server input requests at tree, subtree, and node levels.
+- [TreeContext and Context Layering](guide-context.md) -- How TreeContext propagates through the tree and how to override fields per subtree.
 - [Scheduler](guide-scheduler.md) -- TreeScheduler: interval, cron, and one-shot scheduling.
 - [Error Handling and Resilience](guide-error-handling.md) -- Error containment, retry/timeout stacking, abort signals, and scheduler error recovery.
 - [Testing Behavior Trees](guide-testing.md) -- Test contexts, helper functions, event verification, and multi-tick test patterns.
-- [Advanced Patterns](guide-advanced-patterns.md) -- Custom nodes, custom strategies, multi-tick resumption internals, parallel policies, and advanced YAML.
+- [Advanced Patterns](guide-advanced-patterns.md) -- Custom nodes, custom strategies, multi-tick resumption internals, parallel policies, advanced blackboard patterns, and advanced YAML.
 
 ### Examples
 

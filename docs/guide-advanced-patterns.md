@@ -187,44 +187,7 @@ const strategy = new AgentExecutionStrategy({
 
 Context layering allows any node to override `TreeContext` fields for its descendants, similar to React's Context API. This is the mechanism behind per-subtree elicitation handlers, and it's available for custom use cases.
 
-### How It Works
-
-When a node has context overrides set (via `setContextOverrides()` or `mergeContextOverrides()`), `tick()` shallow-merges those overrides onto the incoming `TreeContext` before calling `execute()`. Two fields are pinned and can never be overridden:
-
-- `events` — all events always reach the tree-level emitter.
-- `blackboard` — the shared state store is always the same instance.
-
-The closest override to a given node wins. If a grandparent sets `onElicitation` to handler A and a parent sets it to handler B, children of the parent see handler B.
-
-### Using Context Overrides in the Builder
-
-The `context` option on composite and decorator builder methods calls `setContextOverrides()` on the constructed node:
-
-```typescript
-const tree = new TreeBuilder('example')
-  .sequence('outer', { context: { onElicitation: outerHandler } }, (b) => {
-    // inner override takes precedence for its descendants
-    b.sequence('inner', { context: { onElicitation: innerHandler } }, (b) => {
-      b.agent('worker', { prompt: 'work' }); // sees innerHandler
-    });
-    b.agent('sibling', { prompt: 'other' }); // sees outerHandler
-  })
-  .build();
-```
-
-### Using Context Overrides Programmatically
-
-When constructing nodes directly, call `setContextOverrides()` or `mergeContextOverrides()` on any `BaseNode` subclass:
-
-```typescript
-import { SequenceNode, AgentNode } from 'cartographer';
-
-const seq = new SequenceNode({
-  name: 'scoped',
-  children: [new AgentNode({ name: 'agent', prompt: 'work' })],
-});
-seq.setContextOverrides({ onElicitation: myHandler });
-```
+See the dedicated [TreeContext and Context Layering guide](guide-context.md) for the full explanation of how context overrides work, pinned fields, builder integration, and programmatic usage.
 
 ---
 
@@ -567,6 +530,8 @@ root:
 
 ## Next Steps
 
+- [TreeContext and Context Layering](guide-context.md) — How context overrides propagate through the tree.
+- [Elicitation](guide-elicitation.md) — Handling MCP server input requests.
 - [Building Trees](guide-building-trees.md) — Builder API, YAML config, and manual wiring compared side-by-side.
 - [Agent Integration](guide-agent-integration.md) — AgentNode configuration, agent strategies, and MCP tool configuration.
 - [Error Handling and Resilience](guide-error-handling.md) — Recovery patterns and abort semantics.
