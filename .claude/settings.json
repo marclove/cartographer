@@ -8,8 +8,8 @@
 			"Bash(tree:*)",
 			"Bash(grep:*)",
 			"Read(node_modules/@anthropic-ai/**)",
-			"Bash(find node_modules/@modelcontextprotocol:*",
-			"Bash(find node_modules/@anthropic-ai:*"
+			"Bash(find node_modules/@modelcontextprotocol:*)",
+			"Bash(find node_modules/@anthropic-ai:*)"
 		]
 	}
 }
