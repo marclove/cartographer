@@ -63,21 +63,21 @@ execute(context):
   // Resolve strategy if needed (see Section 4)
 
   for each child in committed order:
-    if child is non-reactive AND child completed in this cycle:
-      status = cached result
+    if child is non-reactive AND completedSet.has(child):
+      status = SUCCESS
     else:
       status = await child.tick(context)
 
     if status == FAILURE:
       this.abortAllChildControllers()
-      clear cycle state
+      completedSet.clear()
       return FAILURE
 
     if status == RUNNING:
       return RUNNING
 
     if status == SUCCESS AND child is non-reactive:
-      cache child completion
+      completedSet.add(child)
 
   clear cycle state
   return SUCCESS
@@ -88,14 +88,14 @@ execute(context):
 ```
 execute(context):
   for each child in committed order:
-    if child is non-reactive AND child completed in this cycle:
-      status = cached result
+    if child is non-reactive AND completedSet.has(child):
+      status = SUCCESS
     else:
       status = await child.tick(context)
 
     if status == SUCCESS:
       this.abortAllChildControllers()
-      clear cycle state
+      completedSet.clear()
       return SUCCESS
 
     if status == RUNNING:
@@ -120,10 +120,10 @@ A "cycle" is the span from when a composite begins working through its children 
 
 **The re-execution problem:** In a reactive sequence `[Condition, Action, AgentNode]`, every tick re-evaluates from the start. Re-checking the Condition is the whole point. But if Action already succeeded, re-ticking it would re-execute it — wrong for side-effectful actions.
 
-**Solution:** Composites track which children have completed (SUCCESS) during the current cycle:
+**Solution:** Composites maintain a `Set<BTreeNode>` (reference equality) of children that have completed (SUCCESS) during the current cycle:
 
 - **ConditionNodes** are always re-ticked. They're stateless checks — this is the purpose of reactivity.
-- **Other nodes** (actions, agents, decorators, sub-composites) that returned SUCCESS in this cycle return their cached result without re-executing.
+- **Other nodes** (actions, agents, decorators, sub-composites) that returned SUCCESS in this cycle are in the Set and return SUCCESS without re-executing.
 - **RUNNING nodes** are ticked (polled) normally.
 
 **How composites identify reactive (re-evaluable) nodes:** A helper function uses `instanceof` checks, recursing through single-child decorators to find the leaf:
@@ -140,10 +140,10 @@ This handles `Inverter(Condition)`, `AlwaysSucceed(Guard(Condition))`, etc. No i
 
 **Cycle lifecycle:**
 
-- **Start:** Composite is ticked with no active cycle (fresh, or after previous cycle ended). Completion cache is empty.
-- **During:** Each tick re-evaluates from the start. Conditions re-checked, completed non-conditions return cached result, RUNNING nodes polled.
-- **End:** Composite returns SUCCESS or FAILURE. Completion cache cleared.
-- **Abort:** Composite aborted mid-cycle — completion cache cleared, in-flight children aborted.
+- **Start:** Composite is ticked with no active cycle (fresh, or after previous cycle ended). Completion set is empty.
+- **During:** Each tick re-evaluates from the start. Conditions re-checked, completed non-conditions are in the set and skip re-execution, RUNNING nodes polled.
+- **End:** Composite returns SUCCESS or FAILURE. Completion set cleared.
+- **Abort:** Composite aborted mid-cycle — completion set cleared, in-flight children aborted.
 
 **Nested composites:** A child that is itself a Sequence manages its own cycle independently. The parent sees it as a node that returned SUCCESS, FAILURE, or RUNNING. If the parent caches the child composite's SUCCESS, the child's internal cycle state is irrelevant.
 
