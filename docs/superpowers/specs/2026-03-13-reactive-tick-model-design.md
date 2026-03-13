@@ -13,67 +13,53 @@ Make the behavior tree reactive to blackboard changes from outside actors within
 
 ## Design
 
-### 1. Non-Blocking Execution at BaseNode Level
+### 1. Non-Blocking Leaf Nodes
 
-`BaseNode.tick()` gains the ability to detect long-running `execute()` calls and return RUNNING automatically.
+Leaf nodes that perform long-running work (ActionNode, AgentNode) manage their own inflight state as instance fields. On the first tick they start the async work and return RUNNING immediately. On subsequent ticks they poll for completion and return RUNNING or the final status.
 
-**Mechanism:**
+**BaseNode.tick() is unchanged** — it remains a simple wrapper: emit `node:enter`, call `await this.execute(context)`, emit `node:exit`. There is no microtask yield, no inflight tracking, and no special RUNNING detection in BaseNode. All nodes — leaves, composites, decorators — go through the same lifecycle. One implementation, no bypass.
+
+**ActionNode.execute() inflight pattern:**
 
 ```
-tick(context):
-  // Poll phase: if there's an in-flight execution, check completion
+execute(context):
+  // Poll: if there's in-flight work, check completion
   if (this._inflight):
-    if (this._inflight settled):
+    if (this._inflightResult !== undefined):
+      result = this._inflightResult
       clear inflight state
-      emit node:exit
-      return settled status
-
+      return result
     else:
       return RUNNING
 
-  // Start phase: begin new execution
-  emit node:enter
-  promise = this.execute(context)
-
-  // Yield to microtask queue to detect synchronous resolution
-  await microtask
-
-  if (promise settled):
-    // Fast path: sync or near-sync work (conditions, quick actions)
-    emit node:exit
-    return result
-
-  // Slow path: long-running async work
-  this._inflight = promise
-  promise.then(status => this._inflightResult = status)
+  // Start: kick off the action, return RUNNING immediately
+  this._inflight = this.action(context)
+  this._inflight.then(
+    status => this._inflightResult = status,
+    error  => this._inflightError = error
+  )
   return RUNNING
 ```
 
-**Properties:**
+This means ActionNode *always* returns RUNNING on the first tick, even for fast synchronous actions. This is acceptable — a fast action resolves before the next tick, so the composite sees RUNNING once and SUCCESS on the next tick. The simplicity of a single code path (no microtask yield to distinguish fast vs slow) outweighs the cost of one extra tick for fast actions.
 
-- **Transparent to node authors.** The `execute()` signature is unchanged. Nodes that resolve quickly (conditions, fast actions) hit the fast path and never return RUNNING from this mechanism.
-- **Abort wiring.** The in-flight promise respects `context.signal`. When `abort()` is called, the signal fires, and well-behaved async work cancels. `reset()` clears in-flight state.
-- **Error handling.** If the in-flight promise rejects, the next tick that polls it re-throws, triggering `node:error` through existing BaseNode error handling.
-- **Event semantics.** `node:enter` fires on the tick that starts execution. `node:exit` fires on the tick that observes completion. These may be different ticks. On intermediate poll ticks (where the node is RUNNING and being polled), neither `node:enter` nor `node:exit` fires — instead, a new `node:poll` event fires with the node ID and RUNNING status. This keeps event consumers informed without generating misleading enter/exit pairs for work that didn't actually start or finish on that tick. The `durationMs` field in `node:exit` measures wall-clock time from when `execute()` was first invoked to when the result was observed — spanning multiple ticks if the node was RUNNING.
-- **Backwards compatible.** If you never tick faster than your slowest node, you get today's behavior. This is purely additive.
+**AgentNode.execute()** follows the same pattern. It already has `activeAbortController` and similar instance state, so inflight tracking is a natural fit. The SDK call runs in the background; streaming events (`agent:text`, `agent:thinking`, etc.) continue to fire while the node is RUNNING.
 
-**Microtask yield explained:** `await Promise.resolve()` briefly yields to the JavaScript microtask queue, allowing already-resolved promises to flush their `.then()` callbacks. This is how we distinguish "fast" (resolved within one microtask) from "slow" (truly async — HTTP calls, SDK queries). A condition checking a blackboard value resolves instantly and returns its result. An AgentNode calling the SDK doesn't resolve, so it's stored for polling.
+**ConditionNode** — No changes needed. Condition functions are synchronous or near-synchronous boolean checks. `execute()` evaluates the condition and returns SUCCESS/FAILURE immediately. No inflight tracking.
+
+**Abort and reset:** ActionNode and AgentNode clear their inflight state on `abort()` and `reset()`. The AbortSignal (for nodes that support hard cancellation like AgentNode) continues to work as today.
 
 ### 2. Reactive Composites
 
 All composites become reactive. `SequenceNode` and `SelectorNode` re-evaluate children from the start on every tick, even when a later child is RUNNING. There are no separate reactive/non-reactive variants.
 
-**Composites bypass the BaseNode inflight wrapper.** Composites override `tick()` directly and manage their own event emission (`node:enter`/`node:exit`/`node:poll`) and cycle state. The BaseNode inflight wrapper applies to leaf nodes and decorators — nodes whose `execute()` may genuinely block. Composites never block: their `execute()` polls children and returns RUNNING synchronously. But because composite `execute()` may contain an internal `await microtask` for strategy resolution (Section 4), it would interact badly with the `await microtask` in BaseNode's `tick()` wrapper. Bypassing the wrapper entirely avoids this layering conflict.
-
-The pseudocode below represents the composite's `tick()` override:
+Composites stay in `execute()` as they do today. Since child `tick()` calls now return quickly (leaves return RUNNING immediately or a final status), composite `execute()` always resolves fast. No `tick()` override, no duplicated lifecycle — composites use the same BaseNode `tick()` wrapper as every other node.
 
 **Sequence behavior:**
 
 ```
-tick(context):
-  emit node:enter (or node:poll if mid-cycle)
+execute(context):
   // Resolve strategy if needed (see Section 4)
-  // Then for each child in committed order:
 
   for each child in committed order:
     if child is non-reactive AND child completed in this cycle:
@@ -84,28 +70,22 @@ tick(context):
     if status == FAILURE:
       abort any previously-RUNNING children not yet visited
       clear cycle state
-      emit node:exit
       return FAILURE
 
     if status == RUNNING:
-      emit node:exit
       return RUNNING
 
     if status == SUCCESS AND child is non-reactive:
       cache child completion
 
   clear cycle state
-  emit node:exit
   return SUCCESS
 ```
-
-**Aborting previously-RUNNING children:** When a composite short-circuits (e.g., condition fails at index 2, but child at index 4 was RUNNING from a previous tick), it must abort children that have in-flight state but were not visited in this tick. The composite tracks which children are currently RUNNING (those that returned RUNNING on any tick in this cycle) and calls `abort()` on any that need cleanup when the cycle ends or is preempted.
 
 **Selector behavior:**
 
 ```
-tick(context):
-  emit node:enter (or node:poll if mid-cycle)
+execute(context):
   for each child in committed order:
     if child is non-reactive AND child completed in this cycle:
       status = cached result
@@ -115,24 +95,23 @@ tick(context):
     if status == SUCCESS:
       abort any previously-RUNNING children not yet visited
       clear cycle state
-      emit node:exit
       return SUCCESS
 
     if status == RUNNING:
       // Don't try lower-priority branches
-      emit node:exit
       return RUNNING
 
     // status == FAILURE: try next child
 
   clear cycle state
-  emit node:exit
   return FAILURE
 ```
 
 Higher-priority branches are always re-checked. If branch 1 was FAILURE and branch 3 was RUNNING, but now branch 1 succeeds, branch 3 is aborted and the selector returns SUCCESS.
 
-**Interaction with non-blocking nodes:** When a reactive composite ticks a RUNNING child (e.g., an AgentNode mid-API-call), that child's `tick()` hits the poll path in BaseNode — checks if the in-flight promise settled, returns RUNNING or the final status. This is fast and non-blocking.
+**Aborting previously-RUNNING children:** When a composite short-circuits (e.g., condition fails at index 2, but child at index 4 was RUNNING from a previous tick), it must abort children that have in-flight state but were not visited in this tick. The composite tracks which children are currently RUNNING (those that returned RUNNING on any tick in this cycle) and calls `abort()` on any that need cleanup when the cycle ends or is preempted.
+
+**Interaction with non-blocking nodes:** When a reactive composite ticks a RUNNING child (e.g., an AgentNode mid-API-call), that child's `tick()` hits the poll path in the leaf's `execute()` — checks if the in-flight promise settled, returns RUNNING or the final status. This is fast and non-blocking.
 
 ### 3. Cycle-Based Completion Tracking
 
@@ -178,9 +157,9 @@ Tick 4: Cond -> SUCCESS. Action re-executes.           (new cycle)
 
 ### 4. Strategy Handling
 
-Strategy calls get the same non-blocking treatment as node execution. Composites handle pending strategy calls as their own RUNNING state.
+Strategy calls get the same non-blocking treatment as leaf node execution. Composites handle pending strategy calls as instance state, returning RUNNING until the strategy resolves.
 
-**Lifecycle** (inside the composite's `tick()` override, before child traversal):
+**Lifecycle** (inside the composite's `execute()`, before child traversal):
 
 ```
 // Phase 1: Strategy resolution (instance state on the composite)
@@ -193,23 +172,15 @@ if (strategyPending):
 
 if (committedOrder === null):
   promise = strategy.orderChildren(children, context)
-  // Check synchronous resolution via settled flag (not microtask yield —
-  // composites bypass BaseNode's tick wrapper, so they use a simpler pattern:
-  // attach a .then() callback that sets a flag, then check the flag immediately)
-  let settled = false, result
-  promise.then(r => { settled = true; result = r })
-
-  if (settled):
-    committedOrder = result
-  else:
-    strategyPending = promise
-    promise.then(r => strategyResult = r)
-    return RUNNING
+  // Store as pending — check on next tick
+  strategyPending = promise
+  promise.then(r => strategyResult = r)
+  return RUNNING
 
 // Phase 2: Tick children in committed order (reactive traversal)
 ```
 
-Note: For synchronous strategies (the common case), `promise.then()` callbacks don't fire synchronously in JavaScript — they're microtasks. So a truly sync strategy still needs one tick to resolve. An alternative is to check if the strategy method returns a non-promise value directly (via checking for `.then`), or to have strategies set their result synchronously on a shared object. The implementation should pick the simplest approach that handles the common case efficiently.
+Note: This means even fast/synchronous strategies take one tick to resolve (the `.then()` callback fires as a microtask, after `execute()` has already returned RUNNING). This is consistent with how ActionNode works — one extra tick for the common case, in exchange for a single simple code path.
 
 **Committed order reset:** Same as current model — the order stays locked for the duration of a cycle. Reactive re-evaluation re-ticks children in the same committed order. The strategy is only re-consulted when a new cycle begins.
 
@@ -226,14 +197,7 @@ When a reactive composite determines that a RUNNING subtree should be preempted 
 3. In-flight promises are abandoned (results, if they arrive later, are ignored).
 4. Composite returns FAILURE or tries the next branch (depending on type).
 
-**BaseNode.abort() changes:** Today `abort()` is a no-op on BaseNode. With non-blocking execution, it must also clear in-flight state:
-
-```
-abort():
-  if (this._inflight):
-    this._inflight = null
-    this._inflightResult = null
-```
+**Leaf node abort():** ActionNode and AgentNode clear their inflight state (`_inflight`, `_inflightResult`) on `abort()`. BaseNode.abort() remains a no-op — only nodes with inflight state need cleanup.
 
 **AbortSignal scoping:** The tree shares a single `AbortController` whose signal is passed to all nodes via `context.signal`. Subtree preemption does NOT use this tree-level signal (aborting one subtree should not abort the whole tree). Instead, `abort()` is best-effort: the in-flight promise is abandoned (cleared from tracking, results ignored if they arrive later), but the underlying async work may continue running until it naturally completes or checks `context.signal`. Nodes that need hard cancellation (like `AgentNode`) already create their own `AbortController` and bridge it to the context signal — this pattern continues to work.
 
@@ -282,48 +246,45 @@ tree.events.on('tree:tick', ({ status }) => {
 
 **Existing `run()` method** remains unchanged (single tick, returns `{ status, blackboard }`). **Existing scheduler** remains unchanged for cron and one-shot use cases.
 
+Calling `start()` while a loop is already running throws an error.
+
 ### 7. Impact on Existing Nodes
 
 **ConditionNode** — No changes. Stateless, fast. Always re-evaluated by reactive composites.
 
-**ActionNode** — No changes. Non-blocking BaseNode infrastructure handles slow actions automatically.
+**ActionNode** — Add inflight state management to `execute()`. First tick starts the action and returns RUNNING; subsequent ticks poll for completion. Add `abort()` and `reset()` overrides to clear inflight state.
 
-**AgentNode** — No changes to `execute()`. The SDK call is long-running async — BaseNode makes it non-blocking automatically. Abort wiring already exists. Streaming events (`agent:text`, `agent:thinking`, etc.) continue to fire in the background while the node is RUNNING. Cache behavior (`cache: true`) continues to work but is less relevant since composites handle cycle-based caching.
-
-**Decorator design principle:** Under the new model, children return RUNNING quickly via the poll path. This means a decorator's `execute()` that calls `await this.child.tick(context)` resolves within a microtask — it hits BaseNode's fast path and is called again on the next tick. Decorators leverage this by keeping `execute()` non-looping (one poll per tick) and storing any cross-tick state as instance fields. This gives them free re-entry on every tick while still using BaseNode's inflight wrapper and event emission.
+**AgentNode** — Same inflight pattern as ActionNode. The SDK call runs in the background. Abort wiring already exists (`activeAbortController`). Streaming events continue to fire while RUNNING. Cache behavior (`cache: true`) continues to work but is less relevant since composites handle cycle-based caching.
 
 **Decorators:**
 
-- **Timeout** — Must be restructured. The current `Promise.race(child.tick(), timer)` pattern breaks: under the new model, `child.tick()` returns RUNNING within a microtask, so the race resolves before the timer fires. Instead, Timeout should track wall-clock time across ticks using instance state:
+- **Timeout** — Must be restructured. The current `Promise.race(child.tick(), timer)` pattern breaks: under the new model, `child.tick()` returns RUNNING quickly, so the race resolves before the timer fires. Instead, Timeout should track wall-clock time across ticks using instance state:
   - On first tick: record `this._startTime = Date.now()`, tick child.
   - On each subsequent tick: check `Date.now() - this._startTime > timeoutMs`. If expired, abort child, return FAILURE. Otherwise, tick child and return its status.
   - On reset: clear `_startTime`.
-  - `execute()` always resolves within a microtask (fast path), so it's called on every tick.
-- **Retry/Repeat** — Must be restructured to use instance state. The current `for` loop with local counter variables doesn't survive across ticks — `execute()` resolves within a microtask each time, so the loop completes instantly. Instead:
+- **Retry/Repeat** — Must be restructured to use instance state. The current `for` loop with local counter variables doesn't survive across ticks. Instead:
   - Store attempt/iteration count as instance fields (e.g., `this._attempt`).
   - On each tick: tick the child. If child is RUNNING, return RUNNING. If child failed and attempts remain, increment `this._attempt`, reset the child, and return RUNNING (next tick starts the retry). If all attempts exhausted, return FAILURE.
   - `execute()` does one unit of work per tick and returns immediately.
   - On reset: clear attempt/iteration state.
-- **Guard** — Already re-checks its condition on every call to `execute()`. Under the current blocking model this re-check never happens because `execute()` blocks until the child resolves. Under the new model, the child returns RUNNING quickly (via the poll path), so `execute()` resolves within a microtask (fast path) and is called again on the next tick — naturally re-checking the condition. The one code change needed: Guard must call `this.child.abort()` when the condition fails while the child has in-flight work, before returning FAILURE.
+- **Guard** — Already re-checks its condition on every call to `execute()`. Under the current blocking model this re-check never happens because `execute()` blocks until the child resolves. Under the new model, the child returns RUNNING quickly, so `execute()` returns quickly and is called again on the next tick — naturally re-checking the condition. The one code change needed: Guard must call `this.child.abort()` when the condition fails while the child has in-flight work, before returning FAILURE.
 - **Inverter, AlwaysSucceed, AlwaysFail** — Pass through child status (inverting/overriding as appropriate). No changes needed. RUNNING passes through unchanged.
 
-**ParallelNode** — Unlike Sequence and Selector, Parallel can remain in `execute()` (no `tick()` override needed). Its `execute()` uses `Promise.all(children.map(c => c.tick(context)))`, which under the new model resolves within a microtask since all child ticks return quickly (poll path or fast conditions). This hits BaseNode's fast path, so `execute()` is called again on every tick. Parallel also needs cycle-based completion tracking: children that returned SUCCESS in the current cycle should not be re-executed on subsequent ticks. The same `isReactiveNode()` check applies — reactive children (conditions, possibly decorated) are re-ticked, non-reactive children (actions, agents) return their cached result.
+**ParallelNode** — Its `execute()` uses `Promise.all(children.map(c => c.tick(context)))`, which resolves quickly since all child ticks return fast (poll path or immediate conditions). Parallel also needs cycle-based completion tracking: children that returned SUCCESS in the current cycle should not be re-executed on subsequent ticks. The same `isReactiveNode()` check applies — reactive children (conditions, possibly decorated) are re-ticked, non-reactive children (actions, agents) return their cached result.
 
 ### 8. Type and Interface Changes
 
 The following changes to `src/types.ts` are required:
 
-**`TreeEvents` interface:** Add new events.
+**`TreeEvents` interface:** Add new event.
 
 ```typescript
-'node:poll': { node: BTreeNode; status: NodeStatus.RUNNING; context: TreeContext };
 'tree:tick:skipped': { timestamp: number };
 ```
 
-**`BaseNode`:** Add `_inflight` and `_inflightResult` fields, updated `tick()`, `abort()`, and `reset()`.
+**`ActionNode`:** Add `_inflight`, `_inflightResult`, `_inflightError` fields. Override `abort()` and `reset()` to clear them.
 
-- `abort()`: clears `_inflight` and `_inflightResult`
-- `reset()`: clears `_inflight` and `_inflightResult` (currently a no-op)
+**`AgentNode`:** Same inflight fields as ActionNode.
 
 **`BehaviorTree`:** Add `start(options: { intervalMs: number; signal?: AbortSignal }): TickLoopHandle`.
 
@@ -350,7 +311,7 @@ const status2 = await tree.tick(context);
 expect(status2).toBe(NodeStatus.FAILURE);
 ```
 
-Tests call `tick()` manually without using `run()`. No new test infrastructure required.
+Tests call `tick()` manually without using `start()`. No new test infrastructure required.
 
 **Testing non-blocking nodes with deferred promises:**
 
@@ -378,15 +339,14 @@ expect(s2).toBe(NodeStatus.SUCCESS);
 - Condition changes mid-cycle cause abort of RUNNING children
 - Completed actions are not re-executed within a cycle
 - Conditions ARE re-evaluated every tick
-- Abort cleans up in-flight promises
-- Fast nodes never return RUNNING (microtask fast path)
+- Abort cleans up in-flight promises on leaf nodes
 - Cycle cache clears when cycle ends (SUCCESS/FAILURE)
 - Nested composites manage independent cycles
 - `tree.start()` tick loop: interval timing, skip-on-overlap, clean shutdown
-- Strategy resolution across ticks (fast strategies resolve immediately, slow strategies return RUNNING)
+- Strategy resolution across ticks (pending -> resolved)
 - Guard aborts child when condition fails mid-execution
 - Parallel completion tracking prevents re-execution of side-effectful children
-- Retry/Repeat appear as single RUNNING span to parent composites
-- `node:poll` event fires on intermediate poll ticks (not `node:enter`/`node:exit`)
+- Retry/Repeat track attempts across ticks via instance state
+- Timeout measures wall-clock time across ticks
 
-**Existing tests:** Most current unit and integration tests should continue to pass since single-tick execution is a degenerate case (all nodes resolve immediately). Tests asserting specific `runningChildId` behavior will need updating since that mechanism is replaced by reactive re-evaluation with cycle-based caching.
+**Existing tests:** Most current unit and integration tests should continue to pass since single-tick execution is a degenerate case (all nodes resolve immediately). Tests asserting specific `runningChildId` behavior will need updating since that mechanism is replaced by reactive re-evaluation with cycle-based caching. Tests for ActionNode behavior change: actions now always return RUNNING on first tick, settling on the second.
