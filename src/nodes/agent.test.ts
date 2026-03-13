@@ -684,3 +684,184 @@ describe('AgentNode - onElicitation wrapping', () => {
     expect(capturedOptions.onElicitation).toBeTypeOf('function');
   });
 });
+
+describe('AgentNode - inflight state management', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns RUNNING on first tick while SDK call is in progress', async () => {
+    let resolveMessage!: () => void;
+
+    mockQuery.mockImplementation((() => {
+      return (async function* () {
+        await new Promise<void>((resolve) => { resolveMessage = resolve; });
+        yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+      })();
+    }) as any);
+
+    const node = new AgentNode({ name: 'inflight-test', prompt: 'Do work' });
+    const ctx = createContext();
+
+    // First tick should return RUNNING immediately
+    const status = await node.tick(ctx);
+    expect(status).toBe(NodeStatus.RUNNING);
+
+    // Clean up: let the background work finish
+    resolveMessage();
+    // Wait for the promise to settle
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
+  it('returns SUCCESS on subsequent tick after SDK call completes', async () => {
+    let resolveMessage!: () => void;
+
+    mockQuery.mockImplementation((() => {
+      return (async function* () {
+        await new Promise<void>((resolve) => { resolveMessage = resolve; });
+        yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+      })();
+    }) as any);
+
+    const node = new AgentNode({ name: 'inflight-test', prompt: 'Do work' });
+    const ctx = createContext();
+
+    // First tick: starts work, returns RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // Let the SDK call complete
+    resolveMessage();
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Second tick: polls and returns the final status
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+  });
+
+  it('abort() clears inflight state', async () => {
+    let resolveMessage!: () => void;
+
+    mockQuery.mockImplementation((() => {
+      return (async function* () {
+        await new Promise<void>((resolve) => { resolveMessage = resolve; });
+        yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+      })();
+    }) as any);
+
+    const node = new AgentNode({ name: 'abort-inflight', prompt: 'Do work' });
+    const ctx = createContext();
+
+    // First tick starts the work
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // Abort clears inflight state
+    node.abort();
+
+    // Next tick should start fresh work (new inflight), not poll the old one
+    // We need a new mock for the second invocation
+    mockQuery.mockImplementation((() => {
+      return (async function* () {
+        yield { type: 'result', subtype: 'success', result: 'done2', total_cost_usd: 0.01 };
+      })();
+    }) as any);
+
+    const status = await node.tick(ctx);
+    // It starts a new inflight, so returns RUNNING again
+    expect(status).toBe(NodeStatus.RUNNING);
+
+    // Clean up
+    resolveMessage();
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
+  it('reset() clears inflight state', async () => {
+    let resolveMessage!: () => void;
+
+    mockQuery.mockImplementation((() => {
+      return (async function* () {
+        await new Promise<void>((resolve) => { resolveMessage = resolve; });
+        yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+      })();
+    }) as any);
+
+    const node = new AgentNode({ name: 'reset-inflight', prompt: 'Do work' });
+    const ctx = createContext();
+
+    // First tick starts the work
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // Reset clears inflight state
+    node.reset();
+
+    // Next tick should start fresh work
+    mockQuery.mockImplementation((() => {
+      return (async function* () {
+        yield { type: 'result', subtype: 'success', result: 'done2', total_cost_usd: 0.01 };
+      })();
+    }) as any);
+
+    const status = await node.tick(ctx);
+    expect(status).toBe(NodeStatus.RUNNING);
+
+    // Clean up
+    resolveMessage();
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
+  it('multiple poll ticks do not re-invoke the SDK', async () => {
+    let resolveMessage!: () => void;
+
+    mockQuery.mockImplementation((() => {
+      return (async function* () {
+        await new Promise<void>((resolve) => { resolveMessage = resolve; });
+        yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+      })();
+    }) as any);
+
+    const node = new AgentNode({ name: 'no-reinvoke', prompt: 'Do work' });
+    const ctx = createContext();
+
+    // First tick starts the work
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    // Second tick polls (still running)
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    // Third tick polls (still running)
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // SDK should only have been called once
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+
+    // Let it complete and collect result
+    resolveMessage();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+
+    // Still only one SDK call
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('cached results still return immediately without inflight', async () => {
+    mockQuery.mockImplementation((() => {
+      return (async function* () {
+        yield { type: 'result', subtype: 'success', result: 'cached-result', total_cost_usd: 0.01 };
+      })();
+    }) as any);
+
+    const node = new AgentNode({ name: 'cached-agent', prompt: 'Do work', cache: true });
+    const ctx = createContext();
+
+    // First tick: starts inflight, returns RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // Let the SDK call complete
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Second tick: polls inflight, gets SUCCESS, caches it
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+
+    // Third tick: returns cached result immediately (no new SDK call)
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+
+    // SDK was only called once (for the initial inflight)
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+});
