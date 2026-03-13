@@ -4,6 +4,7 @@
   import Header from './components/Header.svelte';
   import TreePanel from './components/TreePanel.svelte';
   import EventTimeline from './components/EventTimeline.svelte';
+  import BlackboardPanel from './components/BlackboardPanel.svelte';
   import './styles/theme.css';
 
   let selectedNodeId = $derived(getSelectedNodeId());
@@ -19,10 +20,7 @@
   <main class="dash-body">
     <TreePanel />
     <EventTimeline />
-    <div class="panel blackboard-panel">
-      <div class="panel-header"><div class="panel-title">Blackboard</div></div>
-      <div class="panel-body">Blackboard placeholder</div>
-    </div>
+    <BlackboardPanel />
   </main>
   {#if selectedNodeId}
     <footer class="drawer">
@@ -44,8 +42,7 @@
     flex: 1;
     overflow: hidden;
   }
-.blackboard-panel { border-right: none; }
-  .drawer {
+.drawer {
     border-top: 1px solid var(--border);
     background: var(--bg-surface);
     max-height: 200px;
