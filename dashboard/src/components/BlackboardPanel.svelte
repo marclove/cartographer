@@ -1,6 +1,13 @@
 <script lang="ts">
   import { getBlackboard, getRecentlyUpdatedKeys } from '../lib/stores.svelte.js';
 
+  interface Props {
+    collapsed: boolean;
+    onToggle: () => void;
+  }
+
+  let { collapsed, onToggle }: Props = $props();
+
   let blackboard = $derived(getBlackboard());
   let recentlyUpdatedKeys = $derived(getRecentlyUpdatedKeys());
 
@@ -73,7 +80,13 @@
 </script>
 
 <div class="panel">
-  <div class="panel-header"><div class="panel-title">Blackboard</div></div>
+  <div class="panel-header">
+    <div class="panel-title">Blackboard</div>
+    <button class="collapse-btn" onclick={onToggle} title={collapsed ? 'Expand panel' : 'Collapse panel'}>
+      {collapsed ? '◂' : '▸'}
+    </button>
+  </div>
+  {#if !collapsed}
   <div class="panel-body">
     {#each groups as group}
       <div class="bb-group-title">{group.scope}</div>
@@ -91,6 +104,7 @@
       <div class="empty">Blackboard is empty</div>
     {/if}
   </div>
+  {/if}
 </div>
 
 <style>
@@ -148,5 +162,20 @@
     font-size: 12px;
     padding: 20px 0;
     text-align: center;
+  }
+  .collapse-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 4px;
+    border-radius: 3px;
+    line-height: 1;
+    transition: color 0.15s, background 0.15s;
+  }
+  .collapse-btn:hover {
+    color: var(--text-muted);
+    background: var(--bg-hover);
   }
 </style>
