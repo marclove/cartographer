@@ -32,9 +32,11 @@ export class GuardNode extends BaseNode {
     try {
       const allowed = await this.condition(context);
       if (!allowed) {
+        this.child.abort();
         return NodeStatus.FAILURE;
       }
     } catch {
+      this.child.abort();
       return NodeStatus.FAILURE;
     }
 

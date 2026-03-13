@@ -52,3 +52,42 @@ describe('GuardNode', () => {
     expect(child.tick).not.toHaveBeenCalled();
   });
 });
+
+describe('GuardNode abort on condition failure', () => {
+  it('aborts child when condition returns false', async () => {
+    const child = mockChild(NodeStatus.RUNNING);
+    const node = new GuardNode({ name: 'guard', child, condition: () => false });
+    await node.tick(createContext());
+    expect(child.abort).toHaveBeenCalledOnce();
+  });
+
+  it('aborts child when condition throws', async () => {
+    const child = mockChild(NodeStatus.RUNNING);
+    const node = new GuardNode({
+      name: 'guard', child,
+      condition: () => { throw new Error('boom'); },
+    });
+    await node.tick(createContext());
+    expect(child.abort).toHaveBeenCalledOnce();
+  });
+
+  it('does not abort child when condition passes', async () => {
+    const child = mockChild(NodeStatus.SUCCESS);
+    const node = new GuardNode({ name: 'guard', child, condition: () => true });
+    await node.tick(createContext());
+    expect(child.abort).not.toHaveBeenCalled();
+  });
+
+  it('abort is safe on child without inflight state', async () => {
+    const child: BTreeNode = {
+      id: 'simple', name: 'simple',
+      tick: vi.fn(async () => NodeStatus.SUCCESS),
+      reset: vi.fn(),
+      abort: vi.fn(),
+    };
+    const node = new GuardNode({ name: 'guard', child, condition: () => false });
+    const result = await node.tick(createContext());
+    expect(result).toBe(NodeStatus.FAILURE);
+    expect(child.abort).toHaveBeenCalledOnce();
+  });
+});
