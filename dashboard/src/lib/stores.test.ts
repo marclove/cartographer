@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { SseHandlers } from './api.js';
 import type { Snapshot, NodeEnterEvent, NodeExitEvent, NodeErrorEvent, TreeNode } from './types.js';
 
@@ -10,16 +10,26 @@ vi.mock('./api.js', () => ({
   fetchNode: vi.fn().mockResolvedValue({}),
 }));
 
-import { connectSSE } from './api.js';
+import { connectSSE, fetchNode } from './api.js';
 import {
   connect,
+  disconnect,
+  getConnectionState,
   getNodeStatuses,
   getTreeRoot,
   getTreeName,
   getEvents,
   getBlackboard,
+  getRecentlyUpdatedKeys,
   getTickCount,
   getLastStatus,
+  getLastDurationMs,
+  getActiveFilters,
+  toggleFilter,
+  getSelectedNodeId,
+  getNodeDetail,
+  selectNode,
+  getEventCategory,
   _resetForTest,
 } from './stores.svelte.js';
 
@@ -235,5 +245,238 @@ describe('stores — event timeline', () => {
     const evts = getEvents();
     expect(evts[1].category).toBe('nodes');
     expect(evts[2].category).toBe('blackboard');
+  });
+
+  it('caps the event timeline at MAX_EVENTS (2000)', () => {
+    // Push 2001 additional events (beyond the snapshot from beforeEach)
+    for (let i = 0; i < 2001; i++) {
+      h['node:enter']!({ node: { id: 'root', name: 'Root', type: 'sequence' } }, 100 + i);
+    }
+    // MAX_EVENTS is 2000, so the oldest events should be evicted
+    expect(getEvents()).toHaveLength(2000);
+    // The very first event (snapshot, id=1) should have been evicted
+    expect(getEvents()[0].id).not.toBe(1);
+  });
+});
+
+describe('stores — getEventCategory', () => {
+  it('maps node events to "nodes"', () => {
+    expect(getEventCategory('node:enter')).toBe('nodes');
+    expect(getEventCategory('node:exit')).toBe('nodes');
+    expect(getEventCategory('node:error')).toBe('nodes');
+  });
+
+  it('maps tree events to "nodes"', () => {
+    expect(getEventCategory('tree:init')).toBe('nodes');
+    expect(getEventCategory('tree:tick')).toBe('nodes');
+    expect(getEventCategory('tree:reset')).toBe('nodes');
+    expect(getEventCategory('tree:abort')).toBe('nodes');
+  });
+
+  it('maps agent events to "agent"', () => {
+    expect(getEventCategory('agent:prompt')).toBe('agent');
+    expect(getEventCategory('agent:thinking')).toBe('agent');
+    expect(getEventCategory('agent:text')).toBe('agent');
+    expect(getEventCategory('agent:tool_use')).toBe('agent');
+    expect(getEventCategory('agent:response')).toBe('agent');
+    expect(getEventCategory('agent:error')).toBe('agent');
+    expect(getEventCategory('agent:message')).toBe('agent');
+    expect(getEventCategory('agent:tool_progress')).toBe('agent');
+    expect(getEventCategory('agent:init')).toBe('agent');
+    expect(getEventCategory('agent:status')).toBe('agent');
+    expect(getEventCategory('agent:rate_limit')).toBe('agent');
+    expect(getEventCategory('agent:elicitation_declined')).toBe('agent');
+  });
+
+  it('maps blackboard:write to "blackboard"', () => {
+    expect(getEventCategory('blackboard:write')).toBe('blackboard');
+  });
+
+  it('maps strategy:decision to "strategy"', () => {
+    expect(getEventCategory('strategy:decision')).toBe('strategy');
+  });
+
+  it('returns "other" for unknown event names', () => {
+    expect(getEventCategory('unknown:event')).toBe('other');
+    expect(getEventCategory('')).toBe('other');
+  });
+});
+
+describe('stores — filters', () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  it('all categories are active by default', () => {
+    const filters = getActiveFilters();
+    expect(filters.has('nodes')).toBe(true);
+    expect(filters.has('agent')).toBe(true);
+    expect(filters.has('blackboard')).toBe(true);
+    expect(filters.has('strategy')).toBe(true);
+  });
+
+  it('toggleFilter removes an active filter', () => {
+    toggleFilter('agent');
+    expect(getActiveFilters().has('agent')).toBe(false);
+    // Others remain
+    expect(getActiveFilters().has('nodes')).toBe(true);
+  });
+
+  it('toggleFilter re-adds a removed filter', () => {
+    toggleFilter('agent');
+    expect(getActiveFilters().has('agent')).toBe(false);
+    toggleFilter('agent');
+    expect(getActiveFilters().has('agent')).toBe(true);
+  });
+});
+
+describe('stores — connection state', () => {
+  let h: SseHandlers;
+
+  beforeEach(() => {
+    _resetForTest();
+    h = getHandlers();
+  });
+
+  it('starts in "connecting" state', () => {
+    // _resetForTest sets it to 'connecting', and connect() hasn't
+    // fired onOpen yet
+    expect(getConnectionState()).toBe('connecting');
+  });
+
+  it('transitions to "connected" when onOpen fires', () => {
+    h.onOpen!();
+    expect(getConnectionState()).toBe('connected');
+  });
+
+  it('transitions to "disconnected" when onError fires', () => {
+    h.onError!(new Event('error'));
+    expect(getConnectionState()).toBe('disconnected');
+  });
+});
+
+describe('stores — disconnect', () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  it('sets state to disconnected', () => {
+    getHandlers(); // connect
+    disconnect();
+    expect(getConnectionState()).toBe('disconnected');
+  });
+
+  it('calls the cleanup function returned by connectSSE', () => {
+    const cleanupFn = vi.fn();
+    vi.mocked(connectSSE).mockReturnValueOnce(cleanupFn);
+    connect();
+    disconnect();
+    expect(cleanupFn).toHaveBeenCalledOnce();
+  });
+});
+
+describe('stores — node selection', () => {
+  beforeEach(() => {
+    _resetForTest();
+    const h = getHandlers();
+    h.snapshot!(snapshot(), 1);
+  });
+
+  it('initially has no selected node', () => {
+    expect(getSelectedNodeId()).toBeNull();
+    expect(getNodeDetail()).toBeNull();
+  });
+
+  it('selectNode sets the selected node id', () => {
+    selectNode('child-a');
+    expect(getSelectedNodeId()).toBe('child-a');
+  });
+
+  it('selectNode fetches node detail', async () => {
+    const mockDetail = { id: 'child-a', name: 'ChildA', type: 'action' };
+    vi.mocked(fetchNode).mockResolvedValueOnce(mockDetail);
+
+    selectNode('child-a');
+    expect(getSelectedNodeId()).toBe('child-a');
+
+    // Wait for the fetchNode promise to resolve
+    await vi.waitFor(() => {
+      expect(getNodeDetail()).toEqual(mockDetail);
+    });
+  });
+
+  it('selectNode toggles off when called with the same id', () => {
+    selectNode('child-a');
+    expect(getSelectedNodeId()).toBe('child-a');
+    selectNode('child-a');
+    expect(getSelectedNodeId()).toBeNull();
+    expect(getNodeDetail()).toBeNull();
+  });
+
+  it('selectNode(null) clears selection', () => {
+    selectNode('child-a');
+    selectNode(null);
+    // Calling with null: selectedNodeId === null ? null : null → sets null
+    // Actually the logic is: selectedNodeId === id ? null : id
+    // selectNode(null): selectedNodeId ('child-a') === null → false → selectedNodeId = null
+    expect(getSelectedNodeId()).toBeNull();
+  });
+});
+
+describe('stores — tick duration', () => {
+  let h: SseHandlers;
+
+  beforeEach(() => {
+    _resetForTest();
+    h = getHandlers();
+    h.snapshot!(snapshot(), 1);
+  });
+
+  it('tree:tick records lastDurationMs', () => {
+    expect(getLastDurationMs()).toBeNull();
+    h['tree:tick']!({ status: 'success', durationMs: 42.5 }, 2);
+    expect(getLastDurationMs()).toBe(42.5);
+  });
+});
+
+describe('stores — recentlyUpdatedKeys', () => {
+  let h: SseHandlers;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    _resetForTest();
+    h = getHandlers();
+    h.snapshot!(snapshot({ blackboard: {} }), 1);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('blackboard:write adds key to recentlyUpdatedKeys', () => {
+    h['blackboard:write']!({ key: 'counter', value: 1 }, 2);
+    expect(getRecentlyUpdatedKeys().has('counter')).toBe(true);
+  });
+
+  it('recentlyUpdatedKeys clears after 2 seconds', () => {
+    h['blackboard:write']!({ key: 'counter', value: 1 }, 2);
+    expect(getRecentlyUpdatedKeys().has('counter')).toBe(true);
+
+    vi.advanceTimersByTime(2000);
+    expect(getRecentlyUpdatedKeys().has('counter')).toBe(false);
+  });
+
+  it('multiple keys can be highlighted simultaneously', () => {
+    h['blackboard:write']!({ key: 'a', value: 1 }, 2);
+    h['blackboard:write']!({ key: 'b', value: 2 }, 3);
+    expect(getRecentlyUpdatedKeys().has('a')).toBe(true);
+    expect(getRecentlyUpdatedKeys().has('b')).toBe(true);
+  });
+
+  it('blackboard:write with missing key does not update blackboard', () => {
+    h['blackboard:write']!({ value: 'no-key' }, 2);
+    // Blackboard should remain unchanged
+    expect(getBlackboard()).toEqual({});
+    expect(getRecentlyUpdatedKeys().size).toBe(0);
   });
 });
