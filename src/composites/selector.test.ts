@@ -6,6 +6,7 @@ import { EventEmitter } from '../core/event-emitter.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
 import type { TreeEvents } from '../types.js';
 import { ActionNode } from '../nodes/action.js';
+import { ConditionNode } from '../nodes/condition.js';
 
 function createContext(): TreeContext {
   return {
@@ -293,5 +294,278 @@ describe('SelectorNode', () => {
     node.reset();
     expect(resetSpy1).toHaveBeenCalled();
     expect(resetSpy2).toHaveBeenCalled();
+  });
+});
+
+describe('SelectorNode (reactive)', () => {
+  function createContext(overrides?: Partial<TreeContext>): TreeContext {
+    return {
+      blackboard: new InMemoryBlackboard(),
+      events: new EventEmitter<TreeEvents>(),
+      ...overrides,
+    };
+  }
+
+  function createDeferredAction() {
+    let resolve: (status: NodeStatus) => void;
+    const action = new ActionNode({
+      name: 'deferred',
+      action: async () => new Promise<NodeStatus>(r => { resolve = r; }),
+    });
+    return { action, resolve: (s: NodeStatus) => resolve(s) };
+  }
+
+  const flush = () => new Promise(r => setTimeout(r, 0));
+
+  it('re-evaluates conditions every tick', async () => {
+    const ctx = createContext();
+    ctx.blackboard.set('flag', false);
+
+    const cond = new ConditionNode({
+      name: 'cond',
+      condition: (c) => c.blackboard.get<boolean>('flag') === true,
+    });
+
+    const { action, resolve } = createDeferredAction();
+
+    const sel = new SelectorNode({
+      name: 'sel',
+      children: [cond, action],
+    });
+
+    // Tick 1: cond FAILURE, action starts → RUNNING
+    expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+
+    // Tick 2: cond still FAILURE (flag=false), action still RUNNING
+    expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // Change blackboard so condition succeeds
+    ctx.blackboard.set('flag', true);
+
+    // Tick 3: cond SUCCESS → action aborted, selector returns SUCCESS
+    expect(await sel.tick(ctx)).toBe(NodeStatus.SUCCESS);
+  });
+
+  it('higher-priority preemption aborts lower-priority RUNNING child', async () => {
+    const ctx = createContext();
+    ctx.blackboard.set('ready', false);
+
+    const cond = new ConditionNode({
+      name: 'cond',
+      condition: (c) => c.blackboard.get<boolean>('ready') === true,
+    });
+
+    const abortSpy = vi.fn();
+    const { action } = createDeferredAction();
+    const originalAbort = action.abort.bind(action);
+    action.abort = () => { abortSpy(); originalAbort(); };
+
+    const sel = new SelectorNode({
+      name: 'sel',
+      children: [cond, action],
+    });
+
+    // Tick 1: cond FAILURE, action starts → RUNNING
+    expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+
+    // Higher-priority branch now succeeds
+    ctx.blackboard.set('ready', true);
+
+    // Tick 2: cond SUCCESS → action aborted, returns SUCCESS
+    expect(await sel.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(abortSpy).toHaveBeenCalled();
+  });
+
+  it('caches completed non-reactive children within a cycle', async () => {
+    const ctx = createContext();
+    let action1TickCount = 0;
+
+    const action1 = new ActionNode({
+      name: 'action1',
+      action: async () => {
+        action1TickCount++;
+        return NodeStatus.FAILURE;
+      },
+    });
+
+    const { action: action2 } = createDeferredAction();
+
+    const sel = new SelectorNode({
+      name: 'sel',
+      children: [action1, action2],
+    });
+
+    // Tick 1: action1 starts (inflight) → RUNNING
+    expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+
+    // Tick 2: action1 returns FAILURE (from inflight), action2 starts → RUNNING
+    expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+
+    // action1 was ticked once to start, once to get result = 2 ticks total
+    expect(action1TickCount).toBe(1);
+
+    // Tick 3: action1 FAILURE is cached (not re-ticked), action2 still RUNNING
+    expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // action1 was NOT re-ticked — still 1 action call (2 tick() calls but
+    // the second returned the cached inflight result, third used completedMap)
+    expect(action1TickCount).toBe(1);
+  });
+
+  it('clears cycle cache on cycle end (terminal status)', async () => {
+    const ctx = createContext();
+    let actionCallCount = 0;
+
+    const action = new ActionNode({
+      name: 'action',
+      action: async () => {
+        actionCallCount++;
+        return NodeStatus.SUCCESS;
+      },
+    });
+
+    const sel = new SelectorNode({
+      name: 'sel',
+      children: [action],
+    });
+
+    // Tick 1: action starts (inflight) → RUNNING
+    expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+
+    // Tick 2: action returns SUCCESS → cycle ends, cache cleared
+    expect(await sel.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(actionCallCount).toBe(1);
+
+    // Tick 3: new cycle — action should be re-executed (fresh, not cached)
+    expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+
+    // Tick 4: action returns SUCCESS again
+    expect(await sel.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(actionCallCount).toBe(2);
+  });
+
+  it('abort() clears all state and aborts child controllers', async () => {
+    const ctx = createContext();
+
+    const { action } = createDeferredAction();
+    const abortSpy = vi.fn();
+    const originalAbort = action.abort.bind(action);
+    action.abort = () => { abortSpy(); originalAbort(); };
+
+    const cond = new ConditionNode({
+      name: 'cond',
+      condition: () => false,
+    });
+
+    const sel = new SelectorNode({
+      name: 'sel',
+      children: [cond, action],
+    });
+
+    // Tick 1: cond FAILURE, action starts → RUNNING
+    expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+
+    // Abort the selector
+    sel.abort();
+    expect(abortSpy).toHaveBeenCalled();
+
+    // Next tick starts a fresh cycle (no cached state)
+    expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+  });
+
+  it('reset() clears all state and cascades to children', async () => {
+    const ctx = createContext();
+
+    const resetSpy = vi.fn();
+    const { action } = createDeferredAction();
+    const originalReset = action.reset.bind(action);
+    action.reset = () => { resetSpy(); originalReset(); };
+
+    const cond = new ConditionNode({
+      name: 'cond',
+      condition: () => false,
+    });
+
+    const sel = new SelectorNode({
+      name: 'sel',
+      children: [cond, action],
+    });
+
+    // Tick 1: cond FAILURE, action starts → RUNNING
+    expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+
+    // Reset the selector
+    sel.reset();
+    expect(resetSpy).toHaveBeenCalled();
+
+    // Next tick starts a fresh cycle
+    expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+  });
+
+  it('scoped AbortController receives parent signal abort', async () => {
+    const parentController = new AbortController();
+    const ctx = createContext({ signal: parentController.signal });
+
+    const { action } = createDeferredAction();
+
+    const sel = new SelectorNode({
+      name: 'sel',
+      children: [action],
+    });
+
+    // Tick 1: action starts → RUNNING, scoped controller created
+    expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+
+    // Parent abort cascades to child controller
+    parentController.abort();
+
+    // Tick 2: the scoped signal should be aborted
+    // The action still returns RUNNING (inflight poll), but the signal is aborted
+    expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+  });
+
+  it('does not re-tick RUNNING child from scratch (polls inflight)', async () => {
+    const ctx = createContext();
+    let actionStartCount = 0;
+
+    const action = new ActionNode({
+      name: 'slow',
+      action: async () => {
+        actionStartCount++;
+        return new Promise<NodeStatus>((resolve) => {
+          setTimeout(() => resolve(NodeStatus.SUCCESS), 50);
+        });
+      },
+    });
+
+    const sel = new SelectorNode({
+      name: 'sel',
+      children: [action],
+    });
+
+    // Tick 1: action starts → RUNNING
+    expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // Tick 2: action is still RUNNING (polled, not restarted)
+    expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // The action function was only called once (start), not on subsequent polls
+    expect(actionStartCount).toBe(1);
+
+    // Wait for action to complete
+    await new Promise(r => setTimeout(r, 60));
+
+    // Tick 3: action returns SUCCESS
+    expect(await sel.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(actionStartCount).toBe(1);
   });
 });
