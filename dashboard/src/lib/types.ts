@@ -51,7 +51,7 @@ export interface NodeEnterEvent {
 
 export interface NodeExitEvent {
   node: NodeRef;
-  status: 'SUCCESS' | 'FAILURE' | 'RUNNING';
+  status: 'success' | 'failure' | 'running';
   durationMs: number;
 }
 

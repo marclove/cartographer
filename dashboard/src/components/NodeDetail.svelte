@@ -13,8 +13,8 @@
   let status = $derived(selectedNodeId ? (nodeStatuses.get(selectedNodeId) ?? null) : null);
 
   let statusClass = $derived(
-    status === 'SUCCESS' ? 'val-success' :
-    status === 'FAILURE' ? 'val-failure' :
+    status === 'success' ? 'val-success' :
+    status === 'failure' ? 'val-failure' :
     status === 'running' ? 'val-running' : 'val-idle'
   );
 </script>

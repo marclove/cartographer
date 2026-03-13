@@ -11,7 +11,7 @@ import type {
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected';
 
-export type NodeStatus = 'running' | 'SUCCESS' | 'FAILURE' | null;
+export type NodeStatus = 'running' | 'success' | 'failure' | null;
 
 export interface TimelineEvent<K extends SseEventName = SseEventName> {
   id: number;
@@ -218,7 +218,7 @@ export function connect(): void {
 
     'node:error'(data, id) {
       const next = new Map(nodeStatuses);
-      next.set(data.node.id, 'FAILURE');
+      next.set(data.node.id, 'failure');
       nodeStatuses = next;
       pushEvent('node:error', data, id);
     },
