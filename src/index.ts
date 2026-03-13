@@ -25,6 +25,7 @@ export type {
   BehaviorTreeConfig,
   SchedulerConfig,
   SchedulerEvents,
+  TickLoopHandle,
   ModelUsage,
 } from './types.js';
 

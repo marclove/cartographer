@@ -870,6 +870,23 @@ export interface GuardConfig extends DecoratorConfig {
   condition: (context: TreeContext) => Promise<boolean> | boolean;
 }
 
+// --- Tick Loop Handle ---
+
+/**
+ * Handle returned by `BehaviorTree.start()` for stopping the tick loop.
+ *
+ * @example
+ * ```ts
+ * const handle = tree.start({ intervalMs: 100 });
+ * // ... later
+ * await handle.stop();
+ * ```
+ */
+export interface TickLoopHandle {
+  /** Stop the tick loop and wait for any in-flight tick to complete. */
+  stop(): Promise<void>;
+}
+
 // --- Behavior Tree Config ---
 
 /**

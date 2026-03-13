@@ -1,9 +1,10 @@
 import { NodeStatus } from '../types.js';
-import type { BehaviorTreeConfig, BTreeNode, Blackboard, TreeContext, TreeEvents } from '../types.js';
+import type { BehaviorTreeConfig, BTreeNode, Blackboard, TickLoopHandle, TreeContext, TreeEvents } from '../types.js';
 import { EventEmitter } from './event-emitter.js';
 import { InMemoryBlackboard } from './blackboard.js';
 import { ObservableBlackboard } from './observable-blackboard.js';
 import { BaseNode } from '../nodes/base.js';
+import { TreeScheduler } from '../scheduler/tree-scheduler.js';
 
 /**
  * The top-level runner for a behavior tree.
@@ -62,6 +63,7 @@ export class BehaviorTree {
 
   readonly root: BTreeNode;
   private abortController: AbortController;
+  private _scheduler: TreeScheduler | null = null;
 
   constructor(config: BehaviorTreeConfig) {
     this.name = config.name;
@@ -220,5 +222,59 @@ export class BehaviorTree {
     this.root.abort();
     this.abortController.abort();
     this.events.emit('tree:abort', { tree: this.name });
+  }
+
+  /**
+   * Start a reactive tick loop that ticks the tree on a fixed interval.
+   *
+   * Creates a `TreeScheduler` with reactive-friendly defaults:
+   * - `resetBetweenTicks: false` — preserves RUNNING state across ticks
+   * - `skipOnOverlap: true` — skips a tick if the previous one is still running
+   * - `abortOnStop: true` — aborts in-flight work when the loop stops
+   *
+   * Returns a {@link TickLoopHandle} whose `stop()` method stops the loop
+   * and waits for any in-flight tick to complete.
+   *
+   * Throws if a tick loop is already running. Call `stop()` on the existing
+   * handle before starting a new loop.
+   *
+   * @param options.intervalMs - Milliseconds between ticks.
+   * @param options.signal - Optional `AbortSignal` that stops the loop when aborted.
+   *
+   * @example
+   * ```ts
+   * const handle = tree.start({ intervalMs: 100 });
+   * // ... later
+   * await handle.stop();
+   * ```
+   */
+  start(options: { intervalMs: number; signal?: AbortSignal }): TickLoopHandle {
+    if (this._scheduler?.isRunning) {
+      throw new Error('Tick loop is already running. Call stop() first.');
+    }
+
+    const scheduler = new TreeScheduler({
+      tree: this,
+      schedule: { type: 'interval', delayMs: options.intervalMs },
+      resetBetweenTicks: false,
+      skipOnOverlap: true,
+      abortOnStop: true,
+    });
+
+    this._scheduler = scheduler;
+    scheduler.start(); // fire-and-forget, resolves when stopped
+
+    if (options.signal) {
+      options.signal.addEventListener('abort', () => {
+        scheduler.stop();
+      }, { once: true });
+    }
+
+    return {
+      stop: async () => {
+        await scheduler.stop();
+        this._scheduler = null;
+      },
+    };
   }
 }
