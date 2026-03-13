@@ -1,4 +1,4 @@
-import { connectSSE } from './api.js';
+import { connectSSE, fetchNode } from './api.js';
 import type {
   TreeNode,
   SseEventName,
@@ -131,11 +131,24 @@ export function getRecentlyUpdatedKeys(): Set<string> {
 
 // Selected node
 let selectedNodeId = $state<string | null>(null);
+let nodeDetail = $state<Record<string, unknown> | null>(null);
 export function getSelectedNodeId(): string | null {
   return selectedNodeId;
 }
+export function getNodeDetail(): Record<string, unknown> | null {
+  return nodeDetail;
+}
 export function selectNode(id: string | null): void {
   selectedNodeId = selectedNodeId === id ? null : id;
+  if (selectedNodeId) {
+    fetchNode(selectedNodeId).then((data) => {
+      nodeDetail = data as Record<string, unknown>;
+    }).catch(() => {
+      nodeDetail = null;
+    });
+  } else {
+    nodeDetail = null;
+  }
 }
 
 // ---------------------------------------------------------------------------

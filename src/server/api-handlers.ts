@@ -1,6 +1,7 @@
 import type { ServerResponse } from 'node:http';
 import type { BehaviorTree } from '../core/behavior-tree.js';
 import type { BTreeNode } from '../types.js';
+import { AgentNode } from '../nodes/agent.js';
 import { serializeTree, serializeNodeRef } from './serializers.js';
 import { jsonResponse, jsonError } from './dashboard-server.js';
 
@@ -40,7 +41,26 @@ export function handleApiNode(res: ServerResponse, tree: BehaviorTree, nodeId: s
     jsonError(res, 404, 'Not found');
     return;
   }
-  jsonResponse(res, 200, serializeNodeRef(node));
+
+  const base = serializeNodeRef(node);
+  const detail: Record<string, unknown> = { ...base };
+
+  if (node instanceof AgentNode) {
+    const config = (node as any).config;
+    if (config) {
+      const opts = config.options ?? {};
+      if (opts.model) detail.model = opts.model;
+      detail.tools = opts.allowedTools ?? [];
+      const mcpServers = opts.mcpServers ? Object.keys(opts.mcpServers) : [];
+      detail.mcpServers = mcpServers;
+    }
+  }
+
+  if (node.children.length > 0) {
+    detail.children = node.children.map(serializeNodeRef);
+  }
+
+  jsonResponse(res, 200, detail);
 }
 
 function findNodeById(root: BTreeNode, id: string): BTreeNode | undefined {
