@@ -51,7 +51,7 @@ export class DashboardServer {
     private readonly tree: BehaviorTree,
     options: DashboardServerOptions = {},
   ) {
-    this.port = options.port ?? 3000;
+    this.port = options.port ?? 3147;
     this.eventBuffer = new EventBuffer(options.eventBufferCapacity ?? 500);
     this.state = {
       tickCount: 0,

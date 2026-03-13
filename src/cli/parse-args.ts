@@ -45,7 +45,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
       flags.help = true;
     } else if (arg === '--port') {
       i++;
-      flags.port = parseInt(args[i], 10);
+      const parsed = parseInt(args[i], 10);
+      if (isNaN(parsed) || parsed < 1 || parsed > 65535) {
+        process.stderr.write(`Error: --port requires a valid port number\n\n`);
+        process.stdout.write(USAGE);
+        process.exit(1);
+      }
+      flags.port = parsed;
     } else if (arg === '--no-serve') {
       flags.noServe = true;
     } else if (arg === '--') {
