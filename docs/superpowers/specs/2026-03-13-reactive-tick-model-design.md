@@ -68,7 +68,7 @@ execute(context):
       status = await child.tick(context)
 
     if status == FAILURE:
-      this.abortAllChildren()
+      this.abortAllChildControllers()
       clear cycle state
       return FAILURE
 
@@ -93,7 +93,7 @@ execute(context):
       status = await child.tick(context)
 
     if status == SUCCESS:
-      this.abortAllChildren()
+      this.abortAllChildControllers()
       clear cycle state
       return SUCCESS
 
@@ -109,7 +109,7 @@ execute(context):
 
 Higher-priority branches are always re-checked. If branch 1 was FAILURE and branch 3 was RUNNING, but now branch 1 succeeds, branch 3 is aborted and the selector returns SUCCESS.
 
-**Abort on cycle end:** When a composite short-circuits or completes a cycle, it calls `abort()` on all children unconditionally. Children without inflight state no-op (BaseNode.abort() is a no-op; only ActionNode/AgentNode have state to clear). This eliminates the need to track which children are RUNNING — zero bookkeeping, same behavior. The existing `abort()` cascade already iterates all children.
+**Abort on cycle end:** When a composite short-circuits or completes a cycle, it aborts all child controllers unconditionally. Leaf nodes without inflight state ignore the signal. This eliminates the need to track which children are RUNNING — zero bookkeeping, same behavior.
 
 **Interaction with non-blocking nodes:** When a reactive composite ticks a RUNNING child (e.g., an AgentNode mid-API-call), that child's `tick()` hits the poll path in the leaf's `execute()` — checks if the in-flight promise settled, returns RUNNING or the final status. This is fast and non-blocking.
 
@@ -181,13 +181,27 @@ When a reactive composite determines that a RUNNING subtree should be preempted 
 **Abort flow:**
 
 1. Composite detects preemption condition.
-2. Calls `abort()` on preempted children (cascades through the subtree).
-3. In-flight promises are abandoned (results, if they arrive later, are ignored).
-4. Composite returns FAILURE or tries the next branch (depending on type).
+2. Calls `abort()` on scoped child controllers — signal fires, leaf nodes cancel in-flight work.
+3. Composite returns FAILURE or tries the next branch (depending on type).
 
 **Leaf node abort():** ActionNode and AgentNode clear their inflight state (`_inflight`, `_inflightResult`) on `abort()`. BaseNode.abort() remains a no-op — only nodes with inflight state need cleanup.
 
-**AbortSignal scoping:** The tree shares a single `AbortController` whose signal is passed to all nodes via `context.signal`. Subtree preemption does NOT use this tree-level signal (aborting one subtree should not abort the whole tree). Instead, `abort()` is best-effort: the in-flight promise is abandoned (cleared from tracking, results ignored if they arrive later), but the underlying async work may continue running until it naturally completes or checks `context.signal`. Nodes that need hard cancellation (like `AgentNode`) already create their own `AbortController` and bridge it to the context signal — this pattern continues to work.
+**Scoped AbortControllers for hard cancellation:** Composites create a scoped `AbortController` per child, stored as instance state for the duration of the cycle. The scoped controller's signal is passed to the child via `context.signal`, replacing the parent signal. The parent signal is bridged to the scoped controller so tree-wide abort still cascades:
+
+```typescript
+// Composite setup per child (once per cycle, reused across ticks)
+const childController = new AbortController();
+context.signal.addEventListener('abort', () => childController.abort());
+const childContext = { ...context, signal: childController.signal };
+```
+
+On preemption, the composite calls `childController.abort()` — the scoped signal fires, and AgentNode's existing bridge (`context.signal → activeAbortController`) cancels the SDK call. On tree-wide abort, the parent signal fires, the bridge cascades to the scoped controller, and the same cancellation path executes. AgentNode sees one signal with two triggers — no changes needed to its bridging logic.
+
+Controllers persist across ticks within a cycle (the child's inflight work references the signal established on the first tick). On cycle end, all child controllers are aborted (unconditional abort) and cleared. New cycle creates fresh controllers.
+
+**Two-level abort model:**
+- **Tree-wide:** `BehaviorTree.abort()` fires the tree-level signal, cascading through all scoped controllers to all nodes. Used for shutdown.
+- **Subtree preemption:** Composite fires one child's scoped controller. Only that subtree is cancelled. Other children continue undisturbed. Used for reactive re-routing.
 
 **No reset between ticks.** State persists across the tick loop. Cleanup happens surgically — only preempted subtrees get aborted. Non-preempted RUNNING nodes continue undisturbed.
 
