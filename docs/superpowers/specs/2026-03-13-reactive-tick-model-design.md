@@ -68,7 +68,7 @@ execute(context):
       status = await child.tick(context)
 
     if status == FAILURE:
-      abort any previously-RUNNING children not yet visited
+      this.abortAllChildren()
       clear cycle state
       return FAILURE
 
@@ -93,7 +93,7 @@ execute(context):
       status = await child.tick(context)
 
     if status == SUCCESS:
-      abort any previously-RUNNING children not yet visited
+      this.abortAllChildren()
       clear cycle state
       return SUCCESS
 
@@ -109,7 +109,7 @@ execute(context):
 
 Higher-priority branches are always re-checked. If branch 1 was FAILURE and branch 3 was RUNNING, but now branch 1 succeeds, branch 3 is aborted and the selector returns SUCCESS.
 
-**Aborting previously-RUNNING children:** When a composite short-circuits (e.g., condition fails at index 2, but child at index 4 was RUNNING from a previous tick), it must abort children that have in-flight state but were not visited in this tick. The composite tracks which children are currently RUNNING (those that returned RUNNING on any tick in this cycle) and calls `abort()` on any that need cleanup when the cycle ends or is preempted.
+**Abort on cycle end:** When a composite short-circuits or completes a cycle, it calls `abort()` on all children unconditionally. Children without inflight state no-op (BaseNode.abort() is a no-op; only ActionNode/AgentNode have state to clear). This eliminates the need to track which children are RUNNING — zero bookkeeping, same behavior. The existing `abort()` cascade already iterates all children.
 
 **Interaction with non-blocking nodes:** When a reactive composite ticks a RUNNING child (e.g., an AgentNode mid-API-call), that child's `tick()` hits the poll path in the leaf's `execute()` — checks if the in-flight promise settled, returns RUNNING or the final status. This is fast and non-blocking.
 
