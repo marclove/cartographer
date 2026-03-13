@@ -34,34 +34,36 @@ describe('scheduled-monitor example', { timeout: 300_000 }, () => {
     // With the inflight pattern, each ActionNode and AgentNode returns RUNNING
     // on first tick, then SUCCESS/FAILURE on the next tick after the work
     // completes. A single logical monitoring cycle therefore requires many more
-    // raw ticks than before. We tick until 4 complete monitoring cycles have
-    // run (tracked by monitor:tickCount on the blackboard), with a generous
-    // ceiling to avoid infinite loops and short sleeps between ticks to let
-    // async work (HTTP fetches, agent API calls) settle.
+    // raw ticks than before.
+    //
+    // We count completed cycles by tracking terminal tree statuses (SUCCESS)
+    // rather than the blackboard counter, because the inflight pattern causes
+    // action side effects (like incrementing monitor:tickCount) to fire on the
+    // start tick while the node still returns RUNNING. Reading the counter
+    // between ticks would exit the loop prematurely.
     //
     // Server failure profile for 'api':
     //   Request 1:   200 (healthy)
     //   Requests 2–4: 503 (hard outage)
     //   Requests 5+:  200 (recovered)
     // This exercises the full incident lifecycle: healthy baseline → outage
-    // detection → ongoing incident → potential recovery.
-    const TARGET_CYCLES = 4;
-    const MAX_TICKS = 2000;
+    // detection → ongoing incident → recovery.
+    const TARGET_CYCLES = 5;
+    const MAX_TICKS = 5000;
     let totalTicks = 0;
+    let completedCycles = 0;
 
-    while (
-      (tree.blackboard.get<number>('monitor:tickCount') ?? 0) < TARGET_CYCLES &&
-      totalTicks < MAX_TICKS
-    ) {
-      await tree.tick();
+    while (completedCycles < TARGET_CYCLES && totalTicks < MAX_TICKS) {
+      const status = await tree.tick();
       totalTicks++;
+      if (status !== NodeStatus.RUNNING) {
+        completedCycles++;
+      }
       // Short pause: lets microtask-resolved promises (sync actions) settle
       // and gives the agent API calls time to make progress between polls.
       await new Promise(r => setTimeout(r, 50));
     }
 
-    // Should have reached the target number of complete monitoring cycles
-    const completedCycles = tree.blackboard.get<number>('monitor:tickCount') ?? 0;
     expect(completedCycles).toBeGreaterThanOrEqual(TARGET_CYCLES);
 
     // Health data should be recorded for all services
