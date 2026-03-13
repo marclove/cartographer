@@ -5,12 +5,16 @@ import type { TreeContext } from '../types.js';
 import { AgentSelectionStrategy } from '../strategies/agent-selection.js';
 import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
 
+const flush = () => new Promise(r => setTimeout(r, 0));
+
 describe('TreeBuilder', () => {
   it('builds a tree with a single action node', async () => {
     const tree = new TreeBuilder('simple')
       .action('root', () => NodeStatus.SUCCESS)
       .build();
     expect(tree.name).toBe('simple');
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -22,6 +26,13 @@ describe('TreeBuilder', () => {
           .action('succeed', () => NodeStatus.SUCCESS)
       )
       .build();
+    // Tick 1: fail starts inflight → RUNNING
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 2: fail FAILURE (cached), succeed starts inflight → RUNNING
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 3: fail cached, succeed SUCCESS → SUCCESS
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -33,6 +44,10 @@ describe('TreeBuilder', () => {
           .action('second', () => NodeStatus.SUCCESS)
       )
       .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -44,6 +59,8 @@ describe('TreeBuilder', () => {
           .action('second', () => NodeStatus.SUCCESS)
       )
       .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
     expect(await tree.tick()).toBe(NodeStatus.FAILURE);
   });
 
@@ -59,6 +76,10 @@ describe('TreeBuilder', () => {
           .action('fallback', () => NodeStatus.FAILURE)
       )
       .build();
+    // Tick 1: selector → sequence → condition SUCCESS, act starts inflight → RUNNING
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 2: selector → sequence → condition SUCCESS (reactive), act SUCCESS → SUCCESS
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -81,6 +102,8 @@ describe('TreeBuilder', () => {
           .action('b', () => NodeStatus.SUCCESS)
       )
       .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -112,6 +135,10 @@ describe('TreeBuilder', () => {
         (b) => b.action('child', () => NodeStatus.SUCCESS)
       )
       .build();
+    // Tick 1: action starts inflight → inverter sees RUNNING → RUNNING
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 2: action completes SUCCESS → inverter returns FAILURE
     expect(await tree.tick()).toBe(NodeStatus.FAILURE);
   });
 
@@ -125,6 +152,16 @@ describe('TreeBuilder', () => {
         })
       )
       .build();
+    // Each attempt needs: tick (starts inflight → RUNNING) → flush → tick (completes)
+    // Attempt 1: FAILURE → retry
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING); // retry sees FAILURE, starts attempt 2
+    await flush();
+    // Attempt 2: FAILURE → retry
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING); // retry sees FAILURE, starts attempt 3
+    await flush();
+    // Attempt 3: SUCCESS
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
     expect(attempts).toBe(3);
   });
@@ -140,6 +177,10 @@ describe('TreeBuilder', () => {
           .condition('read', (ctx) => ctx.blackboard.get('msg') === 'hello')
       )
       .build();
+    // Tick 1: write starts inflight → RUNNING
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 2: write completes (cached), condition reads 'hello' → SUCCESS
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -155,7 +196,7 @@ describe('TreeBuilder', () => {
         })
         .build();
 
-      await tree.tick();
+      await tree.tick(); // action runs in inflight, assertion inside action
     });
   });
 

@@ -15,6 +15,8 @@ function createContext(): TreeContext {
   };
 }
 
+const flush = () => new Promise(r => setTimeout(r, 0));
+
 function actionNode(name: string, status: NodeStatus): ActionNode {
   return new ActionNode({ name, action: () => status });
 }
@@ -25,7 +27,15 @@ describe('SequenceNode', () => {
       name: 'seq',
       children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.SUCCESS)],
     });
-    expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
+    const ctx = createContext();
+    // Tick 1: a starts inflight → RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 2: a completes SUCCESS, b starts inflight → RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 3: b completes SUCCESS → sequence SUCCESS
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
   it('returns FAILURE when first child fails', async () => {
@@ -33,7 +43,10 @@ describe('SequenceNode', () => {
       name: 'seq',
       children: [actionNode('a', NodeStatus.FAILURE), actionNode('b', NodeStatus.SUCCESS)],
     });
-    expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
+    const ctx = createContext();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
   });
 
   it('returns FAILURE when second child fails', async () => {
@@ -41,7 +54,12 @@ describe('SequenceNode', () => {
       name: 'seq',
       children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.FAILURE)],
     });
-    expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
+    const ctx = createContext();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
   });
 
   it('returns RUNNING when a child returns RUNNING', async () => {
@@ -55,13 +73,19 @@ describe('SequenceNode', () => {
   it('does not tick children after FAILURE', async () => {
     const tickSpy = vi.fn(async () => NodeStatus.SUCCESS);
     const secondChild: BTreeNode = {
-      id: '2', name: 'b', tick: tickSpy, reset: () => {}, abort: () => {},
+      id: '2', name: 'b', children: [], tick: tickSpy, reset: () => {}, abort: () => {},
     };
     const node = new SequenceNode({
       name: 'seq',
       children: [actionNode('a', NodeStatus.FAILURE), secondChild],
     });
-    await node.tick(createContext());
+    const ctx = createContext();
+    // Tick 1: a starts inflight → RUNNING (b not ticked yet)
+    await node.tick(ctx);
+    expect(tickSpy).not.toHaveBeenCalled();
+    await flush();
+    // Tick 2: a completes FAILURE → b still not ticked
+    await node.tick(ctx);
     expect(tickSpy).not.toHaveBeenCalled();
   });
 
@@ -70,12 +94,12 @@ describe('SequenceNode', () => {
     const tickCounts = { deploy: 0, health: 0, notify: 0 };
 
     const deploy: BTreeNode = {
-      id: 'deploy', name: 'deploy',
+      id: 'deploy', name: 'deploy', children: [],
       tick: async () => { tickCounts.deploy++; return NodeStatus.SUCCESS; },
       reset: () => {}, abort: () => {},
     };
     const health: BTreeNode = {
-      id: 'health', name: 'health',
+      id: 'health', name: 'health', children: [],
       tick: async () => {
         tickCounts.health++;
         healthCheckCalls++;
@@ -84,7 +108,7 @@ describe('SequenceNode', () => {
       reset: () => {}, abort: () => {},
     };
     const notify: BTreeNode = {
-      id: 'notify', name: 'notify',
+      id: 'notify', name: 'notify', children: [],
       tick: async () => { tickCounts.notify++; return NodeStatus.SUCCESS; },
       reset: () => {}, abort: () => {},
     };
@@ -92,29 +116,30 @@ describe('SequenceNode', () => {
     const node = new SequenceNode({ name: 'seq', children: [deploy, health, notify] });
     const ctx = createContext();
 
-    // Tick 1: deploy succeeds, health returns RUNNING
+    // Tick 1: deploy succeeds (cached), health returns RUNNING → RUNNING
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    // Tick 2: resumes at health, still RUNNING
+    // Tick 2: deploy cached, health still RUNNING → RUNNING
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    // Tick 3: resumes at health, succeeds, notify succeeds
+    // Tick 3: deploy cached, health succeeds, notify succeeds → SUCCESS
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
 
+    // deploy is non-reactive mock, cached after first tick
     expect(tickCounts.deploy).toBe(1);
     expect(tickCounts.health).toBe(3);
     expect(tickCounts.notify).toBe(1);
   });
 
-  it('resets runningChildId on FAILURE', async () => {
+  it('clears cycle on FAILURE and re-evaluates from start', async () => {
     let call = 0;
     const tickCounts = { a: 0, b: 0 };
 
     const a: BTreeNode = {
-      id: 'a', name: 'a',
+      id: 'a', name: 'a', children: [],
       tick: async () => { tickCounts.a++; return NodeStatus.SUCCESS; },
       reset: () => {}, abort: () => {},
     };
     const b: BTreeNode = {
-      id: 'b', name: 'b',
+      id: 'b', name: 'b', children: [],
       tick: async () => {
         tickCounts.b++;
         call++;
@@ -127,28 +152,29 @@ describe('SequenceNode', () => {
     const node = new SequenceNode({ name: 'seq', children: [a, b] });
     const ctx = createContext();
 
-    // Tick 1: a SUCCESS, b RUNNING (saved)
+    // Tick 1: a SUCCESS (cached), b RUNNING → RUNNING
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
     expect(tickCounts.a).toBe(1);
 
-    // Tick 2: resumes at b, b FAILURE → runningChildId cleared
+    // Tick 2: a cached (SUCCESS), b FAILURE → cycle cleared, FAILURE
     expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
-    expect(tickCounts.a).toBe(1); // a was skipped
+    // a was cached, not re-ticked
+    expect(tickCounts.a).toBe(1);
 
-    // Tick 3: starts from child 0 again since runningChildId was cleared
+    // Tick 3: new cycle — a ticked again (cache was cleared), b FAILURE
     expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
-    expect(tickCounts.a).toBe(2); // a ticked again
+    expect(tickCounts.a).toBe(2);
   });
 
   it('reset() clears running child state', async () => {
     const tickCounts = { a: 0, b: 0 };
     const a: BTreeNode = {
-      id: 'a', name: 'a',
+      id: 'a', name: 'a', children: [],
       tick: async () => { tickCounts.a++; return NodeStatus.SUCCESS; },
       reset: () => {}, abort: () => {},
     };
     const b: BTreeNode = {
-      id: 'b', name: 'b',
+      id: 'b', name: 'b', children: [],
       tick: async () => { tickCounts.b++; return NodeStatus.RUNNING; },
       reset: () => {}, abort: () => {},
     };
@@ -156,11 +182,11 @@ describe('SequenceNode', () => {
     const node = new SequenceNode({ name: 'seq', children: [a, b] });
     const ctx = createContext();
 
-    await node.tick(ctx); // a=SUCCESS, b=RUNNING
+    await node.tick(ctx); // a=SUCCESS (cached), b=RUNNING
     expect(tickCounts.a).toBe(1);
 
-    node.reset();
-    await node.tick(ctx); // should start from a again
+    node.reset(); // clears all cycle state
+    await node.tick(ctx); // new cycle — a ticked again
     expect(tickCounts.a).toBe(2);
   });
 
@@ -168,7 +194,7 @@ describe('SequenceNode', () => {
     it('calls strategy.order() once per execution cycle even with RUNNING child', async () => {
       let healthCalls = 0;
       const health: BTreeNode = {
-        id: 'health', name: 'health',
+        id: 'health', name: 'health', children: [],
         tick: async () => {
           healthCalls++;
           return healthCalls >= 3 ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
@@ -186,9 +212,15 @@ describe('SequenceNode', () => {
       });
       const ctx = createContext();
 
-      await node.tick(ctx); // RUNNING
-      await node.tick(ctx); // RUNNING
-      await node.tick(ctx); // SUCCESS
+      // Tick 1: action 'a' starts inflight → RUNNING
+      await node.tick(ctx);
+      await flush();
+      // Tick 2: action 'a' completes (cached), health RUNNING
+      await node.tick(ctx);
+      // Tick 3: action 'a' cached, health RUNNING
+      await node.tick(ctx);
+      // Tick 4: action 'a' cached, health SUCCESS → cycle ends
+      await node.tick(ctx);
 
       expect(orderSpy).toHaveBeenCalledTimes(1);
     });
@@ -204,8 +236,15 @@ describe('SequenceNode', () => {
       });
       const ctx = createContext();
 
-      await node.tick(ctx); // SUCCESS — cycle 1
-      await node.tick(ctx); // SUCCESS — cycle 2
+      // Cycle 1: tick 1 starts action (RUNNING), tick 2 completes (SUCCESS)
+      await node.tick(ctx);
+      await flush();
+      await node.tick(ctx);
+
+      // Cycle 2: tick 3 starts action (RUNNING), tick 4 completes (SUCCESS)
+      await node.tick(ctx);
+      await flush();
+      await node.tick(ctx);
 
       expect(orderSpy).toHaveBeenCalledTimes(2);
     });
@@ -221,8 +260,15 @@ describe('SequenceNode', () => {
       });
       const ctx = createContext();
 
-      await node.tick(ctx); // FAILURE — cycle 1
-      await node.tick(ctx); // FAILURE — cycle 2
+      // Cycle 1: tick 1 starts action (RUNNING), tick 2 completes (FAILURE)
+      await node.tick(ctx);
+      await flush();
+      await node.tick(ctx);
+
+      // Cycle 2: tick 3 starts action (RUNNING), tick 4 completes (FAILURE)
+      await node.tick(ctx);
+      await flush();
+      await node.tick(ctx);
 
       expect(orderSpy).toHaveBeenCalledTimes(2);
     });
@@ -230,7 +276,7 @@ describe('SequenceNode', () => {
     it('re-consults strategy after reset()', async () => {
       let calls = 0;
       const child: BTreeNode = {
-        id: 'c', name: 'c',
+        id: 'c', name: 'c', children: [],
         tick: async () => {
           calls++;
           return NodeStatus.RUNNING;
@@ -256,12 +302,12 @@ describe('SequenceNode', () => {
       let callCount = 0;
       let bCalls = 0;
       const a: BTreeNode = {
-        id: 'a', name: 'a',
+        id: 'a', name: 'a', children: [],
         tick: async () => NodeStatus.SUCCESS,
         reset: () => {}, abort: () => {},
       };
       const b: BTreeNode = {
-        id: 'b', name: 'b',
+        id: 'b', name: 'b', children: [],
         tick: async () => {
           bCalls++;
           return bCalls <= 2 ? NodeStatus.RUNNING : NodeStatus.SUCCESS;
@@ -298,7 +344,7 @@ describe('SequenceNode', () => {
     };
     const order: string[] = [];
     const trackingNode = (name: string): BTreeNode => ({
-      id: name, name,
+      id: name, name, children: [],
       tick: async () => { order.push(name); return NodeStatus.SUCCESS; },
       reset: () => {}, abort: () => {},
     });
@@ -307,7 +353,9 @@ describe('SequenceNode', () => {
       children: [trackingNode('a'), trackingNode('b')],
       strategy: reverseStrategy,
     });
-    await node.tick(createContext());
+    const ctx = createContext();
+    // First tick: b is ticked (SUCCESS, cached), a is ticked (SUCCESS, cached) → SUCCESS
+    await node.tick(ctx);
     expect(order).toEqual(['b', 'a']);
   });
 

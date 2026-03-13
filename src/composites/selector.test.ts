@@ -15,6 +15,8 @@ function createContext(): TreeContext {
   };
 }
 
+const flush = () => new Promise(r => setTimeout(r, 0));
+
 function actionNode(name: string, status: NodeStatus): ActionNode {
   return new ActionNode({ name, action: () => status });
 }
@@ -25,7 +27,12 @@ describe('SelectorNode', () => {
       name: 'sel',
       children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.FAILURE)],
     });
-    expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
+    const ctx = createContext();
+    // Tick 1: a starts inflight → RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 2: a completes SUCCESS → selector SUCCESS
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
   it('returns SUCCESS when second child succeeds after first fails', async () => {
@@ -33,7 +40,15 @@ describe('SelectorNode', () => {
       name: 'sel',
       children: [actionNode('a', NodeStatus.FAILURE), actionNode('b', NodeStatus.SUCCESS)],
     });
-    expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
+    const ctx = createContext();
+    // Tick 1: a starts inflight → RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 2: a completes FAILURE (cached), b starts inflight → RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 3: a cached FAILURE, b completes SUCCESS → selector SUCCESS
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
   it('returns FAILURE when all children fail', async () => {
@@ -41,7 +56,12 @@ describe('SelectorNode', () => {
       name: 'sel',
       children: [actionNode('a', NodeStatus.FAILURE), actionNode('b', NodeStatus.FAILURE)],
     });
-    expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
+    const ctx = createContext();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
   });
 
   it('returns RUNNING when a child returns RUNNING', async () => {
@@ -49,7 +69,15 @@ describe('SelectorNode', () => {
       name: 'sel',
       children: [actionNode('a', NodeStatus.FAILURE), actionNode('b', NodeStatus.RUNNING)],
     });
-    expect(await node.tick(createContext())).toBe(NodeStatus.RUNNING);
+    const ctx = createContext();
+    // Tick 1: a starts inflight → RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 2: a completes FAILURE (cached), b starts inflight → RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 3: a cached FAILURE, b returns RUNNING from inflight (action returns RUNNING) → RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
   });
 
   it('resumes from RUNNING child on next tick', async () => {
@@ -57,12 +85,12 @@ describe('SelectorNode', () => {
     const tickCounts = { fast: 0, slow: 0, fallback: 0 };
 
     const fast: BTreeNode = {
-      id: 'fast', name: 'fast',
+      id: 'fast', name: 'fast', children: [],
       tick: async () => { tickCounts.fast++; return NodeStatus.FAILURE; },
       reset: () => {}, abort: () => {},
     };
     const slow: BTreeNode = {
-      id: 'slow', name: 'slow',
+      id: 'slow', name: 'slow', children: [],
       tick: async () => {
         tickCounts.slow++;
         retryCalls++;
@@ -71,7 +99,7 @@ describe('SelectorNode', () => {
       reset: () => {}, abort: () => {},
     };
     const fallback: BTreeNode = {
-      id: 'fallback', name: 'fallback',
+      id: 'fallback', name: 'fallback', children: [],
       tick: async () => { tickCounts.fallback++; return NodeStatus.SUCCESS; },
       reset: () => {}, abort: () => {},
     };
@@ -79,29 +107,30 @@ describe('SelectorNode', () => {
     const node = new SelectorNode({ name: 'sel', children: [fast, slow, fallback] });
     const ctx = createContext();
 
-    // Tick 1: fast fails, slow returns RUNNING
+    // Tick 1: fast FAILURE (cached), slow RUNNING → RUNNING
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    // Tick 2: resumes at slow, still RUNNING
+    // Tick 2: fast cached, slow still RUNNING → RUNNING
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    // Tick 3: resumes at slow, succeeds
+    // Tick 3: fast cached, slow SUCCESS → selector SUCCESS
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
 
+    // fast was ticked once then cached
     expect(tickCounts.fast).toBe(1);
     expect(tickCounts.slow).toBe(3);
     expect(tickCounts.fallback).toBe(0);
   });
 
-  it('resets runningChildId on SUCCESS', async () => {
+  it('clears cycle on SUCCESS and re-evaluates from start', async () => {
     let call = 0;
     const tickCounts = { a: 0, b: 0 };
 
     const a: BTreeNode = {
-      id: 'a', name: 'a',
+      id: 'a', name: 'a', children: [],
       tick: async () => { tickCounts.a++; return NodeStatus.FAILURE; },
       reset: () => {}, abort: () => {},
     };
     const b: BTreeNode = {
-      id: 'b', name: 'b',
+      id: 'b', name: 'b', children: [],
       tick: async () => {
         tickCounts.b++;
         call++;
@@ -115,30 +144,35 @@ describe('SelectorNode', () => {
     const node = new SelectorNode({ name: 'sel', children: [a, b] });
     const ctx = createContext();
 
-    // Tick 1: a FAILURE, b RUNNING (saved)
+    // Tick 1: a FAILURE (cached), b RUNNING → RUNNING
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
     expect(tickCounts.a).toBe(1);
 
-    // Tick 2: resumes at b, b SUCCESS → runningChildId cleared
+    // Tick 2: a cached (FAILURE), b SUCCESS → cycle cleared, SUCCESS
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
-    expect(tickCounts.a).toBe(1); // a was skipped
+    expect(tickCounts.a).toBe(1); // a was cached
 
-    // Tick 3: starts from child 0 again since runningChildId was cleared
-    // a FAILURE, b FAILURE → selector FAILURE
+    // Tick 3: new cycle — a ticked again (cache cleared), b FAILURE → FAILURE
     expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
-    expect(tickCounts.a).toBe(2); // a ticked again
+    expect(tickCounts.a).toBe(2);
   });
 
   it('does not tick children after SUCCESS', async () => {
     const tickSpy = vi.fn(async () => NodeStatus.FAILURE);
     const secondChild: BTreeNode = {
-      id: '2', name: 'b', tick: tickSpy, reset: () => {}, abort: () => {},
+      id: '2', name: 'b', children: [], tick: tickSpy, reset: () => {}, abort: () => {},
     };
     const node = new SelectorNode({
       name: 'sel',
       children: [actionNode('a', NodeStatus.SUCCESS), secondChild],
     });
-    await node.tick(createContext());
+    const ctx = createContext();
+    // Tick 1: a starts inflight → RUNNING (b not ticked yet)
+    await node.tick(ctx);
+    expect(tickSpy).not.toHaveBeenCalled();
+    await flush();
+    // Tick 2: a completes SUCCESS → b still not ticked
+    await node.tick(ctx);
     expect(tickSpy).not.toHaveBeenCalled();
   });
 
@@ -146,7 +180,7 @@ describe('SelectorNode', () => {
     it('calls strategy.order() once per execution cycle even with RUNNING child', async () => {
       let slowCalls = 0;
       const slow: BTreeNode = {
-        id: 'slow', name: 'slow',
+        id: 'slow', name: 'slow', children: [],
         tick: async () => {
           slowCalls++;
           return slowCalls >= 3 ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
@@ -164,9 +198,15 @@ describe('SelectorNode', () => {
       });
       const ctx = createContext();
 
-      await node.tick(ctx); // RUNNING
-      await node.tick(ctx); // RUNNING
-      await node.tick(ctx); // SUCCESS
+      // Tick 1: action 'a' starts inflight → RUNNING
+      await node.tick(ctx);
+      await flush();
+      // Tick 2: a FAILURE (cached), slow RUNNING → RUNNING
+      await node.tick(ctx);
+      // Tick 3: a cached, slow RUNNING → RUNNING
+      await node.tick(ctx);
+      // Tick 4: a cached, slow SUCCESS → cycle ends
+      await node.tick(ctx);
 
       expect(orderSpy).toHaveBeenCalledTimes(1);
     });
@@ -182,8 +222,15 @@ describe('SelectorNode', () => {
       });
       const ctx = createContext();
 
-      await node.tick(ctx); // SUCCESS — cycle 1
-      await node.tick(ctx); // SUCCESS — cycle 2
+      // Cycle 1
+      await node.tick(ctx);
+      await flush();
+      await node.tick(ctx);
+
+      // Cycle 2
+      await node.tick(ctx);
+      await flush();
+      await node.tick(ctx);
 
       expect(orderSpy).toHaveBeenCalledTimes(2);
     });
@@ -199,15 +246,22 @@ describe('SelectorNode', () => {
       });
       const ctx = createContext();
 
-      await node.tick(ctx); // FAILURE — cycle 1
-      await node.tick(ctx); // FAILURE — cycle 2
+      // Cycle 1
+      await node.tick(ctx);
+      await flush();
+      await node.tick(ctx);
+
+      // Cycle 2
+      await node.tick(ctx);
+      await flush();
+      await node.tick(ctx);
 
       expect(orderSpy).toHaveBeenCalledTimes(2);
     });
 
     it('re-consults strategy after reset()', async () => {
       const child: BTreeNode = {
-        id: 'c', name: 'c',
+        id: 'c', name: 'c', children: [],
         tick: async () => NodeStatus.RUNNING,
         reset: () => {}, abort: () => {},
       };
@@ -230,12 +284,12 @@ describe('SelectorNode', () => {
       let callCount = 0;
       let bCalls = 0;
       const a: BTreeNode = {
-        id: 'a', name: 'a',
+        id: 'a', name: 'a', children: [],
         tick: async () => NodeStatus.FAILURE,
         reset: () => {}, abort: () => {},
       };
       const b: BTreeNode = {
-        id: 'b', name: 'b',
+        id: 'b', name: 'b', children: [],
         tick: async () => {
           bCalls++;
           return bCalls <= 2 ? NodeStatus.RUNNING : NodeStatus.SUCCESS;
@@ -272,7 +326,7 @@ describe('SelectorNode', () => {
     };
     const order: string[] = [];
     const trackingNode = (name: string, status: NodeStatus): BTreeNode => ({
-      id: name, name,
+      id: name, name, children: [],
       tick: async () => { order.push(name); return status; },
       reset: () => {}, abort: () => {},
     });
@@ -288,8 +342,8 @@ describe('SelectorNode', () => {
   it('resets all children on reset()', () => {
     const resetSpy1 = vi.fn();
     const resetSpy2 = vi.fn();
-    const child1: BTreeNode = { id: '1', name: 'a', tick: async () => NodeStatus.SUCCESS, reset: resetSpy1, abort: () => {} };
-    const child2: BTreeNode = { id: '2', name: 'b', tick: async () => NodeStatus.SUCCESS, reset: resetSpy2, abort: () => {} };
+    const child1: BTreeNode = { id: '1', name: 'a', children: [], tick: async () => NodeStatus.SUCCESS, reset: resetSpy1, abort: () => {} };
+    const child2: BTreeNode = { id: '2', name: 'b', children: [], tick: async () => NodeStatus.SUCCESS, reset: resetSpy2, abort: () => {} };
     const node = new SelectorNode({ name: 'sel', children: [child1, child2] });
     node.reset();
     expect(resetSpy1).toHaveBeenCalled();

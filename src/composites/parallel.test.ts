@@ -16,6 +16,8 @@ function createContext(): TreeContext {
   };
 }
 
+const flush = () => new Promise(r => setTimeout(r, 0));
+
 function actionNode(name: string, status: NodeStatus): ActionNode {
   return new ActionNode({ name, action: () => status });
 }
@@ -26,7 +28,12 @@ describe('ParallelNode', () => {
       name: 'par',
       children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.SUCCESS)],
     });
-    expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
+    const ctx = createContext();
+    // Tick 1: both start inflight → RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 2: both complete SUCCESS → SUCCESS
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
   it('returns FAILURE when any child fails (default policy requires all)', async () => {
@@ -34,7 +41,10 @@ describe('ParallelNode', () => {
       name: 'par',
       children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.FAILURE)],
     });
-    expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
+    const ctx = createContext();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
   });
 
   it('returns SUCCESS when successCount threshold is met', async () => {
@@ -47,7 +57,10 @@ describe('ParallelNode', () => {
       ],
       strategy: new DefaultParallelStrategy({ successCount: 2 }),
     });
-    expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
+    const ctx = createContext();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
   it('returns FAILURE when failureCount threshold is met', async () => {
@@ -60,7 +73,10 @@ describe('ParallelNode', () => {
       ],
       strategy: new DefaultParallelStrategy({ failureCount: 2 }),
     });
-    expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
+    const ctx = createContext();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
   });
 
   it('returns SUCCESS when successPercentage threshold is met', async () => {
@@ -74,7 +90,10 @@ describe('ParallelNode', () => {
       ],
       strategy: new DefaultParallelStrategy({ successPercentage: 50 }),
     });
-    expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
+    const ctx = createContext();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
   it('returns RUNNING when any child returns RUNNING', async () => {
@@ -88,7 +107,7 @@ describe('ParallelNode', () => {
   it('ticks all children concurrently', async () => {
     const order: string[] = [];
     const delayNode = (name: string, ms: number): BTreeNode => ({
-      id: name, name,
+      id: name, name, children: [],
       tick: async () => {
         await new Promise((r) => setTimeout(r, ms));
         order.push(name);
@@ -113,7 +132,10 @@ describe('ParallelNode', () => {
       children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.FAILURE)],
       strategy: customStrategy,
     });
-    expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
+    const ctx = createContext();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 });
 

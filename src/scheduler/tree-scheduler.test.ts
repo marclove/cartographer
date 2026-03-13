@@ -35,6 +35,8 @@ describe('TreeScheduler', () => {
 
     await scheduler.start();
 
+    // The scheduler calls tick() once. With inflight, it returns RUNNING,
+    // but the scheduler still counts it as one run.
     expect(tickSpy).toHaveBeenCalledOnce();
     expect(scheduler.runCount).toBe(1);
     expect(scheduler.isRunning).toBe(false);
@@ -86,11 +88,19 @@ describe('TreeScheduler', () => {
   });
 
   it('stops when stopOnStatus is reached', async () => {
+    // With inflight model, each tick returns RUNNING first, then the actual
+    // status on subsequent ticks. Use a mock BTreeNode to avoid inflight.
     let callCount = 0;
-    const tree = createTree(() => {
-      callCount++;
-      return callCount >= 2 ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
-    });
+    const root = {
+      id: 'root', name: 'root', children: [] as any[],
+      tick: vi.fn(async () => {
+        callCount++;
+        return callCount >= 2 ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
+      }),
+      reset: vi.fn(),
+      abort: vi.fn(),
+    };
+    const tree = new BehaviorTree({ name: 'test-tree', root });
 
     const scheduler = new TreeScheduler({
       tree,
@@ -127,8 +137,9 @@ describe('TreeScheduler', () => {
     expect(startSpy).toHaveBeenCalledWith(
       expect.objectContaining({ runCount: 1 }),
     );
+    // With inflight model, the first tick returns RUNNING
     expect(completeSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ runCount: 1, status: NodeStatus.SUCCESS }),
+      expect.objectContaining({ runCount: 1, status: NodeStatus.RUNNING }),
     );
   });
 
@@ -216,29 +227,34 @@ describe('TreeScheduler', () => {
   });
 
   it('multi-tick pipeline resumes RUNNING sequence children', async () => {
+    // Use mock BTreeNodes instead of real ActionNodes to avoid inflight
+    // complexity with fake timers. This tests the scheduler + reactive sequence.
     let healthChecks = 0;
     const tickCounts = { deploy: 0, health: 0, notify: 0 };
 
+    const deploy = {
+      id: 'deploy', name: 'start-deploy', children: [] as any[],
+      tick: vi.fn(async () => { tickCounts.deploy++; return NodeStatus.SUCCESS; }),
+      reset: vi.fn(), abort: vi.fn(),
+    };
+    const health = {
+      id: 'health', name: 'wait-for-healthy', children: [] as any[],
+      tick: vi.fn(async () => {
+        tickCounts.health++;
+        healthChecks++;
+        return healthChecks >= 3 ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
+      }),
+      reset: vi.fn(), abort: vi.fn(),
+    };
+    const notify = {
+      id: 'notify', name: 'notify-slack', children: [] as any[],
+      tick: vi.fn(async () => { tickCounts.notify++; return NodeStatus.SUCCESS; }),
+      reset: vi.fn(), abort: vi.fn(),
+    };
+
     const root = new SequenceNode({
       name: 'deploy-pipeline',
-      children: [
-        new ActionNode({
-          name: 'start-deploy',
-          action: () => { tickCounts.deploy++; return NodeStatus.SUCCESS; },
-        }),
-        new ActionNode({
-          name: 'wait-for-healthy',
-          action: () => {
-            tickCounts.health++;
-            healthChecks++;
-            return healthChecks >= 3 ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
-          },
-        }),
-        new ActionNode({
-          name: 'notify-slack',
-          action: () => { tickCounts.notify++; return NodeStatus.SUCCESS; },
-        }),
-      ],
+      children: [deploy, health, notify],
     });
 
     const tree = new BehaviorTree({ name: 'deploy', root });
@@ -252,16 +268,16 @@ describe('TreeScheduler', () => {
 
     const startPromise = scheduler.start();
 
-    // Tick 1: deploy SUCCESS, health RUNNING
+    // Tick 1: deploy SUCCESS (cached), health RUNNING
     await vi.advanceTimersByTimeAsync(100);
-    // Tick 2: health RUNNING
+    // Tick 2: deploy cached, health RUNNING
     await vi.advanceTimersByTimeAsync(100);
-    // Tick 3: health SUCCESS, notify SUCCESS → tree SUCCESS → scheduler stops
+    // Tick 3: deploy cached, health SUCCESS, notify SUCCESS → tree SUCCESS
     await vi.advanceTimersByTimeAsync(100);
 
     await startPromise;
 
-    expect(tickCounts.deploy).toBe(1);
+    expect(tickCounts.deploy).toBe(1); // cached after first tick
     expect(tickCounts.health).toBe(3);
     expect(tickCounts.notify).toBe(1);
     expect(scheduler.lastStatus).toBe(NodeStatus.SUCCESS);

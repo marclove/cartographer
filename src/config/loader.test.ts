@@ -4,6 +4,8 @@ import { TreeRegistry } from './registry.js';
 import { NodeStatus } from '../types.js';
 import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
 
+const flush = () => new Promise(r => setTimeout(r, 0));
+
 describe('TreeLoader', () => {
   it('loads a simple action tree from config object', async () => {
     const registry = new TreeRegistry();
@@ -20,6 +22,8 @@ describe('TreeLoader', () => {
 
     const tree = TreeLoader.fromConfig(config, registry);
     expect(tree.name).toBe('simple');
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -41,6 +45,13 @@ describe('TreeLoader', () => {
     };
 
     const tree = TreeLoader.fromConfig(config, registry);
+    // Selector: fail starts inflight → RUNNING
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    // fail FAILURE (cached), succeed starts → RUNNING
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    // succeed SUCCESS → SUCCESS
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -62,6 +73,10 @@ describe('TreeLoader', () => {
     };
 
     const tree = TreeLoader.fromConfig(config, registry);
+    // Sequence: condition SUCCESS, action starts inflight → RUNNING
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Condition re-ticked (SUCCESS), action completes → SUCCESS
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -85,6 +100,10 @@ describe('TreeLoader', () => {
     };
 
     const tree = TreeLoader.fromConfig(config, registry);
+    // Parallel: both start inflight → RUNNING
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    // a SUCCESS, b FAILURE → policy successCount:1 → SUCCESS
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -124,6 +143,10 @@ describe('TreeLoader', () => {
     };
 
     const tree = TreeLoader.fromConfig(config, registry);
+    // Inverter wraps action: action starts inflight → inverter sees RUNNING → RUNNING
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Action completes SUCCESS → inverter returns FAILURE
     expect(await tree.tick()).toBe(NodeStatus.FAILURE);
   });
 
@@ -146,6 +169,13 @@ describe('TreeLoader', () => {
     };
 
     const tree = TreeLoader.fromConfig(config, registry);
+    // Attempt 1: action starts inflight → RUNNING
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Attempt 1: action FAILURE → retry starts attempt 2 inflight → RUNNING
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Attempt 2: action SUCCESS → SUCCESS
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -163,6 +193,8 @@ root:
 
     const tree = TreeLoader.fromYAML(yaml, registry);
     expect(tree.name).toBe('yaml-tree');
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -174,6 +206,8 @@ root:
       root: { type: 'action', name: 'act', ref: 'noop', id: 'custom-id' },
     }, registry);
     expect(tree).toBeDefined();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 

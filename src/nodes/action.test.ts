@@ -13,13 +13,18 @@ function createContext(): TreeContext {
   };
 }
 
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
 describe('ActionNode', () => {
   it('returns the status from the action function', async () => {
     const node = new ActionNode({
       name: 'test-action',
       action: () => NodeStatus.SUCCESS,
     });
-    expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
+    const ctx = createContext();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
   it('supports async action functions', async () => {
@@ -30,7 +35,10 @@ describe('ActionNode', () => {
         return NodeStatus.FAILURE;
       },
     });
-    expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
+    const ctx = createContext();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
   });
 
   it('passes TreeContext to the action function', async () => {
@@ -42,13 +50,14 @@ describe('ActionNode', () => {
     expect(actionFn).toHaveBeenCalledWith(ctx);
   });
 
-  it('returns FAILURE when action throws', async () => {
+  it('returns FAILURE when action throws synchronously', async () => {
     const node = new ActionNode({
       name: 'error-action',
       action: () => {
         throw new Error('boom');
       },
     });
+    // Synchronous throws are caught by BaseNode.tick() before inflight is set
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
   });
 
@@ -62,7 +71,11 @@ describe('ActionNode', () => {
       name: 'running-action',
       action: () => NodeStatus.RUNNING,
     });
-    expect(await node.tick(createContext())).toBe(NodeStatus.RUNNING);
+    const ctx = createContext();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    // RUNNING from action is stored as result, returned on next tick
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
   });
 });
 
