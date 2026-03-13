@@ -1,6 +1,10 @@
 <script lang="ts">
+  import { connect, disconnect, getSelectedNodeId } from './lib/stores.svelte.js';
   import { onMount } from 'svelte';
-  import { connect, disconnect } from './lib/stores.svelte.js';
+  import Header from './components/Header.svelte';
+  import './styles/theme.css';
+
+  let selectedNodeId = $derived(getSelectedNodeId());
 
   onMount(() => {
     connect();
@@ -9,40 +13,48 @@
 </script>
 
 <div class="dashboard">
-  <header class="dash-header">
-    <div class="dash-logo">◆ Cartographer</div>
-    <div>Dashboard loading...</div>
-  </header>
+  <Header />
   <main class="dash-body">
-    <p>Connected. Panels coming in subsequent tasks.</p>
+    <div class="panel tree-panel">
+      <div class="panel-header"><div class="panel-title">Tree</div></div>
+      <div class="panel-body">Tree panel placeholder</div>
+    </div>
+    <div class="panel timeline-panel">
+      <div class="panel-header"><div class="panel-title">Events</div></div>
+      <div class="panel-body">Timeline placeholder</div>
+    </div>
+    <div class="panel blackboard-panel">
+      <div class="panel-header"><div class="panel-title">Blackboard</div></div>
+      <div class="panel-body">Blackboard placeholder</div>
+    </div>
   </main>
+  {#if selectedNodeId}
+    <footer class="drawer">
+      <div class="panel-header"><div class="panel-title">Node Detail</div></div>
+      <div class="panel-body">Detail placeholder</div>
+    </footer>
+  {/if}
 </div>
 
 <style>
-  :global(body) {
-    margin: 0;
-    padding: 0;
-    background: #0a0e17;
-    color: #c8d1dc;
-    font-family: 'Inter', -apple-system, sans-serif;
-  }
   .dashboard {
-    min-height: 100vh;
-  }
-  .dash-header {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 20px;
-    background: #0d1220;
-    border-bottom: 1px solid #1e2a3a;
-  }
-  .dash-logo {
-    font-weight: 700;
-    font-size: 15px;
-    color: #e8ecf1;
+    flex-direction: column;
+    height: 100vh;
   }
   .dash-body {
-    padding: 20px;
+    display: grid;
+    grid-template-columns: 250px 1fr 280px;
+    flex: 1;
+    overflow: hidden;
+  }
+  .tree-panel { min-width: 200px; }
+  .timeline-panel { border-right: 1px solid var(--border); }
+  .blackboard-panel { border-right: none; }
+  .drawer {
+    border-top: 1px solid var(--border);
+    background: var(--bg-surface);
+    max-height: 200px;
+    overflow-y: auto;
   }
 </style>
