@@ -2,6 +2,7 @@
   import { connect, disconnect, getSelectedNodeId } from './lib/stores.svelte.js';
   import { onMount } from 'svelte';
   import Header from './components/Header.svelte';
+  import TreePanel from './components/TreePanel.svelte';
   import './styles/theme.css';
 
   let selectedNodeId = $derived(getSelectedNodeId());
@@ -15,10 +16,7 @@
 <div class="dashboard">
   <Header />
   <main class="dash-body">
-    <div class="panel tree-panel">
-      <div class="panel-header"><div class="panel-title">Tree</div></div>
-      <div class="panel-body">Tree panel placeholder</div>
-    </div>
+    <TreePanel />
     <div class="panel timeline-panel">
       <div class="panel-header"><div class="panel-title">Events</div></div>
       <div class="panel-body">Timeline placeholder</div>
@@ -48,8 +46,7 @@
     flex: 1;
     overflow: hidden;
   }
-  .tree-panel { min-width: 200px; }
-  .timeline-panel { border-right: 1px solid var(--border); }
+.timeline-panel { border-right: 1px solid var(--border); }
   .blackboard-panel { border-right: none; }
   .drawer {
     border-top: 1px solid var(--border);
