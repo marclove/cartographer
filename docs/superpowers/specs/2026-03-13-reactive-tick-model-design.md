@@ -157,34 +157,22 @@ Tick 4: Cond -> SUCCESS. Action re-executes.           (new cycle)
 
 ### 4. Strategy Handling
 
-Strategy calls get the same non-blocking treatment as leaf node execution. Composites handle pending strategy calls as instance state, returning RUNNING until the strategy resolves.
+The strategy interface changes from `Promise<BTreeNode[]>` to `BTreeNode[] | Promise<BTreeNode[]>`. Default strategies return synchronously (drop their `async` keyword). This eliminates the microtask penalty on every cycle start — the common case is zero-cost.
 
 **Lifecycle** (inside the composite's `execute()`, before child traversal):
 
 ```
-// Phase 1: Strategy resolution (instance state on the composite)
-if (strategyPending):
-  if (strategyResult settled):
-    committedOrder = strategyResult
-    clear strategyPending
-  else:
-    return RUNNING
-
 if (committedOrder === null):
-  promise = strategy.orderChildren(children, context)
-  // Store as pending — check on next tick
-  strategyPending = promise
-  promise.then(r => strategyResult = r)
-  return RUNNING
+  committedOrder = await strategy.orderChildren(children, context)
 
-// Phase 2: Tick children in committed order (reactive traversal)
+// Tick children in committed order (reactive traversal)
 ```
 
-Note: This means even fast/synchronous strategies take one tick to resolve (the `.then()` callback fires as a microtask, after `execute()` has already returned RUNNING). This is consistent with how ActionNode works — one extra tick for the common case, in exchange for a single simple code path.
+That's it. No `strategyPending`, no `strategyResult`, no cross-tick state machine. For default strategies (synchronous), the `await` is a no-op on a plain array — `execute()` continues immediately. For agent strategies (async), the `await` blocks that one tick while the SDK call completes. One slow tick at cycle start is acceptable since it only happens once per cycle.
 
 **Committed order reset:** Same as current model — the order stays locked for the duration of a cycle. Reactive re-evaluation re-ticks children in the same committed order. The strategy is only re-consulted when a new cycle begins.
 
-**`evaluatePolicy` for Parallel:** Same pattern. If policy evaluation is async, Parallel stores the pending promise and returns RUNNING until it resolves.
+**`evaluatePolicy` for Parallel:** Same pattern — return type changes to `NodeStatus | Promise<NodeStatus>`. Default policies return synchronously. Async policies block one tick.
 
 ### 5. Abort and Cleanup on Preemption
 
@@ -202,8 +190,6 @@ When a reactive composite determines that a RUNNING subtree should be preempted 
 **AbortSignal scoping:** The tree shares a single `AbortController` whose signal is passed to all nodes via `context.signal`. Subtree preemption does NOT use this tree-level signal (aborting one subtree should not abort the whole tree). Instead, `abort()` is best-effort: the in-flight promise is abandoned (cleared from tracking, results ignored if they arrive later), but the underlying async work may continue running until it naturally completes or checks `context.signal`. Nodes that need hard cancellation (like `AgentNode`) already create their own `AbortController` and bridge it to the context signal — this pattern continues to work.
 
 **No reset between ticks.** State persists across the tick loop. Cleanup happens surgically — only preempted subtrees get aborted. Non-preempted RUNNING nodes continue undisturbed.
-
-**Abort during strategy resolution:** If a composite is waiting on a strategy call and gets aborted by a parent, the composite's `abort()` clears the pending strategy promise (in addition to aborting children). Strategies have no side effects to roll back.
 
 **No recovery on abort.** The SDK call is cancelled, partial work is lost. If the tree routes back to that agent later, it starts fresh.
 
@@ -289,6 +275,8 @@ The following changes to `src/types.ts` are required:
 'tree:tick:skipped': { timestamp: number };
 ```
 
+**Strategy interfaces:** `orderChildren()` return type changes from `Promise<BTreeNode[]>` to `BTreeNode[] | Promise<BTreeNode[]>`. `evaluatePolicy()` return type changes from `Promise<NodeStatus>` to `NodeStatus | Promise<NodeStatus>`. Default strategies drop their `async` keyword.
+
 **`ActionNode`:** Add `_inflight`, `_inflightResult`, `_inflightError` fields. Override `abort()` and `reset()` to clear them.
 
 **`AgentNode`:** Same inflight fields as ActionNode.
@@ -346,7 +334,8 @@ expect(s2).toBe(NodeStatus.SUCCESS);
 - Cycle cache clears when cycle ends (SUCCESS/FAILURE)
 - Nested composites manage independent cycles
 - `tree.start()` tick loop: interval timing, skip-on-overlap, clean shutdown
-- Strategy resolution across ticks (pending -> resolved)
+- Synchronous strategies resolve without extra ticks
+- Async strategies (agent) block one tick at cycle start
 - Guard aborts child when condition fails mid-execution
 - Parallel completion tracking prevents re-execution of side-effectful children
 - Retry/Repeat track attempts across ticks via instance state
