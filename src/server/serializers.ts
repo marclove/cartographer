@@ -69,7 +69,7 @@ export function serializeEvent<K extends keyof TreeEvents>(
     return { nodeId: d.node.id, result: d.result, cost: d.cost, modelUsage: d.modelUsage };
   }
   if (event === 'agent:error') {
-    return { nodeId: d.node.id, subtype: d.subtype, errors: d.errors, cost: d.cost, modelUsage: d.modelUsage };
+    return { nodeId: d.node.id, subtype: d.subtype, errors: d.errors, permissionDenials: d.permissionDenials, cost: d.cost, modelUsage: d.modelUsage };
   }
   if (event === 'agent:message') {
     return { nodeId: d.node.id, message: d.message };
