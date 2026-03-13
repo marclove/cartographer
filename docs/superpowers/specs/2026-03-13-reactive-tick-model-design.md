@@ -271,11 +271,7 @@ Calling `start()` while a loop is already running throws an error.
   - On first tick: record `this._startTime = Date.now()`, tick child.
   - On each subsequent tick: check `Date.now() - this._startTime > timeoutMs`. If expired, abort child, return FAILURE. Otherwise, tick child and return its status.
   - On reset: clear `_startTime`.
-- **Retry/Repeat** — Must be restructured to use instance state. The current `for` loop with local counter variables doesn't survive across ticks. Instead:
-  - Store attempt/iteration count as instance fields (e.g., `this._attempt`).
-  - On each tick: tick the child. If child is RUNNING, return RUNNING. If child failed and attempts remain, increment `this._attempt`, reset the child, and return RUNNING (next tick starts the retry). If all attempts exhausted, return FAILURE.
-  - `execute()` does one unit of work per tick and returns immediately.
-  - On reset: clear attempt/iteration state.
+- **Retry/Repeat** — Small change: persist the attempt/iteration counter as an instance field (`this._attempt` / `this._iteration`) instead of a loop-local variable. Clear in `reset()`. The loop structure in `execute()` is otherwise unchanged — when the child returns RUNNING, the loop exits early and the counter is preserved for the next tick.
 - **Guard** — Already re-checks its condition on every call to `execute()`. Under the current blocking model this re-check never happens because `execute()` blocks until the child resolves. Under the new model, the child returns RUNNING quickly, so `execute()` returns quickly and is called again on the next tick — naturally re-checking the condition. The one code change needed: Guard must call `this.child.abort()` when the condition fails while the child has in-flight work, before returning FAILURE.
 - **Inverter, AlwaysSucceed, AlwaysFail** — Pass through child status (inverting/overriding as appropriate). No changes needed. RUNNING passes through unchanged.
 
