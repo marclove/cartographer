@@ -48,6 +48,7 @@ describe('GET /api/tree', () => {
 describe('GET /api/status', () => {
   it('returns run status before any ticks', async () => {
     const res = await fetch(`http://localhost:${port}/api/status`);
+    expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.tree).toBe('IntegrationTree');
     expect(body.tickCount).toBe(0);
@@ -68,6 +69,7 @@ describe('GET /api/status', () => {
 describe('GET /api/blackboard', () => {
   it('returns full blackboard snapshot with scoped keys', async () => {
     const res = await fetch(`http://localhost:${port}/api/blackboard`);
+    expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.env).toBe('test');
     expect(body['scoped:key']).toBe(42);
