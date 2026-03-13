@@ -54,7 +54,7 @@ tick(context):
 - **Transparent to node authors.** The `execute()` signature is unchanged. Nodes that resolve quickly (conditions, fast actions) hit the fast path and never return RUNNING from this mechanism.
 - **Abort wiring.** The in-flight promise respects `context.signal`. When `abort()` is called, the signal fires, and well-behaved async work cancels. `reset()` clears in-flight state.
 - **Error handling.** If the in-flight promise rejects, the next tick that polls it re-throws, triggering `node:error` through existing BaseNode error handling.
-- **Event semantics.** `node:enter` fires on the tick that starts execution. `node:exit` fires on the tick that observes completion. These may be different ticks.
+- **Event semantics.** `node:enter` fires on the tick that starts execution. `node:exit` fires on the tick that observes completion. These may be different ticks. On intermediate poll ticks (where the node is RUNNING and being polled), neither `node:enter` nor `node:exit` fires — instead, a new `node:poll` event fires with the node ID and RUNNING status. This keeps event consumers informed without generating misleading enter/exit pairs for work that didn't actually start or finish on that tick.
 - **Backwards compatible.** If you never tick faster than your slowest node, you get today's behavior. This is purely additive.
 
 **Microtask yield explained:** `await Promise.resolve()` briefly yields to the JavaScript microtask queue, allowing already-resolved promises to flush their `.then()` callbacks. This is how we distinguish "fast" (resolved within one microtask) from "slow" (truly async — HTTP calls, SDK queries). A condition checking a blackboard value resolves instantly and returns its result. An AgentNode calling the SDK doesn't resolve, so it's stored for polling.
@@ -63,11 +63,13 @@ tick(context):
 
 All composites become reactive. `SequenceNode` and `SelectorNode` re-evaluate children from the start on every tick, even when a later child is RUNNING. There are no separate reactive/non-reactive variants.
 
+**Note:** The pseudocode below represents the composite's `execute()` method (as it does today), not `tick()`. The BaseNode inflight wrapper in `tick()` is transparent to composites because composite `execute()` calls always resolve within the same microtask — they just poll children and return, never starting truly async work themselves.
+
 **Sequence behavior:**
 
 ```
-tick(context):
-  // Resolve strategy if needed (see Section 3)
+execute(context):
+  // Resolve strategy if needed (see Section 4)
   // Then for each child in committed order:
 
   for each child in committed order:
@@ -89,7 +91,7 @@ tick(context):
 **Selector behavior:**
 
 ```
-tick(context):
+execute(context):
   for each child in committed order:
     status = child.tick(context)
 
@@ -122,7 +124,7 @@ A "cycle" is the span from when a composite begins working through its children 
 - **Other nodes** (actions, agents, decorators, sub-composites) that returned SUCCESS in this cycle return their cached result without re-executing.
 - **RUNNING nodes** are ticked (polled) normally.
 
-The composite distinguishes conditions from other nodes via `child instanceof ConditionNode`.
+**How composites identify reactive (re-evaluable) nodes:** Nodes expose a `reactive` boolean property. Defaults to `true` for `ConditionNode` and `false` for `ActionNode`, `AgentNode`, and composites. Decorators inherit their child's `reactive` value — so an `Inverter(Condition)` is reactive, while an `Inverter(Action)` is not. This avoids the fragility of `instanceof` checks and lets custom node types opt into reactive re-evaluation.
 
 **Cycle lifecycle:**
 
@@ -149,7 +151,7 @@ Strategy calls get the same non-blocking treatment as node execution. Composites
 **Lifecycle:**
 
 ```
-tick(context):
+execute(context):
   // Phase 1: Strategy resolution
   if (strategyPending):
     if (strategyResult settled):
@@ -193,31 +195,32 @@ When a reactive composite determines that a RUNNING subtree should be preempted 
 ```
 abort():
   if (this._inflight):
-    // AbortSignal handles actual cancellation of underlying work
     this._inflight = null
     this._inflightResult = null
 ```
 
+**AbortSignal scoping:** The tree shares a single `AbortController` whose signal is passed to all nodes via `context.signal`. Subtree preemption does NOT use this tree-level signal (aborting one subtree should not abort the whole tree). Instead, `abort()` is best-effort: the in-flight promise is abandoned (cleared from tracking, results ignored if they arrive later), but the underlying async work may continue running until it naturally completes or checks `context.signal`. Nodes that need hard cancellation (like `AgentNode`) already create their own `AbortController` and bridge it to the context signal — this pattern continues to work.
+
 **No reset between ticks.** State persists across the tick loop. Cleanup happens surgically — only preempted subtrees get aborted. Non-preempted RUNNING nodes continue undisturbed.
 
-**Abort during strategy resolution:** If a composite is waiting on a strategy call and gets aborted by a parent, the pending strategy promise is cleared. Strategies have no side effects to roll back.
+**Abort during strategy resolution:** If a composite is waiting on a strategy call and gets aborted by a parent, the composite's `abort()` clears the pending strategy promise (in addition to aborting children). Strategies have no side effects to roll back.
 
 **No recovery on abort.** The SDK call is cancelled, partial work is lost. If the tree routes back to that agent later, it starts fresh.
 
-### 6. `BehaviorTree.run()` API
+### 6. `BehaviorTree.start()` API
 
-The tree gains a `run()` method that starts a fixed-interval tick loop.
+The tree gains a `start()` method that starts a fixed-interval tick loop. (The existing `run()` method — which ticks once and returns a status/blackboard snapshot — is unchanged.)
 
 ```typescript
 // Start ticking every second
-const handle = tree.run({ intervalMs: 1000 });
+const handle = tree.start({ intervalMs: 1000 });
 
 // Stop the loop
 handle.stop();
 
 // Or with an AbortSignal
 const ac = new AbortController();
-tree.run({ intervalMs: 1000, signal: ac.signal });
+tree.start({ intervalMs: 1000, signal: ac.signal });
 ac.abort(); // stops the loop
 ```
 
@@ -231,7 +234,7 @@ ac.abort(); // stops the loop
 **Events:**
 
 - Existing `tree:tick` fires after each tick with status and duration.
-- New `tree:tick:skipped` when a tick is skipped due to overlap.
+- New `tree:tick:skipped` event (payload: `{ timestamp: number }`) when a tick is skipped due to overlap.
 
 **Stop conditions** are handled in userland via event listeners:
 
@@ -241,7 +244,7 @@ tree.events.on('tree:tick', ({ status }) => {
 });
 ```
 
-**Existing scheduler** remains unchanged for cron and one-shot use cases.
+**Existing `run()` method** remains unchanged (single tick, returns `{ status, blackboard }`). **Existing scheduler** remains unchanged for cron and one-shot use cases.
 
 ### 7. Impact on Existing Nodes
 
@@ -253,12 +256,12 @@ tree.events.on('tree:tick', ({ status }) => {
 
 **Decorators:**
 
-- **Timeout** — Already uses AbortSignal with a deadline. Compatible with polling.
-- **Retry/Repeat** — Track their own state (retry/repeat count) on the instance. Works across ticks.
-- **Guard** — Needs a small change: re-check its condition on every tick while the child is RUNNING, not just on initial entry.
-- **Inverter, AlwaysSucceed, AlwaysFail** — Pass through child status. No changes.
+- **Timeout** — Uses `Promise.race` between the child's tick and a timer inside `execute()`. Under the new model, the entire `execute()` becomes a single in-flight promise in BaseNode. The timeout still fires correctly — `Promise.race` resolves when the timer elapses and the child is aborted. The timer measures wall-clock time from when `execute()` was first called, which is the desired behavior.
+- **Retry/Repeat** — Their `execute()` methods contain `await`-based loops (retry count / repeat count as local variables). Under the new model, the entire loop becomes a single in-flight promise. A Retry wrapping an AgentNode with 3 retries would appear as one long RUNNING span — the composite above sees RUNNING until all retries complete or abort fires. This is correct behavior: the retry logic is internal to the decorator and transparent to the parent. Per-attempt observability comes from existing `node:enter`/`node:exit` events on the child node within each retry iteration.
+- **Guard** — Already re-checks its condition on every call to `execute()`. Under the current blocking model this re-check doesn't happen because `execute()` blocks until the child resolves. Under the new model, the child returns RUNNING quickly (via the poll path), so `execute()` completes within a microtask and gets called again on the next tick — naturally re-checking the condition. The one code change needed: Guard must call `this.child.abort()` when the condition fails while the child has in-flight work, before returning FAILURE.
+- **Inverter, AlwaysSucceed, AlwaysFail** — Pass through child status (inverting/overriding as appropriate). No changes needed. RUNNING passes through unchanged.
 
-**ParallelNode** — Already ticks all children concurrently via `Promise.all()`. With non-blocking BaseNode, RUNNING children are polled in parallel. Policy evaluation gets the same async treatment as strategy calls. Cycle-based caching does not apply since Parallel re-ticks all children by nature.
+**ParallelNode** — Already ticks all children concurrently via `Promise.all()`. With non-blocking BaseNode, RUNNING children are polled in parallel. Policy evaluation gets the same async treatment as strategy calls. Parallel also needs cycle-based completion tracking: children that returned SUCCESS in the current cycle should not be re-executed on subsequent ticks. The same `reactive` flag mechanism applies — reactive children (conditions) are re-ticked, non-reactive children (actions, agents) return their cached result.
 
 ### 8. Testing Strategy
 
@@ -307,8 +310,11 @@ expect(s2).toBe(NodeStatus.SUCCESS);
 - Fast nodes never return RUNNING (microtask fast path)
 - Cycle cache clears when cycle ends (SUCCESS/FAILURE)
 - Nested composites manage independent cycles
-- `tree.run()` tick loop: interval timing, skip-on-overlap, clean shutdown
+- `tree.start()` tick loop: interval timing, skip-on-overlap, clean shutdown
 - Strategy resolution across ticks (fast strategies resolve immediately, slow strategies return RUNNING)
-- Guard re-checks condition while child is RUNNING
+- Guard aborts child when condition fails mid-execution
+- Parallel completion tracking prevents re-execution of side-effectful children
+- Retry/Repeat appear as single RUNNING span to parent composites
+- `node:poll` event fires on intermediate poll ticks (not `node:enter`/`node:exit`)
 
 **Existing tests:** Most current unit and integration tests should continue to pass since single-tick execution is a degenerate case (all nodes resolve immediately). Tests asserting specific `runningChildId` behavior will need updating since that mechanism is replaced by reactive re-evaluation with cycle-based caching.
