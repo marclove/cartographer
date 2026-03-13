@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TreeScheduler } from './tree-scheduler.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { NodeStatus } from '../types.js';
+import type { TreeEvents } from '../types.js';
 import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
+import { EventEmitter } from '../core/event-emitter.js';
 
 function createTree(status: NodeStatus | (() => NodeStatus)): BehaviorTree {
   const fn = typeof status === 'function' ? status : () => status;
@@ -288,5 +290,151 @@ describe('TreeScheduler', () => {
     expect(stopSpy).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'error' }),
     );
+  });
+});
+
+function createSlowTree(delayMs?: number) {
+  let resolveCurrentTick: () => void;
+  const tree = {
+    tick: vi.fn(async () => {
+      if (delayMs !== undefined) {
+        await new Promise(r => setTimeout(r, delayMs));
+      } else {
+        await new Promise<void>(r => { resolveCurrentTick = r; });
+      }
+      return NodeStatus.RUNNING;
+    }),
+    reset: vi.fn(),
+    abort: vi.fn(),
+    events: new EventEmitter<TreeEvents>(),
+  };
+  return { tree, resolve: () => resolveCurrentTick?.() };
+}
+
+describe('TreeScheduler skipOnOverlap and abortOnStop', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('skipOnOverlap skips tick when previous is in progress', async () => {
+    const { tree, resolve } = createSlowTree();
+
+    const scheduler = new TreeScheduler({
+      tree,
+      schedule: { type: 'interval', delayMs: 50 },
+      skipOnOverlap: true,
+    });
+
+    const startPromise = scheduler.start();
+
+    // First interval fires, tick starts (and blocks on the deferred promise)
+    await vi.advanceTimersByTimeAsync(50);
+    expect(tree.tick).toHaveBeenCalledTimes(1);
+
+    // Second interval fires while first tick is still in progress — should be skipped
+    await vi.advanceTimersByTimeAsync(50);
+    expect(tree.tick).toHaveBeenCalledTimes(1);
+
+    // Third interval fires — still skipped
+    await vi.advanceTimersByTimeAsync(50);
+    expect(tree.tick).toHaveBeenCalledTimes(1);
+
+    // Resolve the first tick and stop
+    resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await scheduler.stop();
+    await startPromise;
+  });
+
+  it('skipOnOverlap emits tree:tick:skipped on the tree events', async () => {
+    const { tree, resolve } = createSlowTree();
+
+    const skippedSpy = vi.fn();
+    tree.events.on('tree:tick:skipped', skippedSpy);
+
+    const scheduler = new TreeScheduler({
+      tree,
+      schedule: { type: 'interval', delayMs: 50 },
+      skipOnOverlap: true,
+    });
+
+    const startPromise = scheduler.start();
+
+    // First tick starts
+    await vi.advanceTimersByTimeAsync(50);
+
+    // Second interval fires — skipped, event emitted
+    await vi.advanceTimersByTimeAsync(50);
+    expect(skippedSpy).toHaveBeenCalledTimes(1);
+    expect(skippedSpy).toHaveBeenCalledWith(expect.objectContaining({ timestamp: expect.any(Number) }));
+
+    // Third interval fires — skipped again
+    await vi.advanceTimersByTimeAsync(50);
+    expect(skippedSpy).toHaveBeenCalledTimes(2);
+
+    resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await scheduler.stop();
+    await startPromise;
+  });
+
+  it('skipOnOverlap false (default) allows ticks to queue normally', async () => {
+    const tree = createTree(NodeStatus.RUNNING);
+
+    const scheduler = new TreeScheduler({
+      tree,
+      schedule: { type: 'interval', delayMs: 50 },
+      maxRuns: 3,
+    });
+
+    const startPromise = scheduler.start();
+
+    await vi.advanceTimersByTimeAsync(50);
+    await vi.advanceTimersByTimeAsync(50);
+    await vi.advanceTimersByTimeAsync(50);
+    await startPromise;
+
+    expect(scheduler.runCount).toBe(3);
+  });
+
+  it('abortOnStop calls tree.abort() on stop', async () => {
+    const { tree } = createSlowTree(10);
+
+    const scheduler = new TreeScheduler({
+      tree,
+      schedule: { type: 'interval', delayMs: 50 },
+      abortOnStop: true,
+    });
+
+    const startPromise = scheduler.start();
+
+    await vi.advanceTimersByTimeAsync(50);
+    await vi.advanceTimersByTimeAsync(10);
+    await scheduler.stop();
+    await startPromise;
+
+    expect(tree.abort).toHaveBeenCalledOnce();
+  });
+
+  it('abortOnStop false (default) does not call abort', async () => {
+    const { tree } = createSlowTree(10);
+
+    const scheduler = new TreeScheduler({
+      tree,
+      schedule: { type: 'interval', delayMs: 50 },
+    });
+
+    const startPromise = scheduler.start();
+
+    await vi.advanceTimersByTimeAsync(50);
+    await vi.advanceTimersByTimeAsync(10);
+    await scheduler.stop();
+    await startPromise;
+
+    expect(tree.abort).not.toHaveBeenCalled();
   });
 });

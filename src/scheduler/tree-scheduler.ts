@@ -99,6 +99,12 @@ export class TreeScheduler {
    */
   private stopRequested = false;
 
+  /** Whether a tick is currently executing (used by `skipOnOverlap`). */
+  private _tickInProgress = false;
+
+  /** Promise for the currently in-flight tick when `skipOnOverlap` is enabled. */
+  private _inflightTick?: Promise<boolean>;
+
   /**
    * The active `setTimeout` handle for the current wait period.
    * Held so `stop()` can cancel it immediately.
@@ -197,6 +203,9 @@ export class TreeScheduler {
       this.currentTimerResolve();
       this.currentTimerResolve = undefined;
     }
+    if (this.config.abortOnStop) {
+      this.config.tree.abort?.();
+    }
     this.emitStop('manual');
     this._isRunning = false;
   }
@@ -214,8 +223,28 @@ export class TreeScheduler {
 
       if (this.stopRequested) break;
 
+      if (this.config.skipOnOverlap) {
+        if (this._tickInProgress) {
+          this.config.tree.events.emit('tree:tick:skipped', { timestamp: Date.now() });
+          continue;
+        }
+        // Fire tick without awaiting so the interval loop continues
+        this._inflightTick = this.executeTick();
+        // Handle the result asynchronously — stop the loop if needed
+        this._inflightTick.then((shouldStop) => {
+          if (shouldStop) this.stop();
+        });
+        continue;
+      }
+
       const shouldStop = await this.executeTick();
       if (shouldStop) break;
+    }
+
+    // If skipOnOverlap is enabled, wait for any in-flight tick to finish
+    if (this._inflightTick) {
+      await this._inflightTick;
+      this._inflightTick = undefined;
     }
   }
 
@@ -239,8 +268,25 @@ export class TreeScheduler {
 
       if (this.stopRequested) break;
 
+      if (this.config.skipOnOverlap) {
+        if (this._tickInProgress) {
+          this.config.tree.events.emit('tree:tick:skipped', { timestamp: Date.now() });
+          continue;
+        }
+        this._inflightTick = this.executeTick();
+        this._inflightTick.then((shouldStop) => {
+          if (shouldStop) this.stop();
+        });
+        continue;
+      }
+
       const shouldStop = await this.executeTick();
       if (shouldStop) break;
+    }
+
+    if (this._inflightTick) {
+      await this._inflightTick;
+      this._inflightTick = undefined;
     }
   }
 
@@ -274,6 +320,7 @@ export class TreeScheduler {
     this.events.emit('tick:start', { runCount, timestamp: new Date() });
     const start = performance.now();
 
+    this._tickInProgress = true;
     try {
       const status = await this.config.tree.tick();
       const durationMs = performance.now() - start;
@@ -319,6 +366,8 @@ export class TreeScheduler {
       }
 
       return false;
+    } finally {
+      this._tickInProgress = false;
     }
   }
 
