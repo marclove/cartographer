@@ -63,48 +63,70 @@ tick(context):
 
 All composites become reactive. `SequenceNode` and `SelectorNode` re-evaluate children from the start on every tick, even when a later child is RUNNING. There are no separate reactive/non-reactive variants.
 
-**Note:** The pseudocode below represents the composite's `execute()` method (as it does today), not `tick()`. The BaseNode inflight wrapper in `tick()` is transparent to composites because composite `execute()` calls always resolve within the same microtask — they just poll children and return, never starting truly async work themselves.
+**Composites bypass the BaseNode inflight wrapper.** Composites override `tick()` directly and manage their own event emission (`node:enter`/`node:exit`/`node:poll`) and cycle state. The BaseNode inflight wrapper applies to leaf nodes and decorators — nodes whose `execute()` may genuinely block. Composites never block: their `execute()` polls children and returns RUNNING synchronously. But because composite `execute()` may contain an internal `await microtask` for strategy resolution (Section 4), it would interact badly with the `await microtask` in BaseNode's `tick()` wrapper. Bypassing the wrapper entirely avoids this layering conflict.
+
+The pseudocode below represents the composite's `tick()` override:
 
 **Sequence behavior:**
 
 ```
-execute(context):
+tick(context):
+  emit node:enter (or node:poll if mid-cycle)
   // Resolve strategy if needed (see Section 4)
   // Then for each child in committed order:
 
   for each child in committed order:
-    status = child.tick(context)
+    if child is non-reactive AND child completed in this cycle:
+      status = cached result
+    else:
+      status = await child.tick(context)
 
     if status == FAILURE:
-      abort any RUNNING children later in the sequence
+      abort any previously-RUNNING children not yet visited
+      clear cycle state
+      emit node:exit
       return FAILURE
 
     if status == RUNNING:
-      abort any RUNNING children later in the sequence
+      emit node:exit
       return RUNNING
 
-    // status == SUCCESS: continue to next child
+    if status == SUCCESS AND child is non-reactive:
+      cache child completion
 
+  clear cycle state
+  emit node:exit
   return SUCCESS
 ```
+
+**Aborting previously-RUNNING children:** When a composite short-circuits (e.g., condition fails at index 2, but child at index 4 was RUNNING from a previous tick), it must abort children that have in-flight state but were not visited in this tick. The composite tracks which children are currently RUNNING (those that returned RUNNING on any tick in this cycle) and calls `abort()` on any that need cleanup when the cycle ends or is preempted.
 
 **Selector behavior:**
 
 ```
-execute(context):
+tick(context):
+  emit node:enter (or node:poll if mid-cycle)
   for each child in committed order:
-    status = child.tick(context)
+    if child is non-reactive AND child completed in this cycle:
+      status = cached result
+    else:
+      status = await child.tick(context)
 
     if status == SUCCESS:
-      abort any RUNNING children later in the selector
+      abort any previously-RUNNING children not yet visited
+      clear cycle state
+      emit node:exit
       return SUCCESS
 
     if status == RUNNING:
       // Don't try lower-priority branches
+      emit node:exit
       return RUNNING
 
     // status == FAILURE: try next child
 
+  clear cycle state
+  emit node:exit
   return FAILURE
 ```
 
@@ -148,32 +170,36 @@ Tick 4: Cond -> SUCCESS. Action re-executes.           (new cycle)
 
 Strategy calls get the same non-blocking treatment as node execution. Composites handle pending strategy calls as their own RUNNING state.
 
-**Lifecycle:**
+**Lifecycle** (inside the composite's `tick()` override, before child traversal):
 
 ```
-execute(context):
-  // Phase 1: Strategy resolution
-  if (strategyPending):
-    if (strategyResult settled):
-      committedOrder = strategyResult
-      clear strategyPending
-    else:
-      return RUNNING
+// Phase 1: Strategy resolution (instance state on the composite)
+if (strategyPending):
+  if (strategyResult settled):
+    committedOrder = strategyResult
+    clear strategyPending
+  else:
+    return RUNNING
 
-  if (committedOrder === null):
-    promise = strategy.orderChildren(children, context)
+if (committedOrder === null):
+  promise = strategy.orderChildren(children, context)
+  // Check synchronous resolution via settled flag (not microtask yield —
+  // composites bypass BaseNode's tick wrapper, so they use a simpler pattern:
+  // attach a .then() callback that sets a flag, then check the flag immediately)
+  let settled = false, result
+  promise.then(r => { settled = true; result = r })
 
-    // Same microtask yield pattern as BaseNode
-    await microtask
+  if (settled):
+    committedOrder = result
+  else:
+    strategyPending = promise
+    promise.then(r => strategyResult = r)
+    return RUNNING
 
-    if (promise settled):
-      committedOrder = result
-    else:
-      strategyPending = promise
-      return RUNNING
-
-  // Phase 2: Tick children in committed order (reactive traversal)
+// Phase 2: Tick children in committed order (reactive traversal)
 ```
+
+Note: For synchronous strategies (the common case), `promise.then()` callbacks don't fire synchronously in JavaScript — they're microtasks. So a truly sync strategy still needs one tick to resolve. An alternative is to check if the strategy method returns a non-promise value directly (via checking for `.then`), or to have strategies set their result synchronously on a shared object. The implementation should pick the simplest approach that handles the common case efficiently.
 
 **Committed order reset:** Same as current model — the order stays locked for the duration of a cycle. Reactive re-evaluation re-ticks children in the same committed order. The strategy is only re-consulted when a new cycle begins.
 
@@ -263,7 +289,43 @@ tree.events.on('tree:tick', ({ status }) => {
 
 **ParallelNode** — Already ticks all children concurrently via `Promise.all()`. With non-blocking BaseNode, RUNNING children are polled in parallel. Policy evaluation gets the same async treatment as strategy calls. Parallel also needs cycle-based completion tracking: children that returned SUCCESS in the current cycle should not be re-executed on subsequent ticks. The same `reactive` flag mechanism applies — reactive children (conditions) are re-ticked, non-reactive children (actions, agents) return their cached result.
 
-### 8. Testing Strategy
+### 8. Type and Interface Changes
+
+The following changes to `src/types.ts` are required:
+
+**`BTreeNode` interface:** Add `reactive` property.
+
+```typescript
+readonly reactive: boolean;  // true = re-evaluated every tick, false = cached within a cycle
+```
+
+**`TreeEvents` interface:** Add new events.
+
+```typescript
+'node:poll': { node: BTreeNode; status: NodeStatus.RUNNING; context: TreeContext };
+'tree:tick:skipped': { timestamp: number };
+```
+
+**`BaseNode`:** Add `reactive` property (defaults to `false`), `_inflight` and `_inflightResult` fields, updated `tick()`, `abort()`, and `reset()`.
+
+- `abort()`: clears `_inflight` and `_inflightResult`
+- `reset()`: clears `_inflight` and `_inflightResult` (currently a no-op)
+
+**`ConditionNode`:** Override `reactive` to `true`.
+
+**Decorators:** Override `reactive` as a getter that returns `this.child.reactive`.
+
+**`BehaviorTree`:** Add `start(options: { intervalMs: number; signal?: AbortSignal }): TickLoopHandle`.
+
+```typescript
+interface TickLoopHandle {
+  stop(): void;
+}
+```
+
+Calling `start()` while a loop is already running throws an error.
+
+### 9. Testing Strategy
 
 **Multi-tick test pattern:**
 
