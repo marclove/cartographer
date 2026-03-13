@@ -24,23 +24,23 @@ interface TreeContext {
 }
 ```
 
-| Field            | Purpose                                                                                           |
-| ---------------- | ------------------------------------------------------------------------------------------------- |
-| `blackboard`     | Shared key-value store for inter-node communication. All nodes read from and write to this store.  |
-| `events`         | Event emitter for observability. All `node:*` and `agent:*` events flow through this emitter.      |
-| `signal`         | Set automatically by `BehaviorTree` when `abort()` is called. Nodes check `signal?.aborted` to bail out of long-running work. |
-| `onElicitation`  | Handler for MCP server elicitation requests. Consumed by `AgentNode` and agent strategies. See [Elicitation](guide-elicitation.md). |
+| Field           | Purpose                                                                                                                             |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `blackboard`    | Shared key-value store for inter-node communication. All nodes read from and write to this store.                                   |
+| `events`        | Event emitter for observability. All `node:*` and `agent:*` events flow through this emitter.                                       |
+| `signal`        | Set automatically by `BehaviorTree` when `abort()` is called. Nodes check `signal?.aborted` to bail out of long-running work.       |
+| `onElicitation` | Handler for MCP server elicitation requests. Consumed by `AgentNode` and agent strategies. See [Elicitation](guide-elicitation.md). |
 
 ### Creating a Context
 
 `BehaviorTree` creates the context internally. In tests, construct one manually:
 
 ```typescript
-import { MapBlackboard, EventEmitter } from 'cartographer';
-import type { TreeContext, TreeEvents } from 'cartographer';
+import { InMemoryBlackboard, EventEmitter } from "cartographer";
+import type { TreeContext, TreeEvents } from "cartographer";
 
 const context: TreeContext = {
-  blackboard: new MapBlackboard(),
+  blackboard: new InMemoryBlackboard(),
   events: new EventEmitter<TreeEvents>(),
 };
 
@@ -93,15 +93,15 @@ root (onElicitation: handlerA)
 The `context` option on composite and decorator builder methods calls `setContextOverrides()` on the constructed node:
 
 ```typescript
-import { TreeBuilder } from 'cartographer';
+import { TreeBuilder } from "cartographer";
 
-const tree = new TreeBuilder('example')
-  .sequence('outer', { context: { onElicitation: outerHandler } }, (b) => {
+const tree = new TreeBuilder("example")
+  .sequence("outer", { context: { onElicitation: outerHandler } }, (b) => {
     // inner override takes precedence for its descendants
-    b.sequence('inner', { context: { onElicitation: innerHandler } }, (b) => {
-      b.agent('worker', { prompt: 'work' }); // sees innerHandler
+    b.sequence("inner", { context: { onElicitation: innerHandler } }, (b) => {
+      b.agent("worker", { prompt: "work" }); // sees innerHandler
     });
-    b.agent('sibling', { prompt: 'other' }); // sees outerHandler
+    b.agent("sibling", { prompt: "other" }); // sees outerHandler
   })
   .build();
 ```
@@ -115,11 +115,11 @@ The `context` option is available on all composite methods (`sequence`, `selecto
 When constructing nodes directly (without the builder), call `setContextOverrides()` or `mergeContextOverrides()` on any `BaseNode` subclass:
 
 ```typescript
-import { SequenceNode, AgentNode } from 'cartographer';
+import { SequenceNode, AgentNode } from "cartographer";
 
 const seq = new SequenceNode({
-  name: 'scoped',
-  children: [new AgentNode({ name: 'agent', prompt: 'work' })],
+  name: "scoped",
+  children: [new AgentNode({ name: "agent", prompt: "work" })],
 });
 
 // Replace all overrides

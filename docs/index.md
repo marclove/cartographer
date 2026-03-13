@@ -22,7 +22,7 @@ Your background determines the fastest path through these docs.
 | **New to behavior trees**                         | Read [Concepts](concepts.md) for BT fundamentals, then [Getting Started](getting-started.md) to build your first tree.                        |
 | **Familiar with BTs but new to Claude Agent SDK** | Skim [Getting Started](getting-started.md), then jump to [Agent Integration](guide-agent-integration.md) for AgentNode modes and MCP tooling. |
 | **Looking for API details**                       | Go directly to the [API Reference](api/index.md).                                                                                             |
-| **Want to run trees from the CLI?**               | See the [CLI Runner](guide-cli.md) guide for `cartographer run`, `inspect`, and `init`.                                                        |
+| **Want to run trees from the CLI?**               | See the [CLI Runner](guide-cli.md) guide for `cartographer run`, `inspect`, and `init`.                                                       |
 
 ## Table of Contents
 
@@ -34,7 +34,7 @@ Your background determines the fastest path through these docs.
 - [Nodes](guide-nodes.md) -- Leaf nodes: ActionNode, ConditionNode, and an introduction to AgentNode.
 - [Composites](guide-composites.md) -- SelectorNode, SequenceNode, and ParallelNode with completion strategies.
 - [Decorators](guide-decorators.md) -- All seven decorator nodes with examples.
-- [Blackboard and Events](guide-blackboard-and-events.md) -- State management with MapBlackboard, observability via the event emitter, and structured NDJSON logging.
+- [Blackboard and Events](guide-blackboard-and-events.md) -- State management with InMemoryBlackboard, observability via the event emitter, and structured NDJSON logging.
 - [Agent Integration](guide-agent-integration.md) -- AgentNode modes, agent strategies, and MCP tool configuration.
 - [Elicitation](guide-elicitation.md) -- Handling MCP server input requests at tree, subtree, and node levels.
 - [TreeContext and Context Layering](guide-context.md) -- How TreeContext propagates through the tree and how to override fields per subtree.
@@ -51,7 +51,7 @@ Your background determines the fastest path through these docs.
 ### API Reference
 
 - [API Overview](api/index.md) -- Import conventions and module organization.
-- [Core](api/core.md) -- `BehaviorTree`, `MapBlackboard`, `EventEmitter`.
+- [Core](api/core.md) -- `BehaviorTree`, `InMemoryBlackboard`, `EventEmitter`.
 - [Nodes](api/nodes.md) -- `BaseNode`, `ActionNode`, `ConditionNode`, `AgentNode`.
 - [Composites](api/composites.md) -- `SelectorNode`, `SequenceNode`, `ParallelNode`.
 - [Decorators](api/decorators.md) -- All seven decorator nodes.

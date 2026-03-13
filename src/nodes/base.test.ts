@@ -3,7 +3,7 @@ import { BaseNode } from './base.js';
 import { NodeStatus } from '../types.js';
 import type { TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
-import { MapBlackboard } from '../core/blackboard.js';
+import { InMemoryBlackboard } from '../core/blackboard.js';
 import type { TreeEvents } from '../types.js';
 
 class TestNode extends BaseNode {
@@ -28,7 +28,7 @@ class TestNode extends BaseNode {
 
 function createContext(): TreeContext {
   return {
-    blackboard: new MapBlackboard(),
+    blackboard: new InMemoryBlackboard(),
     events: new EventEmitter<TreeEvents>(),
   };
 }
@@ -182,7 +182,7 @@ describe('BaseNode', () => {
     it('always preserves the original blackboard even when overrides include blackboard', async () => {
       const node = new TestNode('node');
       const context = createContext();
-      const otherBlackboard = new MapBlackboard();
+      const otherBlackboard = new InMemoryBlackboard();
       node.setContextOverrides({ blackboard: otherBlackboard } as Partial<TreeContext>);
 
       let receivedContext: TreeContext | undefined;

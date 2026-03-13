@@ -131,7 +131,7 @@ src/
   config/        # TreeRegistry + TreeLoader (YAML config)
   scheduler/     # TreeScheduler (interval, cron, one-shot)
   agent/         # Blackboard MCP server and SDK helpers
-  core/          # BehaviorTree, MapBlackboard, EventEmitter
+  core/          # BehaviorTree, InMemoryBlackboard, EventEmitter
   types.ts       # All shared types
   index.ts       # Public API re-exports
 ```

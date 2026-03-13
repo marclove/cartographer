@@ -3,14 +3,14 @@ import type { Blackboard } from '../types.js';
 /**
  * The default in-memory implementation of {@link Blackboard}.
  *
- * `MapBlackboard` stores all values in a single `Map<string, unknown>`.
+ * `InMemoryBlackboard` stores all values in a single `Map<string, unknown>`.
  * It is created automatically by `BehaviorTree` when no blackboard is
  * supplied in the config, but you can also construct one directly when
  * you need to pre-populate data or share a blackboard across multiple trees.
  *
  * **Basic usage:**
  * ```ts
- * const bb = new MapBlackboard();
+ * const bb = new InMemoryBlackboard();
  * bb.set('userId', 42);
  * bb.get<number>('userId'); // 42
  * bb.has('userId');         // true
@@ -20,13 +20,13 @@ import type { Blackboard } from '../types.js';
  *
  * **Pre-populating with initial values:**
  * ```ts
- * const bb = new MapBlackboard({ userId: 42, mode: 'production' });
+ * const bb = new InMemoryBlackboard({ userId: 42, mode: 'production' });
  * bb.get<number>('userId'); // 42
  * ```
  *
  * **Namespace isolation with scoped views:**
  * ```ts
- * const bb = new MapBlackboard();
+ * const bb = new InMemoryBlackboard();
  * const agentBb = bb.scoped('agent1');
  *
  * agentBb.set('result', 'done');
@@ -45,7 +45,7 @@ import type { Blackboard } from '../types.js';
  * bb.toRecord(); // { a: 1, b: 2 }
  * ```
  */
-export class MapBlackboard implements Blackboard {
+export class InMemoryBlackboard implements Blackboard {
   private data: Map<string, unknown>;
 
   /**
@@ -110,7 +110,7 @@ export class MapBlackboard implements Blackboard {
    *
    * @example
    * ```ts
-   * const bb = new MapBlackboard({ x: 1 });
+   * const bb = new InMemoryBlackboard({ x: 1 });
    * bb.scoped('agent').set('result', 'ok');
    * bb.toRecord(); // { x: 1, 'agent:result': 'ok' }
    * ```
@@ -123,7 +123,7 @@ export class MapBlackboard implements Blackboard {
 /**
  * A namespace-isolated view over a shared `Map`.
  *
- * `ScopedBlackboard` is created by {@link MapBlackboard.scoped} and is not
+ * `ScopedBlackboard` is created by {@link InMemoryBlackboard.scoped} and is not
  * exported directly. Every method transparently prefixes the caller's key
  * with `prefix:` before reading from or writing to the underlying map.
  *

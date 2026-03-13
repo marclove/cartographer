@@ -15,18 +15,18 @@
 Create `src/composites/selector.test.ts`:
 
 ```typescript
-import { describe, it, expect, vi } from 'vitest';
-import { SelectorNode } from './selector.js';
-import { NodeStatus } from '../types.js';
-import type { BTreeNode, TreeContext, SelectionStrategy } from '../types.js';
-import { EventEmitter } from '../core/event-emitter.js';
-import { MapBlackboard } from '../core/blackboard.js';
-import type { TreeEvents } from '../types.js';
-import { ActionNode } from '../nodes/action.js';
+import { describe, it, expect, vi } from "vitest";
+import { SelectorNode } from "./selector.js";
+import { NodeStatus } from "../types.js";
+import type { BTreeNode, TreeContext, SelectionStrategy } from "../types.js";
+import { EventEmitter } from "../core/event-emitter.js";
+import { InMemoryBlackboard } from "../core/blackboard.js";
+import type { TreeEvents } from "../types.js";
+import { ActionNode } from "../nodes/action.js";
 
 function createContext(): TreeContext {
   return {
-    blackboard: new MapBlackboard(),
+    blackboard: new InMemoryBlackboard(),
     events: new EventEmitter<TreeEvents>(),
   };
 }
@@ -35,87 +35,108 @@ function actionNode(name: string, status: NodeStatus): ActionNode {
   return new ActionNode({ name, action: () => status });
 }
 
-describe('SelectorNode', () => {
-  it('returns SUCCESS when first child succeeds', async () => {
+describe("SelectorNode", () => {
+  it("returns SUCCESS when first child succeeds", async () => {
     const node = new SelectorNode({
-      name: 'sel',
-      children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.FAILURE)],
+      name: "sel",
+      children: [actionNode("a", NodeStatus.SUCCESS), actionNode("b", NodeStatus.FAILURE)],
     });
 
     expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
   });
 
-  it('returns SUCCESS when second child succeeds after first fails', async () => {
+  it("returns SUCCESS when second child succeeds after first fails", async () => {
     const node = new SelectorNode({
-      name: 'sel',
-      children: [actionNode('a', NodeStatus.FAILURE), actionNode('b', NodeStatus.SUCCESS)],
+      name: "sel",
+      children: [actionNode("a", NodeStatus.FAILURE), actionNode("b", NodeStatus.SUCCESS)],
     });
 
     expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
   });
 
-  it('returns FAILURE when all children fail', async () => {
+  it("returns FAILURE when all children fail", async () => {
     const node = new SelectorNode({
-      name: 'sel',
-      children: [actionNode('a', NodeStatus.FAILURE), actionNode('b', NodeStatus.FAILURE)],
+      name: "sel",
+      children: [actionNode("a", NodeStatus.FAILURE), actionNode("b", NodeStatus.FAILURE)],
     });
 
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
   });
 
-  it('returns RUNNING when a child returns RUNNING', async () => {
+  it("returns RUNNING when a child returns RUNNING", async () => {
     const node = new SelectorNode({
-      name: 'sel',
-      children: [actionNode('a', NodeStatus.FAILURE), actionNode('b', NodeStatus.RUNNING)],
+      name: "sel",
+      children: [actionNode("a", NodeStatus.FAILURE), actionNode("b", NodeStatus.RUNNING)],
     });
 
     expect(await node.tick(createContext())).toBe(NodeStatus.RUNNING);
   });
 
-  it('does not tick children after SUCCESS', async () => {
+  it("does not tick children after SUCCESS", async () => {
     const tickSpy = vi.fn(async () => NodeStatus.FAILURE);
     const secondChild: BTreeNode = {
-      id: '2', name: 'b', tick: tickSpy, reset: () => {}, abort: () => {},
+      id: "2",
+      name: "b",
+      tick: tickSpy,
+      reset: () => {},
+      abort: () => {},
     };
 
     const node = new SelectorNode({
-      name: 'sel',
-      children: [actionNode('a', NodeStatus.SUCCESS), secondChild],
+      name: "sel",
+      children: [actionNode("a", NodeStatus.SUCCESS), secondChild],
     });
 
     await node.tick(createContext());
     expect(tickSpy).not.toHaveBeenCalled();
   });
 
-  it('uses a custom strategy to reorder children', async () => {
+  it("uses a custom strategy to reorder children", async () => {
     const reverseStrategy: SelectionStrategy = {
       order: async (children) => [...children].reverse(),
     };
 
     const order: string[] = [];
     const trackingNode = (name: string, status: NodeStatus): BTreeNode => ({
-      id: name, name,
-      tick: async () => { order.push(name); return status; },
-      reset: () => {}, abort: () => {},
+      id: name,
+      name,
+      tick: async () => {
+        order.push(name);
+        return status;
+      },
+      reset: () => {},
+      abort: () => {},
     });
 
     const node = new SelectorNode({
-      name: 'sel',
-      children: [trackingNode('a', NodeStatus.FAILURE), trackingNode('b', NodeStatus.FAILURE)],
+      name: "sel",
+      children: [trackingNode("a", NodeStatus.FAILURE), trackingNode("b", NodeStatus.FAILURE)],
       strategy: reverseStrategy,
     });
 
     await node.tick(createContext());
-    expect(order).toEqual(['b', 'a']);
+    expect(order).toEqual(["b", "a"]);
   });
 
-  it('resets all children on reset()', () => {
+  it("resets all children on reset()", () => {
     const resetSpy1 = vi.fn();
     const resetSpy2 = vi.fn();
-    const child1: BTreeNode = { id: '1', name: 'a', tick: async () => NodeStatus.SUCCESS, reset: resetSpy1, abort: () => {} };
-    const child2: BTreeNode = { id: '2', name: 'b', tick: async () => NodeStatus.SUCCESS, reset: resetSpy2, abort: () => {} };
+    const child1: BTreeNode = {
+      id: "1",
+      name: "a",
+      tick: async () => NodeStatus.SUCCESS,
+      reset: resetSpy1,
+      abort: () => {},
+    };
+    const child2: BTreeNode = {
+      id: "2",
+      name: "b",
+      tick: async () => NodeStatus.SUCCESS,
+      reset: resetSpy2,
+      abort: () => {},
+    };
 
-    const node = new SelectorNode({ name: 'sel', children: [child1, child2] });
+    const node = new SelectorNode({ name: "sel", children: [child1, child2] });
     node.reset();
 
     expect(resetSpy1).toHaveBeenCalled();
@@ -134,13 +155,13 @@ Expected: FAIL
 Create `src/composites/selector.ts`:
 
 ```typescript
-import { BaseNode } from '../nodes/base.js';
-import { NodeStatus } from '../types.js';
-import type { SelectorConfig, TreeContext, SelectionStrategy } from '../types.js';
-import { DefaultSelectionStrategy } from '../strategies/default-selection.js';
+import { BaseNode } from "../nodes/base.js";
+import { NodeStatus } from "../types.js";
+import type { SelectorConfig, TreeContext, SelectionStrategy } from "../types.js";
+import { DefaultSelectionStrategy } from "../strategies/default-selection.js";
 
 export class SelectorNode extends BaseNode {
-  private children: SelectorConfig['children'];
+  private children: SelectorConfig["children"];
   private strategy: SelectionStrategy;
 
   constructor(config: SelectorConfig) {
@@ -186,18 +207,18 @@ Expected: PASS (all 7 tests)
 Create `src/composites/sequence.test.ts`:
 
 ```typescript
-import { describe, it, expect, vi } from 'vitest';
-import { SequenceNode } from './sequence.js';
-import { NodeStatus } from '../types.js';
-import type { BTreeNode, TreeContext, ExecutionStrategy } from '../types.js';
-import { EventEmitter } from '../core/event-emitter.js';
-import { MapBlackboard } from '../core/blackboard.js';
-import type { TreeEvents } from '../types.js';
-import { ActionNode } from '../nodes/action.js';
+import { describe, it, expect, vi } from "vitest";
+import { SequenceNode } from "./sequence.js";
+import { NodeStatus } from "../types.js";
+import type { BTreeNode, TreeContext, ExecutionStrategy } from "../types.js";
+import { EventEmitter } from "../core/event-emitter.js";
+import { InMemoryBlackboard } from "../core/blackboard.js";
+import type { TreeEvents } from "../types.js";
+import { ActionNode } from "../nodes/action.js";
 
 function createContext(): TreeContext {
   return {
-    blackboard: new MapBlackboard(),
+    blackboard: new InMemoryBlackboard(),
     events: new EventEmitter<TreeEvents>(),
   };
 }
@@ -206,78 +227,87 @@ function actionNode(name: string, status: NodeStatus): ActionNode {
   return new ActionNode({ name, action: () => status });
 }
 
-describe('SequenceNode', () => {
-  it('returns SUCCESS when all children succeed', async () => {
+describe("SequenceNode", () => {
+  it("returns SUCCESS when all children succeed", async () => {
     const node = new SequenceNode({
-      name: 'seq',
-      children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.SUCCESS)],
+      name: "seq",
+      children: [actionNode("a", NodeStatus.SUCCESS), actionNode("b", NodeStatus.SUCCESS)],
     });
 
     expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
   });
 
-  it('returns FAILURE when first child fails', async () => {
+  it("returns FAILURE when first child fails", async () => {
     const node = new SequenceNode({
-      name: 'seq',
-      children: [actionNode('a', NodeStatus.FAILURE), actionNode('b', NodeStatus.SUCCESS)],
+      name: "seq",
+      children: [actionNode("a", NodeStatus.FAILURE), actionNode("b", NodeStatus.SUCCESS)],
     });
 
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
   });
 
-  it('returns FAILURE when second child fails', async () => {
+  it("returns FAILURE when second child fails", async () => {
     const node = new SequenceNode({
-      name: 'seq',
-      children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.FAILURE)],
+      name: "seq",
+      children: [actionNode("a", NodeStatus.SUCCESS), actionNode("b", NodeStatus.FAILURE)],
     });
 
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
   });
 
-  it('returns RUNNING when a child returns RUNNING', async () => {
+  it("returns RUNNING when a child returns RUNNING", async () => {
     const node = new SequenceNode({
-      name: 'seq',
-      children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.RUNNING)],
+      name: "seq",
+      children: [actionNode("a", NodeStatus.SUCCESS), actionNode("b", NodeStatus.RUNNING)],
     });
 
     expect(await node.tick(createContext())).toBe(NodeStatus.RUNNING);
   });
 
-  it('does not tick children after FAILURE', async () => {
+  it("does not tick children after FAILURE", async () => {
     const tickSpy = vi.fn(async () => NodeStatus.SUCCESS);
     const secondChild: BTreeNode = {
-      id: '2', name: 'b', tick: tickSpy, reset: () => {}, abort: () => {},
+      id: "2",
+      name: "b",
+      tick: tickSpy,
+      reset: () => {},
+      abort: () => {},
     };
 
     const node = new SequenceNode({
-      name: 'seq',
-      children: [actionNode('a', NodeStatus.FAILURE), secondChild],
+      name: "seq",
+      children: [actionNode("a", NodeStatus.FAILURE), secondChild],
     });
 
     await node.tick(createContext());
     expect(tickSpy).not.toHaveBeenCalled();
   });
 
-  it('uses a custom strategy to reorder children', async () => {
+  it("uses a custom strategy to reorder children", async () => {
     const reverseStrategy: ExecutionStrategy = {
       order: async (children) => [...children].reverse(),
     };
 
     const order: string[] = [];
     const trackingNode = (name: string): BTreeNode => ({
-      id: name, name,
-      tick: async () => { order.push(name); return NodeStatus.SUCCESS; },
-      reset: () => {}, abort: () => {},
+      id: name,
+      name,
+      tick: async () => {
+        order.push(name);
+        return NodeStatus.SUCCESS;
+      },
+      reset: () => {},
+      abort: () => {},
     });
 
     const node = new SequenceNode({
-      name: 'seq',
-      children: [trackingNode('a'), trackingNode('b')],
+      name: "seq",
+      children: [trackingNode("a"), trackingNode("b")],
       strategy: reverseStrategy,
     });
 
     await node.tick(createContext());
-    expect(order).toEqual(['b', 'a']);
+    expect(order).toEqual(["b", "a"]);
   });
 });
 ```
@@ -292,13 +322,13 @@ Expected: FAIL
 Create `src/composites/sequence.ts`:
 
 ```typescript
-import { BaseNode } from '../nodes/base.js';
-import { NodeStatus } from '../types.js';
-import type { SequenceConfig, TreeContext, ExecutionStrategy } from '../types.js';
-import { DefaultExecutionStrategy } from '../strategies/default-execution.js';
+import { BaseNode } from "../nodes/base.js";
+import { NodeStatus } from "../types.js";
+import type { SequenceConfig, TreeContext, ExecutionStrategy } from "../types.js";
+import { DefaultExecutionStrategy } from "../strategies/default-execution.js";
 
 export class SequenceNode extends BaseNode {
-  private children: SequenceConfig['children'];
+  private children: SequenceConfig["children"];
   private strategy: ExecutionStrategy;
 
   constructor(config: SequenceConfig) {
@@ -344,19 +374,19 @@ Expected: PASS (all 6 tests)
 Create `src/composites/parallel.test.ts`:
 
 ```typescript
-import { describe, it, expect } from 'vitest';
-import { ParallelNode } from './parallel.js';
-import { NodeStatus } from '../types.js';
-import type { TreeContext, ParallelStrategy, ParallelPolicy, BTreeNode } from '../types.js';
-import { EventEmitter } from '../core/event-emitter.js';
-import { MapBlackboard } from '../core/blackboard.js';
-import type { TreeEvents } from '../types.js';
-import { ActionNode } from '../nodes/action.js';
-import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
+import { describe, it, expect } from "vitest";
+import { ParallelNode } from "./parallel.js";
+import { NodeStatus } from "../types.js";
+import type { TreeContext, ParallelStrategy, ParallelPolicy, BTreeNode } from "../types.js";
+import { EventEmitter } from "../core/event-emitter.js";
+import { InMemoryBlackboard } from "../core/blackboard.js";
+import type { TreeEvents } from "../types.js";
+import { ActionNode } from "../nodes/action.js";
+import { DefaultParallelStrategy } from "../strategies/default-parallel.js";
 
 function createContext(): TreeContext {
   return {
-    blackboard: new MapBlackboard(),
+    blackboard: new InMemoryBlackboard(),
     events: new EventEmitter<TreeEvents>(),
   };
 }
@@ -365,32 +395,32 @@ function actionNode(name: string, status: NodeStatus): ActionNode {
   return new ActionNode({ name, action: () => status });
 }
 
-describe('ParallelNode', () => {
-  it('returns SUCCESS when all children succeed (default policy)', async () => {
+describe("ParallelNode", () => {
+  it("returns SUCCESS when all children succeed (default policy)", async () => {
     const node = new ParallelNode({
-      name: 'par',
-      children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.SUCCESS)],
+      name: "par",
+      children: [actionNode("a", NodeStatus.SUCCESS), actionNode("b", NodeStatus.SUCCESS)],
     });
 
     expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
   });
 
-  it('returns FAILURE when any child fails (default policy requires all)', async () => {
+  it("returns FAILURE when any child fails (default policy requires all)", async () => {
     const node = new ParallelNode({
-      name: 'par',
-      children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.FAILURE)],
+      name: "par",
+      children: [actionNode("a", NodeStatus.SUCCESS), actionNode("b", NodeStatus.FAILURE)],
     });
 
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
   });
 
-  it('returns SUCCESS when successCount threshold is met', async () => {
+  it("returns SUCCESS when successCount threshold is met", async () => {
     const node = new ParallelNode({
-      name: 'par',
+      name: "par",
       children: [
-        actionNode('a', NodeStatus.SUCCESS),
-        actionNode('b', NodeStatus.FAILURE),
-        actionNode('c', NodeStatus.SUCCESS),
+        actionNode("a", NodeStatus.SUCCESS),
+        actionNode("b", NodeStatus.FAILURE),
+        actionNode("c", NodeStatus.SUCCESS),
       ],
       strategy: new DefaultParallelStrategy({ successCount: 2 }),
     });
@@ -398,13 +428,13 @@ describe('ParallelNode', () => {
     expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
   });
 
-  it('returns FAILURE when failureCount threshold is met', async () => {
+  it("returns FAILURE when failureCount threshold is met", async () => {
     const node = new ParallelNode({
-      name: 'par',
+      name: "par",
       children: [
-        actionNode('a', NodeStatus.FAILURE),
-        actionNode('b', NodeStatus.FAILURE),
-        actionNode('c', NodeStatus.SUCCESS),
+        actionNode("a", NodeStatus.FAILURE),
+        actionNode("b", NodeStatus.FAILURE),
+        actionNode("c", NodeStatus.SUCCESS),
       ],
       strategy: new DefaultParallelStrategy({ failureCount: 2 }),
     });
@@ -412,14 +442,14 @@ describe('ParallelNode', () => {
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
   });
 
-  it('returns SUCCESS when successPercentage threshold is met', async () => {
+  it("returns SUCCESS when successPercentage threshold is met", async () => {
     const node = new ParallelNode({
-      name: 'par',
+      name: "par",
       children: [
-        actionNode('a', NodeStatus.SUCCESS),
-        actionNode('b', NodeStatus.FAILURE),
-        actionNode('c', NodeStatus.SUCCESS),
-        actionNode('d', NodeStatus.SUCCESS),
+        actionNode("a", NodeStatus.SUCCESS),
+        actionNode("b", NodeStatus.FAILURE),
+        actionNode("c", NodeStatus.SUCCESS),
+        actionNode("d", NodeStatus.SUCCESS),
       ],
       strategy: new DefaultParallelStrategy({ successPercentage: 50 }),
     });
@@ -427,45 +457,47 @@ describe('ParallelNode', () => {
     expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
   });
 
-  it('returns RUNNING when any child returns RUNNING', async () => {
+  it("returns RUNNING when any child returns RUNNING", async () => {
     const node = new ParallelNode({
-      name: 'par',
-      children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.RUNNING)],
+      name: "par",
+      children: [actionNode("a", NodeStatus.SUCCESS), actionNode("b", NodeStatus.RUNNING)],
     });
 
     expect(await node.tick(createContext())).toBe(NodeStatus.RUNNING);
   });
 
-  it('ticks all children concurrently', async () => {
+  it("ticks all children concurrently", async () => {
     const order: string[] = [];
     const delayNode = (name: string, ms: number): BTreeNode => ({
-      id: name, name,
+      id: name,
+      name,
       tick: async () => {
         await new Promise((r) => setTimeout(r, ms));
         order.push(name);
         return NodeStatus.SUCCESS;
       },
-      reset: () => {}, abort: () => {},
+      reset: () => {},
+      abort: () => {},
     });
 
     const node = new ParallelNode({
-      name: 'par',
-      children: [delayNode('slow', 20), delayNode('fast', 5)],
+      name: "par",
+      children: [delayNode("slow", 20), delayNode("fast", 5)],
     });
 
     await node.tick(createContext());
     // fast should finish before slow due to concurrent execution
-    expect(order).toEqual(['fast', 'slow']);
+    expect(order).toEqual(["fast", "slow"]);
   });
 
-  it('uses a custom strategy for policy', async () => {
+  it("uses a custom strategy for policy", async () => {
     const customStrategy: ParallelStrategy = {
       policy: async () => ({ successCount: 1 }),
     };
 
     const node = new ParallelNode({
-      name: 'par',
-      children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.FAILURE)],
+      name: "par",
+      children: [actionNode("a", NodeStatus.SUCCESS), actionNode("b", NodeStatus.FAILURE)],
       strategy: customStrategy,
     });
 
@@ -484,13 +516,13 @@ Expected: FAIL
 Create `src/composites/parallel.ts`:
 
 ```typescript
-import { BaseNode } from '../nodes/base.js';
-import { NodeStatus } from '../types.js';
-import type { ParallelConfig, TreeContext, ParallelStrategy } from '../types.js';
-import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
+import { BaseNode } from "../nodes/base.js";
+import { NodeStatus } from "../types.js";
+import type { ParallelConfig, TreeContext, ParallelStrategy } from "../types.js";
+import { DefaultParallelStrategy } from "../strategies/default-parallel.js";
 
 export class ParallelNode extends BaseNode {
-  private children: ParallelConfig['children'];
+  private children: ParallelConfig["children"];
   private strategy: ParallelStrategy;
 
   constructor(config: ParallelConfig) {

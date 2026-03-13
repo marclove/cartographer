@@ -15,38 +15,40 @@
 Create `src/strategies/agent-strategies.test.ts`:
 
 ```typescript
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { NodeStatus } from '../types.js';
-import type { BTreeNode, TreeContext } from '../types.js';
-import { EventEmitter } from '../core/event-emitter.js';
-import { MapBlackboard } from '../core/blackboard.js';
-import type { TreeEvents } from '../types.js';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { NodeStatus } from "../types.js";
+import type { BTreeNode, TreeContext } from "../types.js";
+import { EventEmitter } from "../core/event-emitter.js";
+import { InMemoryBlackboard } from "../core/blackboard.js";
+import type { TreeEvents } from "../types.js";
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: vi.fn(),
   createSdkMcpServer: vi.fn(() => ({})),
   tool: vi.fn((_name, _desc, _schema, handler) => handler),
 }));
 
-import { AgentSelectionStrategy } from './agent-selection.js';
-import { AgentExecutionStrategy } from './agent-execution.js';
-import { AgentParallelStrategy } from './agent-parallel.js';
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { AgentSelectionStrategy } from "./agent-selection.js";
+import { AgentExecutionStrategy } from "./agent-execution.js";
+import { AgentParallelStrategy } from "./agent-parallel.js";
+import { query } from "@anthropic-ai/claude-agent-sdk";
 
 const mockQuery = vi.mocked(query);
 
 function createContext(): TreeContext {
   return {
-    blackboard: new MapBlackboard(),
+    blackboard: new InMemoryBlackboard(),
     events: new EventEmitter<TreeEvents>(),
   };
 }
 
 function mockNode(name: string): BTreeNode {
   return {
-    id: name, name,
+    id: name,
+    name,
     tick: async () => NodeStatus.SUCCESS,
-    reset: () => {}, abort: () => {},
+    reset: () => {},
+    abort: () => {},
   };
 }
 
@@ -56,170 +58,174 @@ async function* mockMessages(messages: unknown[]) {
   }
 }
 
-describe('AgentSelectionStrategy', () => {
+describe("AgentSelectionStrategy", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('reorders children based on Claude response', async () => {
-    mockQuery.mockReturnValue(mockMessages([
-      {
-        type: 'result',
-        subtype: 'success',
-        structured_output: {
-          ordering: ['c', 'a', 'b'],
-          reasoning: 'c is most relevant',
+  it("reorders children based on Claude response", async () => {
+    mockQuery.mockReturnValue(
+      mockMessages([
+        {
+          type: "result",
+          subtype: "success",
+          structured_output: {
+            ordering: ["c", "a", "b"],
+            reasoning: "c is most relevant",
+          },
+          total_cost_usd: 0.01,
         },
-        total_cost_usd: 0.01,
-      },
-    ]) as any);
+      ]) as any,
+    );
 
     const strategy = new AgentSelectionStrategy({
-      prompt: 'Pick the best order',
-      childDescriptions: { a: 'first', b: 'second', c: 'third' },
+      prompt: "Pick the best order",
+      childDescriptions: { a: "first", b: "second", c: "third" },
     });
 
-    const children = [mockNode('a'), mockNode('b'), mockNode('c')];
+    const children = [mockNode("a"), mockNode("b"), mockNode("c")];
     const result = await strategy.order(children, createContext());
 
-    expect(result.map((n) => n.name)).toEqual(['c', 'a', 'b']);
+    expect(result.map((n) => n.name)).toEqual(["c", "a", "b"]);
   });
 
-  it('falls back to original order on SDK failure', async () => {
-    mockQuery.mockReturnValue(mockMessages([
-      { type: 'result', subtype: 'error_during_execution' },
-    ]) as any);
+  it("falls back to original order on SDK failure", async () => {
+    mockQuery.mockReturnValue(mockMessages([{ type: "result", subtype: "error_during_execution" }]) as any);
 
-    const strategy = new AgentSelectionStrategy({ prompt: 'Pick order' });
-    const children = [mockNode('a'), mockNode('b')];
+    const strategy = new AgentSelectionStrategy({ prompt: "Pick order" });
+    const children = [mockNode("a"), mockNode("b")];
     const result = await strategy.order(children, createContext());
 
-    expect(result.map((n) => n.name)).toEqual(['a', 'b']);
+    expect(result.map((n) => n.name)).toEqual(["a", "b"]);
   });
 
-  it('falls back to original order if Claude returns unknown names', async () => {
-    mockQuery.mockReturnValue(mockMessages([
-      {
-        type: 'result',
-        subtype: 'success',
-        structured_output: { ordering: ['x', 'y', 'z'], reasoning: 'random' },
-        total_cost_usd: 0.01,
-      },
-    ]) as any);
+  it("falls back to original order if Claude returns unknown names", async () => {
+    mockQuery.mockReturnValue(
+      mockMessages([
+        {
+          type: "result",
+          subtype: "success",
+          structured_output: { ordering: ["x", "y", "z"], reasoning: "random" },
+          total_cost_usd: 0.01,
+        },
+      ]) as any,
+    );
 
-    const strategy = new AgentSelectionStrategy({ prompt: 'Pick order' });
-    const children = [mockNode('a'), mockNode('b')];
+    const strategy = new AgentSelectionStrategy({ prompt: "Pick order" });
+    const children = [mockNode("a"), mockNode("b")];
     const result = await strategy.order(children, createContext());
 
     // Falls back because none of the names matched
-    expect(result.map((n) => n.name)).toEqual(['a', 'b']);
+    expect(result.map((n) => n.name)).toEqual(["a", "b"]);
   });
 
-  it('emits strategy:decision event', async () => {
-    mockQuery.mockReturnValue(mockMessages([
-      {
-        type: 'result',
-        subtype: 'success',
-        structured_output: { ordering: ['a'], reasoning: 'only one' },
-        total_cost_usd: 0.01,
-      },
-    ]) as any);
+  it("emits strategy:decision event", async () => {
+    mockQuery.mockReturnValue(
+      mockMessages([
+        {
+          type: "result",
+          subtype: "success",
+          structured_output: { ordering: ["a"], reasoning: "only one" },
+          total_cost_usd: 0.01,
+        },
+      ]) as any,
+    );
 
-    const strategy = new AgentSelectionStrategy({ prompt: 'Pick' });
+    const strategy = new AgentSelectionStrategy({ prompt: "Pick" });
     const ctx = createContext();
     const spy = vi.fn();
-    ctx.events.on('strategy:decision', spy);
+    ctx.events.on("strategy:decision", spy);
 
-    await strategy.order([mockNode('a')], ctx);
+    await strategy.order([mockNode("a")], ctx);
 
-    expect(spy).toHaveBeenCalledWith(
-      expect.objectContaining({ strategy: 'agent-selection' }),
-    );
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ strategy: "agent-selection" }));
   });
 
-  it('supports dynamic prompt function', async () => {
-    mockQuery.mockReturnValue(mockMessages([
-      {
-        type: 'result',
-        subtype: 'success',
-        structured_output: { ordering: ['a'], reasoning: 'ok' },
-        total_cost_usd: 0.01,
-      },
-    ]) as any);
+  it("supports dynamic prompt function", async () => {
+    mockQuery.mockReturnValue(
+      mockMessages([
+        {
+          type: "result",
+          subtype: "success",
+          structured_output: { ordering: ["a"], reasoning: "ok" },
+          total_cost_usd: 0.01,
+        },
+      ]) as any,
+    );
 
     const strategy = new AgentSelectionStrategy({
-      prompt: (children, ctx) => `Choose from ${children.length} options, state: ${ctx.blackboard.get('state')}`,
+      prompt: (children, ctx) => `Choose from ${children.length} options, state: ${ctx.blackboard.get("state")}`,
     });
 
     const ctx = createContext();
-    ctx.blackboard.set('state', 'active');
-    await strategy.order([mockNode('a')], ctx);
+    ctx.blackboard.set("state", "active");
+    await strategy.order([mockNode("a")], ctx);
 
     expect(mockQuery).toHaveBeenCalled();
   });
 });
 
-describe('AgentExecutionStrategy', () => {
+describe("AgentExecutionStrategy", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('reorders children based on Claude response', async () => {
-    mockQuery.mockReturnValue(mockMessages([
-      {
-        type: 'result',
-        subtype: 'success',
-        structured_output: { ordering: ['b', 'a'], reasoning: 'b first' },
-        total_cost_usd: 0.01,
-      },
-    ]) as any);
+  it("reorders children based on Claude response", async () => {
+    mockQuery.mockReturnValue(
+      mockMessages([
+        {
+          type: "result",
+          subtype: "success",
+          structured_output: { ordering: ["b", "a"], reasoning: "b first" },
+          total_cost_usd: 0.01,
+        },
+      ]) as any,
+    );
 
-    const strategy = new AgentExecutionStrategy({ prompt: 'Order steps' });
-    const children = [mockNode('a'), mockNode('b')];
+    const strategy = new AgentExecutionStrategy({ prompt: "Order steps" });
+    const children = [mockNode("a"), mockNode("b")];
     const result = await strategy.order(children, createContext());
 
-    expect(result.map((n) => n.name)).toEqual(['b', 'a']);
+    expect(result.map((n) => n.name)).toEqual(["b", "a"]);
   });
 
-  it('falls back to original order on failure', async () => {
-    mockQuery.mockReturnValue(mockMessages([
-      { type: 'result', subtype: 'error_during_execution' },
-    ]) as any);
+  it("falls back to original order on failure", async () => {
+    mockQuery.mockReturnValue(mockMessages([{ type: "result", subtype: "error_during_execution" }]) as any);
 
-    const strategy = new AgentExecutionStrategy({ prompt: 'Order' });
-    const children = [mockNode('a'), mockNode('b')];
+    const strategy = new AgentExecutionStrategy({ prompt: "Order" });
+    const children = [mockNode("a"), mockNode("b")];
     const result = await strategy.order(children, createContext());
 
-    expect(result.map((n) => n.name)).toEqual(['a', 'b']);
+    expect(result.map((n) => n.name)).toEqual(["a", "b"]);
   });
 });
 
-describe('AgentParallelStrategy', () => {
+describe("AgentParallelStrategy", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('returns policy from Claude response', async () => {
-    mockQuery.mockReturnValue(mockMessages([
-      {
-        type: 'result',
-        subtype: 'success',
-        structured_output: {
-          policy: { successCount: 2 },
-          reasoning: 'need at least 2',
+  it("returns policy from Claude response", async () => {
+    mockQuery.mockReturnValue(
+      mockMessages([
+        {
+          type: "result",
+          subtype: "success",
+          structured_output: {
+            policy: { successCount: 2 },
+            reasoning: "need at least 2",
+          },
+          total_cost_usd: 0.01,
         },
-        total_cost_usd: 0.01,
-      },
-    ]) as any);
+      ]) as any,
+    );
 
-    const strategy = new AgentParallelStrategy({ prompt: 'Set policy' });
-    const children = [mockNode('a'), mockNode('b'), mockNode('c')];
+    const strategy = new AgentParallelStrategy({ prompt: "Set policy" });
+    const children = [mockNode("a"), mockNode("b"), mockNode("c")];
     const result = await strategy.policy(children, createContext());
 
     expect(result).toEqual({ successCount: 2 });
   });
 
-  it('falls back to require-all policy on failure', async () => {
-    mockQuery.mockReturnValue(mockMessages([
-      { type: 'result', subtype: 'error_during_execution' },
-    ]) as any);
+  it("falls back to require-all policy on failure", async () => {
+    mockQuery.mockReturnValue(mockMessages([{ type: "result", subtype: "error_during_execution" }]) as any);
 
-    const strategy = new AgentParallelStrategy({ prompt: 'Set policy' });
-    const children = [mockNode('a'), mockNode('b')];
+    const strategy = new AgentParallelStrategy({ prompt: "Set policy" });
+    const children = [mockNode("a"), mockNode("b")];
     const result = await strategy.policy(children, createContext());
 
     expect(result).toEqual({ successCount: 2 });
@@ -237,9 +243,9 @@ Expected: FAIL
 Create `src/agent/sdk-helpers.ts`:
 
 ```typescript
-import { query } from '@anthropic-ai/claude-agent-sdk';
-import { z } from 'zod';
-import type { BTreeNode, TreeContext, AgentStrategyConfig } from '../types.js';
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+import type { BTreeNode, TreeContext, AgentStrategyConfig } from "../types.js";
 
 export async function queryStructured<T extends z.ZodType>(
   prompt: string,
@@ -248,8 +254,8 @@ export async function queryStructured<T extends z.ZodType>(
 ): Promise<z.infer<T> | null> {
   async function* generateMessages() {
     yield {
-      type: 'user' as const,
-      message: { role: 'user' as const, content: prompt },
+      type: "user" as const,
+      message: { role: "user" as const, content: prompt },
     };
   }
 
@@ -257,15 +263,15 @@ export async function queryStructured<T extends z.ZodType>(
     for await (const message of query({
       prompt: generateMessages(),
       options: {
-        outputFormat: { type: 'json_schema', schema: z.toJSONSchema(schema) },
-        model: config.model ?? 'sonnet',
-        effort: config.effort ?? 'low',
+        outputFormat: { type: "json_schema", schema: z.toJSONSchema(schema) },
+        model: config.model ?? "sonnet",
+        effort: config.effort ?? "low",
         maxTurns: 1,
       },
     } as any)) {
       const msg = message as any;
-      if (msg.type === 'result') {
-        if (msg.subtype === 'success' && msg.structured_output) {
+      if (msg.type === "result") {
+        if (msg.subtype === "success" && msg.structured_output) {
           return msg.structured_output as z.infer<T>;
         }
         return null;
@@ -278,14 +284,8 @@ export async function queryStructured<T extends z.ZodType>(
   return null;
 }
 
-export function buildStrategyPrompt(
-  config: AgentStrategyConfig,
-  children: BTreeNode[],
-  context: TreeContext,
-): string {
-  const basePrompt = typeof config.prompt === 'function'
-    ? config.prompt(children, context)
-    : config.prompt;
+export function buildStrategyPrompt(config: AgentStrategyConfig, children: BTreeNode[], context: TreeContext): string {
+  const basePrompt = typeof config.prompt === "function" ? config.prompt(children, context) : config.prompt;
 
   const childInfo = children.map((c) => ({
     name: c.name,
@@ -306,13 +306,13 @@ export function buildStrategyPrompt(
 Create `src/strategies/agent-selection.ts`:
 
 ```typescript
-import { z } from 'zod';
-import type { SelectionStrategy, BTreeNode, TreeContext, AgentStrategyConfig } from '../types.js';
-import { queryStructured, buildStrategyPrompt } from '../agent/sdk-helpers.js';
+import { z } from "zod";
+import type { SelectionStrategy, BTreeNode, TreeContext, AgentStrategyConfig } from "../types.js";
+import { queryStructured, buildStrategyPrompt } from "../agent/sdk-helpers.js";
 
 const OrderingSchema = z.object({
-  ordering: z.array(z.string()).describe('Child node names in the order they should be tried'),
-  reasoning: z.string().describe('Brief explanation of the ordering decision'),
+  ordering: z.array(z.string()).describe("Child node names in the order they should be tried"),
+  reasoning: z.string().describe("Brief explanation of the ordering decision"),
 });
 
 export class AgentSelectionStrategy implements SelectionStrategy {
@@ -326,9 +326,9 @@ export class AgentSelectionStrategy implements SelectionStrategy {
       return children;
     }
 
-    context.events.emit('strategy:decision', {
-      composite: children[0] ?? ({ id: '', name: '' } as any),
-      strategy: 'agent-selection',
+    context.events.emit("strategy:decision", {
+      composite: children[0] ?? ({ id: "", name: "" } as any),
+      strategy: "agent-selection",
       decision: result,
     });
 
@@ -352,13 +352,13 @@ export class AgentSelectionStrategy implements SelectionStrategy {
 Create `src/strategies/agent-execution.ts`:
 
 ```typescript
-import { z } from 'zod';
-import type { ExecutionStrategy, BTreeNode, TreeContext, AgentStrategyConfig } from '../types.js';
-import { queryStructured, buildStrategyPrompt } from '../agent/sdk-helpers.js';
+import { z } from "zod";
+import type { ExecutionStrategy, BTreeNode, TreeContext, AgentStrategyConfig } from "../types.js";
+import { queryStructured, buildStrategyPrompt } from "../agent/sdk-helpers.js";
 
 const OrderingSchema = z.object({
-  ordering: z.array(z.string()).describe('Child node names in execution order'),
-  reasoning: z.string().describe('Brief explanation of the ordering decision'),
+  ordering: z.array(z.string()).describe("Child node names in execution order"),
+  reasoning: z.string().describe("Brief explanation of the ordering decision"),
 });
 
 export class AgentExecutionStrategy implements ExecutionStrategy {
@@ -372,9 +372,9 @@ export class AgentExecutionStrategy implements ExecutionStrategy {
       return children;
     }
 
-    context.events.emit('strategy:decision', {
-      composite: children[0] ?? ({ id: '', name: '' } as any),
-      strategy: 'agent-execution',
+    context.events.emit("strategy:decision", {
+      composite: children[0] ?? ({ id: "", name: "" } as any),
+      strategy: "agent-execution",
       decision: result,
     });
 
@@ -397,17 +397,19 @@ export class AgentExecutionStrategy implements ExecutionStrategy {
 Create `src/strategies/agent-parallel.ts`:
 
 ```typescript
-import { z } from 'zod';
-import type { ParallelStrategy, ParallelPolicy, BTreeNode, TreeContext, AgentStrategyConfig } from '../types.js';
-import { queryStructured, buildStrategyPrompt } from '../agent/sdk-helpers.js';
+import { z } from "zod";
+import type { ParallelStrategy, ParallelPolicy, BTreeNode, TreeContext, AgentStrategyConfig } from "../types.js";
+import { queryStructured, buildStrategyPrompt } from "../agent/sdk-helpers.js";
 
 const PolicySchema = z.object({
-  policy: z.object({
-    successCount: z.number().optional(),
-    successPercentage: z.number().optional(),
-    failureCount: z.number().optional(),
-  }).describe('The parallel execution policy'),
-  reasoning: z.string().describe('Brief explanation of the policy decision'),
+  policy: z
+    .object({
+      successCount: z.number().optional(),
+      successPercentage: z.number().optional(),
+      failureCount: z.number().optional(),
+    })
+    .describe("The parallel execution policy"),
+  reasoning: z.string().describe("Brief explanation of the policy decision"),
 });
 
 export class AgentParallelStrategy implements ParallelStrategy {
@@ -421,9 +423,9 @@ export class AgentParallelStrategy implements ParallelStrategy {
       return { successCount: children.length };
     }
 
-    context.events.emit('strategy:decision', {
-      composite: children[0] ?? ({ id: '', name: '' } as any),
-      strategy: 'agent-parallel',
+    context.events.emit("strategy:decision", {
+      composite: children[0] ?? ({ id: "", name: "" } as any),
+      strategy: "agent-parallel",
       decision: result,
     });
 

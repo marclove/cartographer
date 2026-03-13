@@ -15,29 +15,29 @@
 Create `src/nodes/agent.test.ts`:
 
 ```typescript
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { NodeStatus } from '../types.js';
-import type { TreeContext } from '../types.js';
-import { EventEmitter } from '../core/event-emitter.js';
-import { MapBlackboard } from '../core/blackboard.js';
-import type { TreeEvents } from '../types.js';
-import { z } from 'zod';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { NodeStatus } from "../types.js";
+import type { TreeContext } from "../types.js";
+import { EventEmitter } from "../core/event-emitter.js";
+import { InMemoryBlackboard } from "../core/blackboard.js";
+import type { TreeEvents } from "../types.js";
+import { z } from "zod";
 
 // We'll mock the SDK's query function
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: vi.fn(),
   createSdkMcpServer: vi.fn(() => ({})),
   tool: vi.fn((_name, _desc, _schema, handler) => handler),
 }));
 
-import { AgentNode } from './agent.js';
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { AgentNode } from "./agent.js";
+import { query } from "@anthropic-ai/claude-agent-sdk";
 
 const mockQuery = vi.mocked(query);
 
 function createContext(): TreeContext {
   return {
-    blackboard: new MapBlackboard(),
+    blackboard: new InMemoryBlackboard(),
     events: new EventEmitter<TreeEvents>(),
   };
 }
@@ -49,22 +49,24 @@ async function* mockMessages(messages: unknown[]) {
   }
 }
 
-describe('AgentNode - structured mode', () => {
+describe("AgentNode - structured mode", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('returns SUCCESS on successful structured output', async () => {
+  it("returns SUCCESS on successful structured output", async () => {
     const schema = z.object({ answer: z.string() });
 
-    mockQuery.mockReturnValue(mockMessages([
-      { type: 'result', subtype: 'success', structured_output: { answer: 'yes' }, total_cost_usd: 0.01 },
-    ]) as any);
+    mockQuery.mockReturnValue(
+      mockMessages([
+        { type: "result", subtype: "success", structured_output: { answer: "yes" }, total_cost_usd: 0.01 },
+      ]) as any,
+    );
 
     const node = new AgentNode({
-      name: 'classify',
-      mode: 'structured',
-      prompt: 'Classify this input',
+      name: "classify",
+      mode: "structured",
+      prompt: "Classify this input",
       outputSchema: schema,
     });
 
@@ -72,37 +74,41 @@ describe('AgentNode - structured mode', () => {
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
-  it('writes structured output to blackboard', async () => {
+  it("writes structured output to blackboard", async () => {
     const schema = z.object({ answer: z.string() });
 
-    mockQuery.mockReturnValue(mockMessages([
-      { type: 'result', subtype: 'success', structured_output: { answer: 'yes' }, total_cost_usd: 0.01 },
-    ]) as any);
+    mockQuery.mockReturnValue(
+      mockMessages([
+        { type: "result", subtype: "success", structured_output: { answer: "yes" }, total_cost_usd: 0.01 },
+      ]) as any,
+    );
 
     const node = new AgentNode({
-      name: 'classify',
-      mode: 'structured',
-      prompt: 'Classify this input',
+      name: "classify",
+      mode: "structured",
+      prompt: "Classify this input",
       outputSchema: schema,
     });
 
     const ctx = createContext();
     await node.tick(ctx);
 
-    expect(ctx.blackboard.get('classify:output')).toEqual({ answer: 'yes' });
+    expect(ctx.blackboard.get("classify:output")).toEqual({ answer: "yes" });
   });
 
-  it('uses mapResult to determine status', async () => {
+  it("uses mapResult to determine status", async () => {
     const schema = z.object({ confidence: z.number() });
 
-    mockQuery.mockReturnValue(mockMessages([
-      { type: 'result', subtype: 'success', structured_output: { confidence: 0.3 }, total_cost_usd: 0.01 },
-    ]) as any);
+    mockQuery.mockReturnValue(
+      mockMessages([
+        { type: "result", subtype: "success", structured_output: { confidence: 0.3 }, total_cost_usd: 0.01 },
+      ]) as any,
+    );
 
     const node = new AgentNode({
-      name: 'classify',
-      mode: 'structured',
-      prompt: 'Classify',
+      name: "classify",
+      mode: "structured",
+      prompt: "Classify",
       outputSchema: schema,
       mapResult: (output: unknown) => {
         const data = output as { confidence: number };
@@ -113,33 +119,31 @@ describe('AgentNode - structured mode', () => {
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
   });
 
-  it('returns FAILURE on SDK error', async () => {
-    mockQuery.mockReturnValue(mockMessages([
-      { type: 'result', subtype: 'error_during_execution' },
-    ]) as any);
+  it("returns FAILURE on SDK error", async () => {
+    mockQuery.mockReturnValue(mockMessages([{ type: "result", subtype: "error_during_execution" }]) as any);
 
     const node = new AgentNode({
-      name: 'classify',
-      mode: 'structured',
-      prompt: 'Classify',
+      name: "classify",
+      mode: "structured",
+      prompt: "Classify",
     });
 
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
   });
 
-  it('supports dynamic prompts from context', async () => {
-    mockQuery.mockReturnValue(mockMessages([
-      { type: 'result', subtype: 'success', structured_output: {}, total_cost_usd: 0.01 },
-    ]) as any);
+  it("supports dynamic prompts from context", async () => {
+    mockQuery.mockReturnValue(
+      mockMessages([{ type: "result", subtype: "success", structured_output: {}, total_cost_usd: 0.01 }]) as any,
+    );
 
     const node = new AgentNode({
-      name: 'dynamic',
-      mode: 'structured',
-      prompt: (ctx) => `Analyze: ${ctx.blackboard.get('input')}`,
+      name: "dynamic",
+      mode: "structured",
+      prompt: (ctx) => `Analyze: ${ctx.blackboard.get("input")}`,
     });
 
     const ctx = createContext();
-    ctx.blackboard.set('input', 'test data');
+    ctx.blackboard.set("input", "test data");
     await node.tick(ctx);
 
     expect(mockQuery).toHaveBeenCalledWith(
@@ -150,109 +154,105 @@ describe('AgentNode - structured mode', () => {
   });
 });
 
-describe('AgentNode - agentic mode', () => {
+describe("AgentNode - agentic mode", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('returns SUCCESS on successful agentic execution', async () => {
-    mockQuery.mockReturnValue(mockMessages([
-      { type: 'assistant', message: { content: [{ type: 'text', text: 'Working...' }] } },
-      { type: 'result', subtype: 'success', result: 'Fixed the bug', total_cost_usd: 0.05 },
-    ]) as any);
+  it("returns SUCCESS on successful agentic execution", async () => {
+    mockQuery.mockReturnValue(
+      mockMessages([
+        { type: "assistant", message: { content: [{ type: "text", text: "Working..." }] } },
+        { type: "result", subtype: "success", result: "Fixed the bug", total_cost_usd: 0.05 },
+      ]) as any,
+    );
 
     const node = new AgentNode({
-      name: 'fixer',
-      mode: 'agentic',
-      prompt: 'Fix the bug',
-      allowedTools: ['Read', 'Edit'],
+      name: "fixer",
+      mode: "agentic",
+      prompt: "Fix the bug",
+      allowedTools: ["Read", "Edit"],
     });
 
     expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
   });
 
-  it('returns FAILURE on max_turns error', async () => {
-    mockQuery.mockReturnValue(mockMessages([
-      { type: 'result', subtype: 'error_max_turns' },
-    ]) as any);
+  it("returns FAILURE on max_turns error", async () => {
+    mockQuery.mockReturnValue(mockMessages([{ type: "result", subtype: "error_max_turns" }]) as any);
 
     const node = new AgentNode({
-      name: 'fixer',
-      mode: 'agentic',
-      prompt: 'Fix the bug',
+      name: "fixer",
+      mode: "agentic",
+      prompt: "Fix the bug",
       maxTurns: 5,
     });
 
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
   });
 
-  it('writes result text to blackboard', async () => {
-    mockQuery.mockReturnValue(mockMessages([
-      { type: 'result', subtype: 'success', result: 'All tests pass', total_cost_usd: 0.02 },
-    ]) as any);
+  it("writes result text to blackboard", async () => {
+    mockQuery.mockReturnValue(
+      mockMessages([{ type: "result", subtype: "success", result: "All tests pass", total_cost_usd: 0.02 }]) as any,
+    );
 
     const node = new AgentNode({
-      name: 'runner',
-      mode: 'agentic',
-      prompt: 'Run tests',
+      name: "runner",
+      mode: "agentic",
+      prompt: "Run tests",
     });
 
     const ctx = createContext();
     await node.tick(ctx);
 
-    expect(ctx.blackboard.get('runner:output')).toBe('All tests pass');
+    expect(ctx.blackboard.get("runner:output")).toBe("All tests pass");
   });
 
-  it('emits agent:response event', async () => {
-    mockQuery.mockReturnValue(mockMessages([
-      { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.03 },
-    ]) as any);
+  it("emits agent:response event", async () => {
+    mockQuery.mockReturnValue(
+      mockMessages([{ type: "result", subtype: "success", result: "done", total_cost_usd: 0.03 }]) as any,
+    );
 
     const node = new AgentNode({
-      name: 'worker',
-      mode: 'agentic',
-      prompt: 'Do work',
+      name: "worker",
+      mode: "agentic",
+      prompt: "Do work",
     });
 
     const ctx = createContext();
     const responseSpy = vi.fn();
-    ctx.events.on('agent:response', responseSpy);
+    ctx.events.on("agent:response", responseSpy);
 
     await node.tick(ctx);
 
-    expect(responseSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ result: 'done', cost: 0.03 }),
-    );
+    expect(responseSpy).toHaveBeenCalledWith(expect.objectContaining({ result: "done", cost: 0.03 }));
   });
 
-  it('emits agent:tool_use events for tool calls', async () => {
-    mockQuery.mockReturnValue(mockMessages([
-      {
-        type: 'assistant',
-        message: {
-          content: [
-            { type: 'tool_use', name: 'Read', input: { file_path: 'test.ts' } },
-          ],
+  it("emits agent:tool_use events for tool calls", async () => {
+    mockQuery.mockReturnValue(
+      mockMessages([
+        {
+          type: "assistant",
+          message: {
+            content: [{ type: "tool_use", name: "Read", input: { file_path: "test.ts" } }],
+          },
         },
-      },
-      { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 },
-    ]) as any);
+        { type: "result", subtype: "success", result: "done", total_cost_usd: 0.01 },
+      ]) as any,
+    );
 
     const node = new AgentNode({
-      name: 'reader',
-      mode: 'agentic',
-      prompt: 'Read files',
+      name: "reader",
+      mode: "agentic",
+      prompt: "Read files",
     });
 
     const ctx = createContext();
     const toolSpy = vi.fn();
-    ctx.events.on('agent:tool_use', toolSpy);
+    ctx.events.on("agent:tool_use", toolSpy);
 
     await node.tick(ctx);
 
-    expect(toolSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ tool: 'Read', input: { file_path: 'test.ts' } }),
-    );
+    expect(toolSpy).toHaveBeenCalledWith(expect.objectContaining({ tool: "Read", input: { file_path: "test.ts" } }));
   });
 });
 ```
@@ -267,12 +267,12 @@ Expected: FAIL
 Create `src/nodes/agent.ts`:
 
 ```typescript
-import { query } from '@anthropic-ai/claude-agent-sdk';
-import { z } from 'zod';
-import { BaseNode } from './base.js';
-import { NodeStatus } from '../types.js';
-import type { AgentNodeConfig, TreeContext } from '../types.js';
-import { createBlackboardMcpServer } from '../agent/blackboard-mcp.js';
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+import { BaseNode } from "./base.js";
+import { NodeStatus } from "../types.js";
+import type { AgentNodeConfig, TreeContext } from "../types.js";
+import { createBlackboardMcpServer } from "../agent/blackboard-mcp.js";
 
 export class AgentNode extends BaseNode {
   private config: AgentNodeConfig;
@@ -283,17 +283,15 @@ export class AgentNode extends BaseNode {
   }
 
   protected async execute(context: TreeContext): Promise<NodeStatus> {
-    const prompt = typeof this.config.prompt === 'function'
-      ? this.config.prompt(context)
-      : this.config.prompt;
+    const prompt = typeof this.config.prompt === "function" ? this.config.prompt(context) : this.config.prompt;
 
-    context.events.emit('agent:prompt', {
+    context.events.emit("agent:prompt", {
       node: this,
       prompt,
       mode: this.config.mode,
     });
 
-    if (this.config.mode === 'structured') {
+    if (this.config.mode === "structured") {
       return this.executeStructured(prompt, context);
     } else {
       return this.executeAgentic(prompt, context);
@@ -301,41 +299,38 @@ export class AgentNode extends BaseNode {
   }
 
   private async executeStructured(prompt: string, context: TreeContext): Promise<NodeStatus> {
-    const blackboardServer = createBlackboardMcpServer(
-      context.blackboard,
-      this.config.blackboardNamespace,
-    );
+    const blackboardServer = createBlackboardMcpServer(context.blackboard, this.config.blackboardNamespace);
 
     const options: Record<string, unknown> = {
       mcpServers: { blackboard: blackboardServer },
-      allowedTools: ['mcp__blackboard__*'],
+      allowedTools: ["mcp__blackboard__*"],
       model: this.config.model,
-      effort: this.config.effort ?? 'low',
+      effort: this.config.effort ?? "low",
       maxTurns: 1,
     };
 
     if (this.config.outputSchema) {
       options.outputFormat = {
-        type: 'json_schema',
+        type: "json_schema",
         schema: z.toJSONSchema(this.config.outputSchema),
       };
     }
 
     async function* generateMessages() {
       yield {
-        type: 'user' as const,
-        message: { role: 'user' as const, content: prompt },
+        type: "user" as const,
+        message: { role: "user" as const, content: prompt },
       };
     }
 
     for await (const message of query({ prompt: generateMessages(), options } as any)) {
       const msg = message as any;
 
-      if (msg.type === 'result') {
-        if (msg.subtype === 'success') {
+      if (msg.type === "result") {
+        if (msg.subtype === "success") {
           const output = msg.structured_output ?? msg.result;
 
-          context.events.emit('agent:response', {
+          context.events.emit("agent:response", {
             node: this,
             result: output,
             cost: msg.total_cost_usd,
@@ -360,27 +355,21 @@ export class AgentNode extends BaseNode {
   }
 
   private async executeAgentic(prompt: string, context: TreeContext): Promise<NodeStatus> {
-    const blackboardServer = createBlackboardMcpServer(
-      context.blackboard,
-      this.config.blackboardNamespace,
-    );
+    const blackboardServer = createBlackboardMcpServer(context.blackboard, this.config.blackboardNamespace);
 
     const mcpServers: Record<string, unknown> = {
       blackboard: blackboardServer,
       ...this.config.mcpServers,
     };
 
-    const allowedTools = [
-      ...(this.config.allowedTools ?? []),
-      'mcp__blackboard__*',
-    ];
+    const allowedTools = [...(this.config.allowedTools ?? []), "mcp__blackboard__*"];
 
     const options: Record<string, unknown> = {
       mcpServers,
       allowedTools,
-      permissionMode: this.config.permissionMode ?? 'default',
+      permissionMode: this.config.permissionMode ?? "default",
       model: this.config.model,
-      effort: this.config.effort ?? 'high',
+      effort: this.config.effort ?? "high",
       maxTurns: this.config.maxTurns,
       maxBudgetUsd: this.config.maxBudgetUsd,
       systemPrompt: this.config.systemPrompt,
@@ -388,8 +377,8 @@ export class AgentNode extends BaseNode {
 
     async function* generateMessages() {
       yield {
-        type: 'user' as const,
-        message: { role: 'user' as const, content: prompt },
+        type: "user" as const,
+        message: { role: "user" as const, content: prompt },
       };
     }
 
@@ -397,10 +386,10 @@ export class AgentNode extends BaseNode {
       const msg = message as any;
 
       // Emit tool use events for observability
-      if (msg.type === 'assistant' && msg.message?.content) {
+      if (msg.type === "assistant" && msg.message?.content) {
         for (const block of msg.message.content) {
-          if (block.type === 'tool_use') {
-            context.events.emit('agent:tool_use', {
+          if (block.type === "tool_use") {
+            context.events.emit("agent:tool_use", {
               node: this,
               tool: block.name,
               input: block.input,
@@ -409,11 +398,11 @@ export class AgentNode extends BaseNode {
         }
       }
 
-      if (msg.type === 'result') {
+      if (msg.type === "result") {
         const result = msg.result;
         const cost = msg.total_cost_usd;
 
-        context.events.emit('agent:response', {
+        context.events.emit("agent:response", {
           node: this,
           result,
           cost,
@@ -423,7 +412,7 @@ export class AgentNode extends BaseNode {
           context.blackboard.set(`${this.name}:output`, result);
         }
 
-        return msg.subtype === 'success' ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
+        return msg.subtype === "success" ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
       }
     }
 

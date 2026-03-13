@@ -1,27 +1,27 @@
 import { describe, it, expect } from 'vitest';
-import { MapBlackboard } from './blackboard.js';
+import { InMemoryBlackboard } from './blackboard.js';
 
-describe('MapBlackboard', () => {
+describe('InMemoryBlackboard', () => {
   it('stores and retrieves values', () => {
-    const bb = new MapBlackboard();
+    const bb = new InMemoryBlackboard();
     bb.set('key', 42);
     expect(bb.get<number>('key')).toBe(42);
   });
 
   it('returns undefined for missing keys', () => {
-    const bb = new MapBlackboard();
+    const bb = new InMemoryBlackboard();
     expect(bb.get('missing')).toBeUndefined();
   });
 
   it('checks key existence with has()', () => {
-    const bb = new MapBlackboard();
+    const bb = new InMemoryBlackboard();
     bb.set('key', 'value');
     expect(bb.has('key')).toBe(true);
     expect(bb.has('missing')).toBe(false);
   });
 
   it('deletes keys', () => {
-    const bb = new MapBlackboard();
+    const bb = new InMemoryBlackboard();
     bb.set('key', 'value');
     bb.delete('key');
     expect(bb.has('key')).toBe(false);
@@ -29,20 +29,20 @@ describe('MapBlackboard', () => {
   });
 
   it('lists all keys', () => {
-    const bb = new MapBlackboard();
+    const bb = new InMemoryBlackboard();
     bb.set('a', 1);
     bb.set('b', 2);
     expect(bb.keys().sort()).toEqual(['a', 'b']);
   });
 
   it('accepts initial data', () => {
-    const bb = new MapBlackboard({ x: 10, y: 20 });
+    const bb = new InMemoryBlackboard({ x: 10, y: 20 });
     expect(bb.get<number>('x')).toBe(10);
     expect(bb.get<number>('y')).toBe(20);
   });
 
   it('returns a snapshot via toRecord()', () => {
-    const bb = new MapBlackboard();
+    const bb = new InMemoryBlackboard();
     bb.set('a', 1);
     bb.set('b', 'hello');
     expect(bb.toRecord()).toEqual({ a: 1, b: 'hello' });
@@ -51,7 +51,7 @@ describe('MapBlackboard', () => {
 
 describe('Scoped Blackboard', () => {
   it('prefixes keys with namespace', () => {
-    const bb = new MapBlackboard();
+    const bb = new InMemoryBlackboard();
     const scoped = bb.scoped('agent1');
 
     scoped.set('result', 'done');
@@ -60,7 +60,7 @@ describe('Scoped Blackboard', () => {
   });
 
   it('only lists keys within its namespace', () => {
-    const bb = new MapBlackboard();
+    const bb = new InMemoryBlackboard();
     bb.set('global', 1);
     bb.set('ns:local', 2);
 
@@ -69,7 +69,7 @@ describe('Scoped Blackboard', () => {
   });
 
   it('has() only checks within namespace', () => {
-    const bb = new MapBlackboard();
+    const bb = new InMemoryBlackboard();
     bb.set('global', 1);
     bb.set('ns:local', 2);
 
@@ -79,7 +79,7 @@ describe('Scoped Blackboard', () => {
   });
 
   it('delete() only affects namespaced keys', () => {
-    const bb = new MapBlackboard();
+    const bb = new InMemoryBlackboard();
     bb.set('ns:key', 'value');
     bb.set('other', 'safe');
 
@@ -91,7 +91,7 @@ describe('Scoped Blackboard', () => {
   });
 
   it('supports nested scoping', () => {
-    const bb = new MapBlackboard();
+    const bb = new InMemoryBlackboard();
     const scoped = bb.scoped('a').scoped('b');
 
     scoped.set('key', 'nested');

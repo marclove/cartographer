@@ -4,7 +4,7 @@ import { NodeStatus } from '../types.js';
 import type { TreeContext } from '../types.js';
 import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
-import { MapBlackboard } from './blackboard.js';
+import { InMemoryBlackboard } from './blackboard.js';
 import { EventEmitter } from './event-emitter.js';
 
 describe('BehaviorTree', () => {
@@ -35,7 +35,7 @@ describe('BehaviorTree', () => {
   });
 
   it('accepts a pre-populated blackboard', async () => {
-    const bb = new MapBlackboard({ initial: 42 });
+    const bb = new InMemoryBlackboard({ initial: 42 });
     const tree = new BehaviorTree({
       name: 'test-tree',
       root: new ActionNode({

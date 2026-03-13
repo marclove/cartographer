@@ -5,12 +5,12 @@ import { DefaultParallelStrategy } from './default-parallel.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
-import { MapBlackboard } from '../core/blackboard.js';
+import { InMemoryBlackboard } from '../core/blackboard.js';
 import type { TreeEvents } from '../types.js';
 
 function createContext(): TreeContext {
   return {
-    blackboard: new MapBlackboard(),
+    blackboard: new InMemoryBlackboard(),
     events: new EventEmitter<TreeEvents>(),
   };
 }

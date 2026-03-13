@@ -6,14 +6,14 @@ import { BehaviorTree } from '../core/behavior-tree.js';
 import { TreeScheduler } from '../scheduler/tree-scheduler.js';
 import { EventEmitter } from '../core/event-emitter.js';
 import type { TreeEvents } from '../types.js';
-import { MapBlackboard } from '../core/blackboard.js';
+import { InMemoryBlackboard } from '../core/blackboard.js';
 
 // A minimal BehaviorTree-compatible object whose tick() can throw,
 // bypassing BaseNode's internal error-to-FAILURE conversion.
 function makeFakeTree(tickFn: () => Promise<NodeStatus>): BehaviorTree {
   const fake = {
     name: 'fake',
-    blackboard: new MapBlackboard(),
+    blackboard: new InMemoryBlackboard(),
     events: new EventEmitter<TreeEvents>(),
     tick: tickFn,
     reset: () => {},

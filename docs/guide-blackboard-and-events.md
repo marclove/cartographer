@@ -6,39 +6,39 @@ Cartographer separates shared state (the blackboard) from observability (the eve
 
 ## Blackboard
 
-`MapBlackboard` is the default implementation of the `Blackboard` interface. Pass initial values as a plain object to the constructor.
+`InMemoryBlackboard` is the default implementation of the `Blackboard` interface. Pass initial values as a plain object to the constructor.
 
 ```typescript
-import { MapBlackboard } from 'cartographer';
+import { InMemoryBlackboard } from "cartographer";
 
-const bb = new MapBlackboard({ apiUrl: 'https://api.example.com', retries: 3 });
+const bb = new InMemoryBlackboard({ apiUrl: "https://api.example.com", retries: 3 });
 ```
 
 ### Methods (Blackboard interface)
 
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| `get` | `get<T>(key: string): T \| undefined` | Retrieve a value by key. |
-| `set` | `set<T>(key: string, value: T): void` | Store a value under the given key. |
-| `has` | `has(key: string): boolean` | Check whether a key exists. |
-| `delete` | `delete(key: string): void` | Remove a key and its value. |
-| `keys` | `keys(): string[]` | List all stored keys. |
+| Method   | Signature                               | Description                           |
+| -------- | --------------------------------------- | ------------------------------------- |
+| `get`    | `get<T>(key: string): T \| undefined`   | Retrieve a value by key.              |
+| `set`    | `set<T>(key: string, value: T): void`   | Store a value under the given key.    |
+| `has`    | `has(key: string): boolean`             | Check whether a key exists.           |
+| `delete` | `delete(key: string): void`             | Remove a key and its value.           |
+| `keys`   | `keys(): string[]`                      | List all stored keys.                 |
 | `scoped` | `scoped(namespace: string): Blackboard` | Create a namespaced view (see below). |
 
-`MapBlackboard` also exposes:
+`InMemoryBlackboard` also exposes:
 
 - `toRecord(): Record<string, unknown>` -- returns a snapshot of all stored data.
 
 ### Basic usage
 
 ```typescript
-const bb = new MapBlackboard();
-bb.set('user', { name: 'Alice', role: 'admin' });
-bb.get<{ name: string; role: string }>('user'); // { name: 'Alice', role: 'admin' }
-bb.has('user');   // true
-bb.keys();        // ['user']
-bb.delete('user');
-bb.has('user');   // false
+const bb = new InMemoryBlackboard();
+bb.set("user", { name: "Alice", role: "admin" });
+bb.get<{ name: string; role: string }>("user"); // { name: 'Alice', role: 'admin' }
+bb.has("user"); // true
+bb.keys(); // ['user']
+bb.delete("user");
+bb.has("user"); // false
 ```
 
 ---
@@ -48,14 +48,14 @@ bb.has('user');   // false
 `scoped(namespace)` creates a prefixed view over the same underlying data. Keys are stored as `namespace:key`.
 
 ```typescript
-const bb = new MapBlackboard();
-const agentScope = bb.scoped('classifier');
-agentScope.set('output', { label: 'positive' });
+const bb = new InMemoryBlackboard();
+const agentScope = bb.scoped("classifier");
+agentScope.set("output", { label: "positive" });
 
 // Stored as 'classifier:output' in the underlying map
-bb.get('classifier:output'); // { label: 'positive' }
-agentScope.get('output');    // { label: 'positive' }
-agentScope.keys();           // ['output']
+bb.get("classifier:output"); // { label: 'positive' }
+agentScope.get("output"); // { label: 'positive' }
+agentScope.keys(); // ['output']
 ```
 
 Scoped blackboards can be nested: `bb.scoped('a').scoped('b')` stores keys as `a:b:key`.
@@ -69,17 +69,17 @@ Scoped blackboards can be nested: `bb.scoped('a').scoped('b')` stores keys as `a
 Cartographer uses a typed event system for observability. `BehaviorTree` creates an `EventEmitter<TreeEvents>` automatically, accessible via `tree.events`.
 
 ```typescript
-import type { TypedEventEmitter, TreeEvents } from 'cartographer';
+import type { TypedEventEmitter, TreeEvents } from "cartographer";
 ```
 
 ### Emitter interface
 
-| Method | Description |
-|--------|-------------|
-| `on<K>(event, listener)` | Subscribe to an event. |
-| `off<K>(event, listener)` | Unsubscribe a listener. |
-| `emit<K>(event, data)` | Emit an event (used internally). |
-| `removeAllListeners()` | Clear all subscriptions. |
+| Method                    | Description                      |
+| ------------------------- | -------------------------------- |
+| `on<K>(event, listener)`  | Subscribe to an event.           |
+| `off<K>(event, listener)` | Unsubscribe a listener.          |
+| `emit<K>(event, data)`    | Emit an event (used internally). |
+| `removeAllListeners()`    | Clear all subscriptions.         |
 
 ---
 
@@ -92,7 +92,10 @@ Cartographer emits events during tree execution, organized into four categories:
 Fired when a node's `tick()` begins.
 
 ```typescript
-{ node: BTreeNode; context: TreeContext }
+{
+  node: BTreeNode;
+  context: TreeContext;
+}
 ```
 
 ### `node:exit`
@@ -100,7 +103,12 @@ Fired when a node's `tick()` begins.
 Fired when a node's `tick()` completes (success or failure).
 
 ```typescript
-{ node: BTreeNode; status: NodeStatus; context: TreeContext; durationMs: number }
+{
+  node: BTreeNode;
+  status: NodeStatus;
+  context: TreeContext;
+  durationMs: number;
+}
 ```
 
 ### `node:error`
@@ -108,7 +116,11 @@ Fired when a node's `tick()` completes (success or failure).
 Fired when a node's `execute()` throws. The node still emits `node:exit` with `FAILURE` afterward.
 
 ```typescript
-{ node: BTreeNode; error: Error; context: TreeContext }
+{
+  node: BTreeNode;
+  error: Error;
+  context: TreeContext;
+}
 ```
 
 ### `agent:prompt`
@@ -116,7 +128,10 @@ Fired when a node's `execute()` throws. The node still emits `node:exit` with `F
 Fired before an `AgentNode` calls the Claude SDK.
 
 ```typescript
-{ node: BTreeNode; prompt: string }
+{
+  node: BTreeNode;
+  prompt: string;
+}
 ```
 
 ### `agent:thinking`
@@ -124,7 +139,10 @@ Fired before an `AgentNode` calls the Claude SDK.
 Fired when the SDK produces a thinking block (chain-of-thought reasoning). Only emitted when extended thinking is enabled for the model.
 
 ```typescript
-{ node: BTreeNode; thinking: string }
+{
+  node: BTreeNode;
+  thinking: string;
+}
 ```
 
 ### `agent:text`
@@ -132,7 +150,10 @@ Fired when the SDK produces a thinking block (chain-of-thought reasoning). Only 
 Fired when the SDK produces a text content block in an assistant message.
 
 ```typescript
-{ node: BTreeNode; text: string }
+{
+  node: BTreeNode;
+  text: string;
+}
 ```
 
 ### `agent:tool_use`
@@ -140,7 +161,11 @@ Fired when the SDK produces a text content block in an assistant message.
 Fired for each tool call made by the agent.
 
 ```typescript
-{ node: BTreeNode; tool: string; input: unknown }
+{
+  node: BTreeNode;
+  tool: string;
+  input: unknown;
+}
 ```
 
 ### `agent:response`
@@ -164,7 +189,10 @@ Fired when the SDK returns an error result (e.g., max turns exceeded, budget exh
 Fired for each raw streaming delta event (text, thinking, input_json). High-frequency — useful for real-time token-by-token UI updates.
 
 ```typescript
-{ node: BTreeNode; event: unknown }
+{
+  node: BTreeNode;
+  event: unknown;
+}
 ```
 
 ### `agent:message`
@@ -172,7 +200,10 @@ Fired for each raw streaming delta event (text, thinking, input_json). High-freq
 Fired for every raw SDK message. A catch-all that enables custom processing without framework filtering. Also high-frequency.
 
 ```typescript
-{ node: BTreeNode; message: unknown }
+{
+  node: BTreeNode;
+  message: unknown;
+}
 ```
 
 ### `agent:tool_progress`
@@ -180,7 +211,12 @@ Fired for every raw SDK message. A catch-all that enables custom processing with
 Fired when the SDK reports tool execution progress with elapsed time.
 
 ```typescript
-{ node: BTreeNode; toolUseId: string; toolName: string; elapsedSeconds: number }
+{
+  node: BTreeNode;
+  toolUseId: string;
+  toolName: string;
+  elapsedSeconds: number;
+}
 ```
 
 ### `agent:init`
@@ -196,7 +232,10 @@ Fired when the SDK emits a session init message with model, tools, and config de
 Fired when the SDK emits a status change during execution.
 
 ```typescript
-{ node: BTreeNode; status: string }
+{
+  node: BTreeNode;
+  status: string;
+}
 ```
 
 ### `agent:rate_limit`
@@ -204,7 +243,10 @@ Fired when the SDK emits a status change during execution.
 Fired when the SDK reports a rate limit event.
 
 ```typescript
-{ node: BTreeNode; info: unknown }
+{
+  node: BTreeNode;
+  info: unknown;
+}
 ```
 
 ### `agent:elicitation_declined`
@@ -212,7 +254,10 @@ Fired when the SDK reports a rate limit event.
 Fired when an `AgentNode` receives an elicitation request but no handler is configured at any level (node, context, or tree). The request is automatically declined.
 
 ```typescript
-{ node: BTreeNode; request: ElicitationRequest }
+{
+  node: BTreeNode;
+  request: ElicitationRequest;
+}
 ```
 
 See [Elicitation](guide-agent-integration.md#elicitation) for how to provide handlers.
@@ -222,7 +267,11 @@ See [Elicitation](guide-agent-integration.md#elicitation) for how to provide han
 Fired when a blackboard write occurs (if emitted by the source).
 
 ```typescript
-{ key: string; value: unknown; source: string }
+{
+  key: string;
+  value: unknown;
+  source: string;
+}
 ```
 
 ### `strategy:decision`
@@ -230,7 +279,11 @@ Fired when a blackboard write occurs (if emitted by the source).
 Fired when an agent strategy makes a decision.
 
 ```typescript
-{ composite: BTreeNode; strategy: string; decision: unknown }
+{
+  composite: BTreeNode;
+  strategy: string;
+  decision: unknown;
+}
 ```
 
 ---
@@ -240,24 +293,24 @@ Fired when an agent strategy makes a decision.
 ### Logging listener
 
 ```typescript
-import { TreeBuilder, NodeStatus } from 'cartographer';
+import { TreeBuilder, NodeStatus } from "cartographer";
 
-const tree = new TreeBuilder('monitored')
-  .sequence('main', (b) => {
-    b.action('step-1', (ctx) => NodeStatus.SUCCESS);
-    b.action('step-2', (ctx) => NodeStatus.SUCCESS);
+const tree = new TreeBuilder("monitored")
+  .sequence("main", (b) => {
+    b.action("step-1", (ctx) => NodeStatus.SUCCESS);
+    b.action("step-2", (ctx) => NodeStatus.SUCCESS);
   })
   .build();
 
-tree.events.on('node:enter', ({ node }) => {
+tree.events.on("node:enter", ({ node }) => {
   console.log(`[ENTER] ${node.name}`);
 });
 
-tree.events.on('node:exit', ({ node, status, durationMs }) => {
+tree.events.on("node:exit", ({ node, status, durationMs }) => {
   console.log(`[EXIT]  ${node.name} → ${status} (${durationMs.toFixed(1)}ms)`);
 });
 
-tree.events.on('node:error', ({ node, error }) => {
+tree.events.on("node:error", ({ node, error }) => {
   console.error(`[ERROR] ${node.name}: ${error.message}`);
 });
 
@@ -268,7 +321,7 @@ await tree.run();
 
 ```typescript
 let totalCost = 0;
-tree.events.on('agent:response', ({ node, cost }) => {
+tree.events.on("agent:response", ({ node, cost }) => {
   if (cost !== undefined) {
     totalCost += cost;
     console.log(`Agent "${node.name}" cost: $${cost.toFixed(4)} (total: $${totalCost.toFixed(4)})`);
@@ -281,7 +334,7 @@ tree.events.on('agent:response', ({ node, cost }) => {
 ```typescript
 const durations: Record<string, number[]> = {};
 
-tree.events.on('node:exit', ({ node, durationMs }) => {
+tree.events.on("node:exit", ({ node, durationMs }) => {
   if (!durations[node.name]) durations[node.name] = [];
   durations[node.name].push(durationMs);
 });
@@ -300,11 +353,11 @@ for (const [name, times] of Object.entries(durations)) {
 `createTreeLogger` is a utility that attaches to the tree's event emitter and appends structured log entries to a file in NDJSON format (one JSON object per line). This makes it easy to capture a full trace of tree execution for debugging, auditing, or analysis.
 
 ```typescript
-import { BehaviorTree, createTreeLogger } from 'cartographer';
+import { BehaviorTree, createTreeLogger } from "cartographer";
 
-const tree = new BehaviorTree({ name: 'my-tree', root, blackboard });
+const tree = new BehaviorTree({ name: "my-tree", root, blackboard });
 
-const stopLogging = createTreeLogger(tree.events, { filePath: './logs/run.log' });
+const stopLogging = createTreeLogger(tree.events, { filePath: "./logs/run.log" });
 await tree.tick();
 stopLogging(); // remove listeners when done
 ```
@@ -335,11 +388,11 @@ tail -f run.log | jq .
 
 ### Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `filePath` | `string` | (required) | Path to the log file. Created if it does not exist. |
-| `logBlackboard` | `boolean` | `false` | Include `blackboard:write` events. Off by default because blackboard writes can be very frequent. |
-| `logStrategy` | `boolean` | `true` | Include `strategy:decision` events. |
+| Option          | Type      | Default    | Description                                                                                       |
+| --------------- | --------- | ---------- | ------------------------------------------------------------------------------------------------- |
+| `filePath`      | `string`  | (required) | Path to the log file. Created if it does not exist.                                               |
+| `logBlackboard` | `boolean` | `false`    | Include `blackboard:write` events. Off by default because blackboard writes can be very frequent. |
+| `logStrategy`   | `boolean` | `true`     | Include `strategy:decision` events.                                                               |
 
 The function returns a cleanup callback that removes all listeners. Call it when the tree is done to prevent memory leaks.
 

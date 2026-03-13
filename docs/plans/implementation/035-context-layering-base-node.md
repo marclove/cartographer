@@ -4,7 +4,7 @@
 
 **Goal:** Add a `contextOverrides` mechanism to `BaseNode` so that any node can override `TreeContext` fields for itself and its descendants. This is the foundation for per-subtree elicitation handlers and future context-scoped features.
 
-**Important constraint:** The `events` and `blackboard` fields on `TreeContext` must **never** be overridable via context overrides. The tree-level event emitter is the single source of truth for observability — all nodes must emit to the same emitter. The tree-level blackboard is the single shared data store — per-subtree blackboard *scoping* (via `ScopedBlackboard`) is a future feature that requires a different mechanism (a transform derived from the incoming context, not a static replacement). The merge logic must explicitly preserve both `events` and `blackboard` from the incoming context.
+**Important constraint:** The `events` and `blackboard` fields on `TreeContext` must **never** be overridable via context overrides. The tree-level event emitter is the single source of truth for observability — all nodes must emit to the same emitter. The tree-level blackboard is the single shared data store — per-subtree blackboard _scoping_ (via `ScopedBlackboard`) is a future feature that requires a different mechanism (a transform derived from the incoming context, not a static replacement). The merge logic must explicitly preserve both `events` and `blackboard` from the incoming context.
 
 **Depends on:** None
 
@@ -15,9 +15,9 @@
 Add new tests to `src/nodes/base.test.ts`:
 
 ```typescript
-describe('contextOverrides', () => {
-  it('merges contextOverrides onto the context passed to execute()', async () => {
-    const node = new TestNode('node');
+describe("contextOverrides", () => {
+  it("merges contextOverrides onto the context passed to execute()", async () => {
+    const node = new TestNode("node");
     const context = createContext();
     const handler = vi.fn();
     node.setContextOverrides({ onElicitation: handler } as Partial<TreeContext>);
@@ -35,8 +35,8 @@ describe('contextOverrides', () => {
     expect(receivedContext!.blackboard).toBe(context.blackboard);
   });
 
-  it('passes the original context when no overrides are set', async () => {
-    const node = new TestNode('node');
+  it("passes the original context when no overrides are set", async () => {
+    const node = new TestNode("node");
     const context = createContext();
 
     let receivedContext: TreeContext | undefined;
@@ -51,16 +51,16 @@ describe('contextOverrides', () => {
     expect(receivedContext!.events).toBe(context.events);
   });
 
-  it('always preserves the original events emitter even when overrides include events', async () => {
-    const node = new TestNode('node');
+  it("always preserves the original events emitter even when overrides include events", async () => {
+    const node = new TestNode("node");
     const context = createContext();
     const otherEvents = new EventEmitter<TreeEvents>();
     node.setContextOverrides({ events: otherEvents } as Partial<TreeContext>);
 
     const originalSpy = vi.fn();
     const otherSpy = vi.fn();
-    context.events.on('node:enter', originalSpy);
-    otherEvents.on('node:enter', otherSpy);
+    context.events.on("node:enter", originalSpy);
+    otherEvents.on("node:enter", otherSpy);
 
     await node.tick(context);
 
@@ -69,10 +69,10 @@ describe('contextOverrides', () => {
     expect(otherSpy).not.toHaveBeenCalled();
   });
 
-  it('always preserves the original blackboard even when overrides include blackboard', async () => {
-    const node = new TestNode('node');
+  it("always preserves the original blackboard even when overrides include blackboard", async () => {
+    const node = new TestNode("node");
     const context = createContext();
-    const otherBlackboard = new MapBlackboard();
+    const otherBlackboard = new InMemoryBlackboard();
     node.setContextOverrides({ blackboard: otherBlackboard } as Partial<TreeContext>);
 
     let receivedContext: TreeContext | undefined;
@@ -88,8 +88,8 @@ describe('contextOverrides', () => {
     expect(receivedContext!.blackboard).not.toBe(otherBlackboard);
   });
 
-  it('mergeContextOverrides adds to existing overrides', async () => {
-    const node = new TestNode('node');
+  it("mergeContextOverrides adds to existing overrides", async () => {
+    const node = new TestNode("node");
     const context = createContext();
     const handler1 = vi.fn();
     const handler2 = vi.fn();

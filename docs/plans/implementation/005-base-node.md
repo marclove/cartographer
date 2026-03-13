@@ -15,13 +15,13 @@
 Create `src/nodes/base.test.ts`:
 
 ```typescript
-import { describe, it, expect, vi } from 'vitest';
-import { BaseNode } from './base.js';
-import { NodeStatus } from '../types.js';
-import type { TreeContext } from '../types.js';
-import { EventEmitter } from '../core/event-emitter.js';
-import { MapBlackboard } from '../core/blackboard.js';
-import type { TreeEvents } from '../types.js';
+import { describe, it, expect, vi } from "vitest";
+import { BaseNode } from "./base.js";
+import { NodeStatus } from "../types.js";
+import type { TreeContext } from "../types.js";
+import { EventEmitter } from "../core/event-emitter.js";
+import { InMemoryBlackboard } from "../core/blackboard.js";
+import type { TreeEvents } from "../types.js";
 
 class TestNode extends BaseNode {
   public executeFn: (context: TreeContext) => Promise<NodeStatus> = async () => NodeStatus.SUCCESS;
@@ -33,71 +33,71 @@ class TestNode extends BaseNode {
 
 function createContext(): TreeContext {
   return {
-    blackboard: new MapBlackboard(),
+    blackboard: new InMemoryBlackboard(),
     events: new EventEmitter<TreeEvents>(),
   };
 }
 
-describe('BaseNode', () => {
-  it('generates a unique id', () => {
-    const node1 = new TestNode('node-a');
-    const node2 = new TestNode('node-b');
+describe("BaseNode", () => {
+  it("generates a unique id", () => {
+    const node1 = new TestNode("node-a");
+    const node2 = new TestNode("node-b");
     expect(node1.id).toBeTruthy();
     expect(node2.id).toBeTruthy();
     expect(node1.id).not.toBe(node2.id);
   });
 
-  it('stores the name', () => {
-    const node = new TestNode('my-node');
-    expect(node.name).toBe('my-node');
+  it("stores the name", () => {
+    const node = new TestNode("my-node");
+    expect(node.name).toBe("my-node");
   });
 
-  it('tick() returns the status from execute()', async () => {
-    const node = new TestNode('node');
+  it("tick() returns the status from execute()", async () => {
+    const node = new TestNode("node");
     node.executeFn = async () => NodeStatus.FAILURE;
 
     const status = await node.tick(createContext());
     expect(status).toBe(NodeStatus.FAILURE);
   });
 
-  it('emits node:enter and node:exit events on tick', async () => {
-    const node = new TestNode('node');
+  it("emits node:enter and node:exit events on tick", async () => {
+    const node = new TestNode("node");
     const context = createContext();
     const enterSpy = vi.fn();
     const exitSpy = vi.fn();
 
-    context.events.on('node:enter', enterSpy);
-    context.events.on('node:exit', exitSpy);
+    context.events.on("node:enter", enterSpy);
+    context.events.on("node:exit", exitSpy);
 
     await node.tick(context);
 
     expect(enterSpy).toHaveBeenCalledOnce();
     expect(enterSpy).toHaveBeenCalledWith(expect.objectContaining({ node }));
     expect(exitSpy).toHaveBeenCalledOnce();
-    expect(exitSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ node, status: NodeStatus.SUCCESS })
-    );
+    expect(exitSpy).toHaveBeenCalledWith(expect.objectContaining({ node, status: NodeStatus.SUCCESS }));
   });
 
-  it('emits node:exit with durationMs', async () => {
-    const node = new TestNode('node');
+  it("emits node:exit with durationMs", async () => {
+    const node = new TestNode("node");
     const context = createContext();
     const exitSpy = vi.fn();
-    context.events.on('node:exit', exitSpy);
+    context.events.on("node:exit", exitSpy);
 
     await node.tick(context);
 
     expect(exitSpy.mock.calls[0][0].durationMs).toBeGreaterThanOrEqual(0);
   });
 
-  it('emits node:error when execute throws', async () => {
-    const node = new TestNode('node');
-    const error = new Error('boom');
-    node.executeFn = async () => { throw error; };
+  it("emits node:error when execute throws", async () => {
+    const node = new TestNode("node");
+    const error = new Error("boom");
+    node.executeFn = async () => {
+      throw error;
+    };
 
     const context = createContext();
     const errorSpy = vi.fn();
-    context.events.on('node:error', errorSpy);
+    context.events.on("node:error", errorSpy);
 
     const status = await node.tick(context);
 
@@ -105,13 +105,13 @@ describe('BaseNode', () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.objectContaining({ node, error }));
   });
 
-  it('reset() is callable', () => {
-    const node = new TestNode('node');
+  it("reset() is callable", () => {
+    const node = new TestNode("node");
     expect(() => node.reset()).not.toThrow();
   });
 
-  it('abort() is callable', () => {
-    const node = new TestNode('node');
+  it("abort() is callable", () => {
+    const node = new TestNode("node");
     expect(() => node.abort()).not.toThrow();
   });
 });
@@ -127,9 +127,9 @@ Expected: FAIL — cannot import `BaseNode`
 Create `src/nodes/base.ts`:
 
 ```typescript
-import { v4 as uuidv4 } from 'uuid';
-import { NodeStatus } from '../types.js';
-import type { BTreeNode, TreeContext } from '../types.js';
+import { v4 as uuidv4 } from "uuid";
+import { NodeStatus } from "../types.js";
+import type { BTreeNode, TreeContext } from "../types.js";
 
 export abstract class BaseNode implements BTreeNode {
   readonly id: string;
@@ -141,18 +141,18 @@ export abstract class BaseNode implements BTreeNode {
   }
 
   async tick(context: TreeContext): Promise<NodeStatus> {
-    context.events.emit('node:enter', { node: this, context });
+    context.events.emit("node:enter", { node: this, context });
     const start = performance.now();
 
     try {
       const status = await this.execute(context);
       const durationMs = performance.now() - start;
-      context.events.emit('node:exit', { node: this, status, context, durationMs });
+      context.events.emit("node:exit", { node: this, status, context, durationMs });
       return status;
     } catch (error) {
       const durationMs = performance.now() - start;
-      context.events.emit('node:error', { node: this, error: error as Error, context });
-      context.events.emit('node:exit', {
+      context.events.emit("node:error", { node: this, error: error as Error, context });
+      context.events.emit("node:exit", {
         node: this,
         status: NodeStatus.FAILURE,
         context,

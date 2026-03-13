@@ -1,7 +1,7 @@
 import { NodeStatus } from '../types.js';
 import type { BehaviorTreeConfig, BTreeNode, Blackboard, TreeContext, TreeEvents } from '../types.js';
 import { EventEmitter } from './event-emitter.js';
-import { MapBlackboard } from './blackboard.js';
+import { InMemoryBlackboard } from './blackboard.js';
 import { BaseNode } from '../nodes/base.js';
 
 /**
@@ -43,7 +43,7 @@ export class BehaviorTree {
   /**
    * The shared key-value store accessible to every node during a tick.
    *
-   * If no blackboard was supplied in the config, a `MapBlackboard` is
+   * If no blackboard was supplied in the config, a `InMemoryBlackboard` is
    * created automatically. The optional `toRecord()` method is used by
    * {@link run} to produce a plain-object snapshot of all stored values.
    */
@@ -65,7 +65,7 @@ export class BehaviorTree {
   constructor(config: BehaviorTreeConfig) {
     this.name = config.name;
     this.root = config.root;
-    this.blackboard = config.blackboard ?? new MapBlackboard();
+    this.blackboard = config.blackboard ?? new InMemoryBlackboard();
     this.events = new EventEmitter<TreeEvents>();
     this.abortController = new AbortController();
     BehaviorTree.validateUniqueIds(this.root);
@@ -149,7 +149,7 @@ export class BehaviorTree {
    *
    * The blackboard snapshot is only populated when the underlying
    * blackboard implementation exposes a `toRecord()` method (e.g.
-   * `MapBlackboard`). Otherwise `blackboard` will be an empty object.
+   * `InMemoryBlackboard`). Otherwise `blackboard` will be an empty object.
    *
    * @returns An object containing the tick's `status` and a plain-object
    *   `blackboard` snapshot of all stored key-value pairs.

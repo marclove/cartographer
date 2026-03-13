@@ -224,7 +224,7 @@ export interface TypedEventEmitter<TEvents extends { [K in keyof TEvents]: unkno
  * ```ts
  * // Creating a context manually (useful in tests)
  * const context: TreeContext = {
- *   blackboard: new MapBlackboard(),
+ *   blackboard: new InMemoryBlackboard(),
  *   events: new EventEmitter<TreeEvents>(),
  * };
  *
@@ -883,7 +883,7 @@ export interface GuardConfig extends DecoratorConfig {
  * const config: BehaviorTreeConfig = {
  *   name: 'my-tree',
  *   root: sequenceNode,
- *   blackboard: new MapBlackboard(), // Optional, created automatically if omitted
+ *   blackboard: new InMemoryBlackboard(), // Optional, created automatically if omitted
  * };
  *
  * const tree = new BehaviorTree(config);
@@ -898,7 +898,7 @@ export interface BehaviorTreeConfig {
   root: BTreeNode;
 
   /**
-   * The blackboard instance to use. If omitted, a new `MapBlackboard`
+   * The blackboard instance to use. If omitted, a new `InMemoryBlackboard`
    * is created automatically.
    */
   blackboard?: Blackboard;

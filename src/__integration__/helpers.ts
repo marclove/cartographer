@@ -1,4 +1,4 @@
-import { MapBlackboard } from '../core/blackboard.js';
+import { InMemoryBlackboard } from '../core/blackboard.js';
 import { EventEmitter } from '../core/event-emitter.js';
 import { NodeStatus } from '../types.js';
 import type { TreeContext, TreeEvents } from '../types.js';
@@ -6,7 +6,7 @@ import { BaseNode } from '../nodes/base.js';
 
 export function createContext(initial?: Record<string, unknown>): TreeContext {
   return {
-    blackboard: new MapBlackboard(initial),
+    blackboard: new InMemoryBlackboard(initial),
     events: new EventEmitter<TreeEvents>(),
   };
 }

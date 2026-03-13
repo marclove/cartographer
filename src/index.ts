@@ -30,7 +30,7 @@ export type {
 
 // Core
 export { BehaviorTree } from './core/behavior-tree.js';
-export { MapBlackboard } from './core/blackboard.js';
+export { InMemoryBlackboard } from './core/blackboard.js';
 export { EventEmitter } from './core/event-emitter.js';
 
 // Leaf nodes

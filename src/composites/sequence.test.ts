@@ -3,13 +3,13 @@ import { SequenceNode } from './sequence.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, TreeContext, ExecutionStrategy } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
-import { MapBlackboard } from '../core/blackboard.js';
+import { InMemoryBlackboard } from '../core/blackboard.js';
 import type { TreeEvents } from '../types.js';
 import { ActionNode } from '../nodes/action.js';
 
 function createContext(): TreeContext {
   return {
-    blackboard: new MapBlackboard(),
+    blackboard: new InMemoryBlackboard(),
     events: new EventEmitter<TreeEvents>(),
   };
 }

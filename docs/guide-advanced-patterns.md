@@ -9,16 +9,16 @@ This guide covers custom node development, custom strategy implementation, multi
 All nodes extend `BaseNode`. To create a custom leaf, implement the single abstract method `execute()`:
 
 ```typescript
-import { BaseNode, NodeStatus } from 'cartographer';
-import type { TreeContext } from 'cartographer';
+import { BaseNode, NodeStatus } from "cartographer";
+import type { TreeContext } from "cartographer";
 
 class PingNode extends BaseNode {
   constructor() {
-    super('ping');
+    super("ping");
   }
 
   protected async execute(context: TreeContext): Promise<NodeStatus> {
-    const host = context.blackboard.get<string>('host');
+    const host = context.blackboard.get<string>("host");
     const ok = await ping(host);
     return ok ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
   }
@@ -36,12 +36,12 @@ class CounterNode extends BaseNode {
   private count = 0;
 
   constructor() {
-    super('counter');
+    super("counter");
   }
 
   protected async execute(context: TreeContext): Promise<NodeStatus> {
     this.count++;
-    context.blackboard.set('count', this.count);
+    context.blackboard.set("count", this.count);
     return this.count >= 3 ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
   }
 
@@ -58,7 +58,7 @@ class PollingNode extends BaseNode {
   private intervalId?: ReturnType<typeof setInterval>;
 
   constructor() {
-    super('poller');
+    super("poller");
   }
 
   protected async execute(context: TreeContext): Promise<NodeStatus> {
@@ -138,7 +138,7 @@ interface ParallelStrategy {
 A custom strategy that reads priority scores from the blackboard and reorders children accordingly:
 
 ```typescript
-import type { BTreeNode, TreeContext, SelectionStrategy } from 'cartographer';
+import type { BTreeNode, TreeContext, SelectionStrategy } from "cartographer";
 
 class PrioritySelectionStrategy implements SelectionStrategy {
   async order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]> {
@@ -151,7 +151,7 @@ class PrioritySelectionStrategy implements SelectionStrategy {
 }
 
 const selector = new SelectorNode({
-  name: 'dynamic-selector',
+  name: "dynamic-selector",
   children: [handlerA, handlerB, handlerC],
   strategy: new PrioritySelectionStrategy(),
 });
@@ -169,14 +169,14 @@ const selector = new SelectorNode({
 Agent strategy configs accept a `prompt` that can be either a string or a function. Use a function to include dynamic blackboard state in the prompt:
 
 ```typescript
-import { AgentExecutionStrategy } from 'cartographer';
+import { AgentExecutionStrategy } from "cartographer";
 
 const strategy = new AgentExecutionStrategy({
   prompt: (ctx) => {
-    const urgency = ctx.blackboard.get('urgency');
+    const urgency = ctx.blackboard.get("urgency");
     return `Order steps for ${urgency} priority processing`;
   },
-  options: { model: 'claude-haiku-4-5-20251001' },
+  options: { model: "claude-haiku-4-5-20251001" },
   cache: true,
 });
 ```
@@ -215,6 +215,7 @@ if (this.runningChildId !== null) {
 ### Sequence Resumption
 
 When a sequence child returns `RUNNING`:
+
 1. The sequence stores that child's ID and returns `RUNNING`.
 2. On the next tick, the sequence skips all children before the running child.
 3. When the running child finally returns `SUCCESS`, the sequence continues with the next child.
@@ -229,6 +230,7 @@ Tick 3:             [B=SUCCESS] [C=SUCCESS] → SUCCESS
 ### Selector Resumption
 
 When a selector child returns `RUNNING`:
+
 1. The selector stores that child's ID and returns `RUNNING`.
 2. On the next tick, the selector resumes at that child.
 3. If the running child returns `FAILURE`, the selector continues to the next sibling (fallback behavior).
@@ -258,6 +260,7 @@ A is never re-ticked because the outer sequence remembers it already completed.
 2. On the next tick, the repeat restarts from iteration zero.
 
 This means a `RepeatNode(count=2)` with a child that returns `[RUNNING, SUCCESS, SUCCESS]` will:
+
 - Tick 1: iteration 0 → child RUNNING → repeat RUNNING
 - Tick 2: restart → iteration 0 → child SUCCESS → iteration 1 → child SUCCESS → repeat SUCCESS
 
@@ -286,7 +289,7 @@ This is important for correctness: a parallel node does not evaluate any policy 
 
 ```typescript
 const parallel = new ParallelNode({
-  name: 'par',
+  name: "par",
   children: [fastChild, slowChild],
   strategy: new DefaultParallelStrategy({ failureCount: 2 }),
 });
@@ -305,21 +308,21 @@ Unlike sequences and selectors, parallel nodes do not skip children. Every child
 
 ### Nested Scoping
 
-`MapBlackboard.scoped()` can be called multiple times to create deeply nested namespaces:
+`InMemoryBlackboard.scoped()` can be called multiple times to create deeply nested namespaces:
 
 ```typescript
-import { MapBlackboard } from 'cartographer';
+import { InMemoryBlackboard } from "cartographer";
 
-const bb = new MapBlackboard();
-const agentBb = bb.scoped('agent');
-const subBb = agentBb.scoped('subtask');
+const bb = new InMemoryBlackboard();
+const agentBb = bb.scoped("agent");
+const subBb = agentBb.scoped("subtask");
 
-subBb.set('result', 'done');
+subBb.set("result", "done");
 
 // Each scope level adds a prefix separated by ':'
-subBb.get('result');          // 'done'
-agentBb.get('subtask:result'); // 'done'
-bb.get('agent:subtask:result'); // 'done'
+subBb.get("result"); // 'done'
+agentBb.get("subtask:result"); // 'done'
+bb.get("agent:subtask:result"); // 'done'
 ```
 
 ### Cross-Scope Visibility
@@ -327,48 +330,48 @@ bb.get('agent:subtask:result'); // 'done'
 Scoped views share the same underlying storage. The root blackboard can read any scoped key using its full prefixed name:
 
 ```typescript
-const bb = new MapBlackboard();
-const scopedA = bb.scoped('a');
-const scopedB = bb.scoped('b');
+const bb = new InMemoryBlackboard();
+const scopedA = bb.scoped("a");
+const scopedB = bb.scoped("b");
 
-scopedA.set('x', 1);
-scopedB.set('x', 2);
+scopedA.set("x", 1);
+scopedB.set("x", 2);
 
 // Root can see both
-bb.get('a:x'); // 1
-bb.get('b:x'); // 2
+bb.get("a:x"); // 1
+bb.get("b:x"); // 2
 
 // Scopes are isolated from each other
-scopedA.get('x'); // 1 (doesn't see b:x)
-scopedB.get('x'); // 2 (doesn't see a:x)
+scopedA.get("x"); // 1 (doesn't see b:x)
+scopedB.get("x"); // 2 (doesn't see a:x)
 ```
 
 This is useful when a parent node needs to read results written by `AgentNode` children that use `blackboardNamespace`.
 
 ### Pre-Populating with Initial Values
 
-`MapBlackboard` accepts a `Record<string, unknown>` at construction:
+`InMemoryBlackboard` accepts a `Record<string, unknown>` at construction:
 
 ```typescript
-const bb = new MapBlackboard({
+const bb = new InMemoryBlackboard({
   userId: 42,
-  mode: 'production',
+  mode: "production",
   retryLimit: 3,
 });
 
-bb.get<number>('userId');     // 42
-bb.get<string>('mode');       // 'production'
+bb.get<number>("userId"); // 42
+bb.get<string>("mode"); // 'production'
 ```
 
 This is useful for initializing a tree with configuration or input data before the first tick.
 
 ### Snapshots with toRecord()
 
-`MapBlackboard` provides a `toRecord()` method that returns all stored key-value pairs as a plain object. This includes scoped keys with their full prefixes:
+`InMemoryBlackboard` provides a `toRecord()` method that returns all stored key-value pairs as a plain object. This includes scoped keys with their full prefixes:
 
 ```typescript
-const bb = new MapBlackboard({ x: 1 });
-bb.scoped('agent').set('result', 'ok');
+const bb = new InMemoryBlackboard({ x: 1 });
+bb.scoped("agent").set("result", "ok");
 
 bb.toRecord();
 // { x: 1, 'agent:result': 'ok' }
@@ -432,12 +435,12 @@ root:
 Register the strategy before loading:
 
 ```typescript
-import { TreeRegistry, TreeLoader } from 'cartographer';
+import { TreeRegistry, TreeLoader } from "cartographer";
 
 const registry = new TreeRegistry();
-registry.registerStrategy('priority-strategy', new PrioritySelectionStrategy());
-registry.registerAction('fast-handler', fastHandlerFn);
-registry.registerAction('slow-handler', slowHandlerFn);
+registry.registerStrategy("priority-strategy", new PrioritySelectionStrategy());
+registry.registerAction("fast-handler", fastHandlerFn);
+registry.registerAction("slow-handler", slowHandlerFn);
 
 const tree = TreeLoader.fromYAML(yamlString, registry);
 ```
