@@ -24,20 +24,21 @@ Leaf nodes that perform long-running work (ActionNode, AgentNode) manage their o
 ```
 execute(context):
   // Poll: if there's in-flight work, check completion
-  if (this._inflight):
-    if (this._inflightResult !== undefined):
-      result = this._inflightResult
-      clear inflight state
+  if (this._inflightState):
+    if (this._inflightState.result !== undefined):
+      result = this._inflightState.result
+      this._inflightState = null
       return result
     else:
       return RUNNING
 
   // Start: kick off the action, return RUNNING immediately
-  this._inflight = this.action(context)
-  this._inflight.then(
-    status => this._inflightResult = status,
-    error  => this._inflightError = error
+  state = { promise: this.action(context) }
+  state.promise.then(
+    status => state.result = status,
+    error  => state.error = error
   )
+  this._inflightState = state
   return RUNNING
 ```
 
@@ -184,7 +185,7 @@ When a reactive composite determines that a RUNNING subtree should be preempted 
 2. Calls `abort()` on scoped child controllers — signal fires, leaf nodes cancel in-flight work.
 3. Composite returns FAILURE or tries the next branch (depending on type).
 
-**Leaf node abort():** ActionNode and AgentNode clear their inflight state (`_inflight`, `_inflightResult`) on `abort()`. BaseNode.abort() remains a no-op — only nodes with inflight state need cleanup.
+**Leaf node abort():** ActionNode and AgentNode clear `_inflightState` to `null` on `abort()`. BaseNode.abort() remains a no-op — only nodes with inflight state need cleanup.
 
 **Scoped AbortControllers for hard cancellation:** Composites create a scoped `AbortController` per child, stored as instance state for the duration of the cycle. The scoped controller's signal is passed to the child via `context.signal`, replacing the parent signal. The parent signal is bridged to the scoped controller so tree-wide abort still cascades:
 
@@ -291,9 +292,9 @@ The following changes to `src/types.ts` are required:
 
 **Strategy interfaces:** `orderChildren()` return type changes from `Promise<BTreeNode[]>` to `BTreeNode[] | Promise<BTreeNode[]>`. `evaluatePolicy()` return type changes from `Promise<NodeStatus>` to `NodeStatus | Promise<NodeStatus>`. Default strategies drop their `async` keyword.
 
-**`ActionNode`:** Add `_inflight`, `_inflightResult`, `_inflightError` fields. Override `abort()` and `reset()` to clear them.
+**`ActionNode`:** Add `_inflightState: { promise, result?, error? } | null` field. Override `abort()` and `reset()` to set it to `null`.
 
-**`AgentNode`:** Same inflight fields as ActionNode.
+**`AgentNode`:** Same `_inflightState` field as ActionNode.
 
 **`TreeSchedulerConfig`:** Add optional fields `skipOnOverlap?: boolean` and `abortOnStop?: boolean`.
 
