@@ -7,7 +7,7 @@ export class DefaultParallelStrategy implements ParallelStrategy {
     this.configuredPolicy = policy;
   }
 
-  async policy(children: BTreeNode[], _context: TreeContext): Promise<ParallelPolicy> {
+  policy(children: BTreeNode[], _context: TreeContext): ParallelPolicy {
     if (this.configuredPolicy) {
       return this.configuredPolicy;
     }
