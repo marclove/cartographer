@@ -8,6 +8,8 @@ export interface ParsedArgs {
     quiet: boolean;
     envFile?: string;
     help: boolean;
+    port?: number;
+    noServe: boolean;
   };
 }
 
@@ -21,6 +23,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
     quiet: false,
     envFile: undefined as string | undefined,
     help: false,
+    port: undefined as number | undefined,
+    noServe: false,
   };
 
   const positional: string[] = [];
@@ -39,6 +43,17 @@ export function parseArgs(argv: string[]): ParsedArgs {
       flags.envFile = args[i];
     } else if (arg === '--help' || arg === '-h') {
       flags.help = true;
+    } else if (arg === '--port') {
+      i++;
+      const parsed = parseInt(args[i], 10);
+      if (isNaN(parsed) || parsed < 1 || parsed > 65535) {
+        process.stderr.write(`Error: --port requires a valid port number\n\n`);
+        process.stdout.write(USAGE);
+        process.exit(1);
+      }
+      flags.port = parsed;
+    } else if (arg === '--no-serve') {
+      flags.noServe = true;
     } else if (arg === '--') {
       // Everything after -- is positional
       positional.push(...args.slice(i + 1));
@@ -72,4 +87,6 @@ Run options:
   --verbose                Include agent:thinking and agent:tool_use events
   --quiet                  Suppress all output except errors and final status
   --env-file <path>        Load environment variables from a file
+  --port <number>          Port for the dashboard server (default: 3147)
+  --no-serve               Disable the dashboard server
 `;

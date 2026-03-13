@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 export default defineConfig({
   test: {
@@ -28,6 +29,13 @@ export default defineConfig({
         test: {
           name: 'examples',
           include: ['examples/**/*.test.ts'],
+        },
+      },
+      {
+        plugins: [svelte()],
+        test: {
+          name: 'dashboard',
+          include: ['dashboard/src/**/*.test.ts'],
         },
       },
     ],

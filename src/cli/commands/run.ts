@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { NodeStatus } from '../../types.js';
 import { TreeScheduler } from '../../scheduler/tree-scheduler.js';
 import { createFormatter } from '../formatter.js';
+import { DashboardServer } from '../../server/dashboard-server.js';
 import type { RunContext, TreeRunConfig } from '../types.js';
 
 export interface RunOptions {
@@ -12,10 +13,12 @@ export interface RunOptions {
   verbose?: boolean;
   quiet?: boolean;
   envFile?: string;
+  port?: number;
+  noServe?: boolean;
 }
 
-export async function runCommand(options: RunOptions): Promise<never> {
-  const { file, args, json, verbose, quiet, envFile } = options;
+export async function runCommand(options: RunOptions): Promise<void> {
+  const { file, args, json, verbose, quiet, envFile, port, noServe } = options;
 
   // Load env file if provided
   const env = { ...process.env };
@@ -66,6 +69,22 @@ export async function runCommand(options: RunOptions): Promise<never> {
   // Set up formatter
   const stopFormatter = createFormatter(tree.events, { json, verbose, quiet });
 
+  // Start dashboard server
+  let dashboardServer: DashboardServer | undefined;
+  if (!noServe) {
+    dashboardServer = new DashboardServer(tree, { port });
+    const { port: dashPort } = await dashboardServer.start();
+    if (!quiet) {
+      process.stderr.write(`Dashboard: http://localhost:${dashPort}\n`);
+    }
+  }
+
+  async function exit(code: number): Promise<void> {
+    if (dashboardServer) await dashboardServer.close();
+    stopFormatter();
+    process.exit(code);
+  }
+
   // Track final status for exit code
   let finalStatus: NodeStatus | undefined;
 
@@ -115,23 +134,20 @@ export async function runCommand(options: RunOptions): Promise<never> {
     }
   } catch (err) {
     process.stderr.write(`Runtime error: ${(err as Error).message}\n`);
-    stopFormatter();
-    process.exit(1);
+    await exit(1);
   }
-
-  stopFormatter();
 
   // Exit code based on final status
   if (aborted && finalStatus === undefined) {
-    process.exit(2);
+    await exit(2);
   }
   if (finalStatus === NodeStatus.SUCCESS) {
-    process.exit(0);
+    await exit(0);
   }
   if (finalStatus === NodeStatus.RUNNING) {
-    process.exit(2);
+    await exit(2);
   }
-  process.exit(1);
+  await exit(1);
 }
 
 /**
