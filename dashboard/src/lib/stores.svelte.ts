@@ -1,0 +1,303 @@
+import { connectSSE } from './api.js';
+import type {
+  TreeNode,
+  SseEventName,
+  SseEventMap,
+} from './types.js';
+
+// ---------------------------------------------------------------------------
+// Local types not present in types.ts
+// ---------------------------------------------------------------------------
+
+export type ConnectionState = 'connecting' | 'connected' | 'disconnected';
+
+export type NodeStatus = 'running' | 'SUCCESS' | 'FAILURE' | null;
+
+export interface TimelineEvent<K extends SseEventName = SseEventName> {
+  id: number;
+  event: K;
+  timestamp: number;
+  data: SseEventMap[K];
+  category: string;
+}
+
+// ---------------------------------------------------------------------------
+// Event categorization
+// ---------------------------------------------------------------------------
+
+const EVENT_CATEGORIES: Partial<Record<SseEventName, string>> = {
+  'node:enter': 'nodes',
+  'node:exit': 'nodes',
+  'node:error': 'nodes',
+  'tree:init': 'nodes',
+  'tree:tick': 'nodes',
+  'tree:reset': 'nodes',
+  'tree:abort': 'nodes',
+  'agent:prompt': 'agent',
+  'agent:thinking': 'agent',
+  'agent:text': 'agent',
+  'agent:tool_use': 'agent',
+  'agent:response': 'agent',
+  'agent:error': 'agent',
+  'agent:message': 'agent',
+  'agent:tool_progress': 'agent',
+  'agent:init': 'agent',
+  'agent:status': 'agent',
+  'agent:rate_limit': 'agent',
+  'agent:elicitation_declined': 'agent',
+  'blackboard:write': 'blackboard',
+  'strategy:decision': 'strategy',
+};
+
+export function getEventCategory(eventName: string): string {
+  return EVENT_CATEGORIES[eventName as SseEventName] ?? 'other';
+}
+
+// ---------------------------------------------------------------------------
+// Reactive state
+// ---------------------------------------------------------------------------
+
+const MAX_EVENTS = 2000;
+
+// Connection
+let connectionState = $state<ConnectionState>('connecting');
+export function getConnectionState(): ConnectionState {
+  return connectionState;
+}
+
+// Tree structure
+// `Snapshot.tree` IS the root TreeNode directly (no wrapper object).
+let treeName = $state<string>('');
+let treeRoot = $state<TreeNode | null>(null);
+export function getTreeName(): string {
+  return treeName;
+}
+export function getTreeRoot(): TreeNode | null {
+  return treeRoot;
+}
+
+// Node status tracking
+let nodeStatuses = $state<Map<string, NodeStatus>>(new Map());
+export function getNodeStatuses(): Map<string, NodeStatus> {
+  return nodeStatuses;
+}
+
+// Run stats (updated from tree:tick events)
+let tickCount = $state(0);
+let lastStatus = $state<string | null>(null);
+let lastDurationMs = $state<number | null>(null);
+export function getTickCount(): number {
+  return tickCount;
+}
+export function getLastStatus(): string | null {
+  return lastStatus;
+}
+export function getLastDurationMs(): number | null {
+  return lastDurationMs;
+}
+
+// Event timeline
+let events = $state<TimelineEvent[]>([]);
+export function getEvents(): TimelineEvent[] {
+  return events;
+}
+
+// Event filters — all categories active by default
+let activeFilters = $state<Set<string>>(
+  new Set(['nodes', 'agent', 'blackboard', 'strategy']),
+);
+export function getActiveFilters(): Set<string> {
+  return activeFilters;
+}
+export function toggleFilter(filter: string): void {
+  const next = new Set(activeFilters);
+  if (next.has(filter)) {
+    next.delete(filter);
+  } else {
+    next.add(filter);
+  }
+  activeFilters = next;
+}
+
+// Blackboard
+let blackboard = $state<Record<string, unknown>>({});
+let recentlyUpdatedKeys = $state<Set<string>>(new Set());
+export function getBlackboard(): Record<string, unknown> {
+  return blackboard;
+}
+export function getRecentlyUpdatedKeys(): Set<string> {
+  return recentlyUpdatedKeys;
+}
+
+// Selected node
+let selectedNodeId = $state<string | null>(null);
+export function getSelectedNodeId(): string | null {
+  return selectedNodeId;
+}
+export function selectNode(id: string | null): void {
+  selectedNodeId = selectedNodeId === id ? null : id;
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+function pushEvent<K extends SseEventName>(
+  event: K,
+  data: SseEventMap[K],
+  id: number,
+): void {
+  const entry: TimelineEvent<K> = {
+    id,
+    event,
+    timestamp: Date.now(),
+    data,
+    category: getEventCategory(event),
+  };
+  // Cast to the wider union type for the state array
+  events = [...events, entry as TimelineEvent].slice(-MAX_EVENTS);
+}
+
+// ---------------------------------------------------------------------------
+// SSE connection
+// ---------------------------------------------------------------------------
+
+let cleanup: (() => void) | null = null;
+
+export function connect(): void {
+  if (cleanup) cleanup();
+
+  connectionState = 'connecting';
+
+  cleanup = connectSSE({
+    onOpen() {
+      connectionState = 'connected';
+    },
+
+    onError(_err) {
+      connectionState = 'disconnected';
+    },
+
+    // Snapshot: contains the full tree root and blackboard state
+    snapshot(data, id) {
+      // snapshot.tree IS the root TreeNode
+      treeName = data.tree.name;
+      treeRoot = data.tree;
+      blackboard = data.blackboard;
+      // Reset node statuses when a fresh snapshot arrives
+      nodeStatuses = new Map();
+      pushEvent('snapshot', data, id);
+    },
+
+    'node:enter'(data, id) {
+      const next = new Map(nodeStatuses);
+      next.set(data.node.id, 'running');
+      nodeStatuses = next;
+      pushEvent('node:enter', data, id);
+    },
+
+    'node:exit'(data, id) {
+      const next = new Map(nodeStatuses);
+      next.set(data.node.id, data.status);
+      nodeStatuses = next;
+      pushEvent('node:exit', data, id);
+    },
+
+    'node:error'(data, id) {
+      const next = new Map(nodeStatuses);
+      next.set(data.node.id, 'FAILURE');
+      nodeStatuses = next;
+      pushEvent('node:error', data, id);
+    },
+
+    'tree:tick'(data, id) {
+      tickCount += 1;
+      // TreeTickEvent fields are all unknown; cast defensively
+      const d = data as Record<string, unknown>;
+      if (typeof d['status'] === 'string') lastStatus = d['status'];
+      if (typeof d['durationMs'] === 'number') lastDurationMs = d['durationMs'];
+      pushEvent('tree:tick', data, id);
+    },
+
+    'tree:reset'(data, id) {
+      nodeStatuses = new Map();
+      pushEvent('tree:reset', data, id);
+    },
+
+    'tree:init'(data, id) {
+      pushEvent('tree:init', data, id);
+    },
+
+    'tree:abort'(data, id) {
+      pushEvent('tree:abort', data, id);
+    },
+
+    'blackboard:write'(data, id) {
+      // BlackboardWriteEvent is Record<string, unknown>
+      const d = data as Record<string, unknown>;
+      const key = typeof d['key'] === 'string' ? d['key'] : null;
+      if (key !== null) {
+        blackboard = { ...blackboard, [key]: d['value'] };
+        const next = new Set(recentlyUpdatedKeys);
+        next.add(key);
+        recentlyUpdatedKeys = next;
+        // Clear the highlight after 2 seconds
+        setTimeout(() => {
+          const cleared = new Set(recentlyUpdatedKeys);
+          cleared.delete(key);
+          recentlyUpdatedKeys = cleared;
+        }, 2000);
+      }
+      pushEvent('blackboard:write', data, id);
+    },
+
+    'strategy:decision'(data, id) {
+      pushEvent('strategy:decision', data, id);
+    },
+
+    'agent:prompt'(data, id) {
+      pushEvent('agent:prompt', data, id);
+    },
+    'agent:thinking'(data, id) {
+      pushEvent('agent:thinking', data, id);
+    },
+    'agent:text'(data, id) {
+      pushEvent('agent:text', data, id);
+    },
+    'agent:tool_use'(data, id) {
+      pushEvent('agent:tool_use', data, id);
+    },
+    'agent:response'(data, id) {
+      pushEvent('agent:response', data, id);
+    },
+    'agent:error'(data, id) {
+      pushEvent('agent:error', data, id);
+    },
+    'agent:message'(data, id) {
+      pushEvent('agent:message', data, id);
+    },
+    'agent:tool_progress'(data, id) {
+      pushEvent('agent:tool_progress', data, id);
+    },
+    'agent:init'(data, id) {
+      pushEvent('agent:init', data, id);
+    },
+    'agent:status'(data, id) {
+      pushEvent('agent:status', data, id);
+    },
+    'agent:rate_limit'(data, id) {
+      pushEvent('agent:rate_limit', data, id);
+    },
+    'agent:elicitation_declined'(data, id) {
+      pushEvent('agent:elicitation_declined', data, id);
+    },
+  });
+}
+
+export function disconnect(): void {
+  if (cleanup) {
+    cleanup();
+    cleanup = null;
+  }
+  connectionState = 'disconnected';
+}

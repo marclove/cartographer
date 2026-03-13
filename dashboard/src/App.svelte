@@ -1,5 +1,11 @@
 <script lang="ts">
-  // Placeholder — panels added in subsequent tasks
+  import { onMount } from 'svelte';
+  import { connect, disconnect } from './lib/stores.svelte.js';
+
+  onMount(() => {
+    connect();
+    return () => disconnect();
+  });
 </script>
 
 <div class="dashboard">
