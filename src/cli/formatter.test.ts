@@ -77,6 +77,7 @@ describe('createFormatter', () => {
       createFormatter(events);
       const parent = makeNode('seq', 'seq-id', 'SequenceNode');
       const child = makeNode('action1');
+      (parent as any).children = [child];
 
       events.emit('node:enter', { node: parent, context: makeContext() });
       events.emit('node:enter', { node: child, context: makeContext() });
@@ -85,6 +86,27 @@ describe('createFormatter', () => {
       // Parent has no indentation, child has 2-space indentation
       expect(lines[0]).toMatch(/^▶/);
       expect(lines[1]).toMatch(/^ {2}▶/);
+    });
+
+    it('indents parallel children at the same depth', () => {
+      createFormatter(events);
+      const parent = makeNode('par', 'par-id', 'ParallelNode');
+      const childA = makeNode('a');
+      const childB = makeNode('b');
+      const childC = makeNode('c');
+      (parent as any).children = [childA, childB, childC];
+
+      events.emit('node:enter', { node: parent, context: makeContext() });
+      // All three enter before any exit (concurrent)
+      events.emit('node:enter', { node: childA, context: makeContext() });
+      events.emit('node:enter', { node: childB, context: makeContext() });
+      events.emit('node:enter', { node: childC, context: makeContext() });
+
+      const lines = stdoutLines();
+      expect(lines[0]).toMatch(/^▶/);            // parent at depth 0
+      expect(lines[1]).toMatch(/^ {2}▶.*\ba\b/); // child a at depth 1
+      expect(lines[2]).toMatch(/^ {2}▶.*\bb\b/); // child b at depth 1
+      expect(lines[3]).toMatch(/^ {2}▶.*\bc\b/); // child c at depth 1
     });
 
     it('prints tree:tick summary', () => {

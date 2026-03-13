@@ -137,8 +137,8 @@ function createTextFormatter(
   options: FormatterOptions,
 ): () => void {
   const cleanup: Array<() => void> = [];
-  let depth = 0;
-  const depthStack: BTreeNode[] = [];
+  const activeNodes: BTreeNode[] = [];
+  const nodeDepths = new Map<BTreeNode, number>();
 
   function on<K extends keyof TreeEvents & string>(
     event: K,
@@ -148,8 +148,20 @@ function createTextFormatter(
     cleanup.push(() => events.off(event, handler));
   }
 
-  function indent(): string {
-    return '  '.repeat(depth);
+  function computeDepth(node: BTreeNode): number {
+    // Walk active nodes (most recent first) to find a parent whose .children includes this node
+    for (let i = activeNodes.length - 1; i >= 0; i--) {
+      const candidate = activeNodes[i] as any;
+      if (candidate.children && Array.isArray(candidate.children) && candidate.children.includes(node)) {
+        return (nodeDepths.get(activeNodes[i]) ?? 0) + 1;
+      }
+    }
+    // Fallback: use stack length (equivalent to old counter behavior)
+    return activeNodes.length;
+  }
+
+  function pad(d: number): string {
+    return '  '.repeat(d);
   }
 
   function print(line: string): void {
@@ -164,42 +176,54 @@ function createTextFormatter(
     return short || 'node';
   }
 
+  function currentDepth(node: BTreeNode): number {
+    return nodeDepths.get(node) ?? 0;
+  }
+
   on('node:enter', ({ node }) => {
-    print(`${indent()}▶ [${nodeType(node)}] ${node.name}`);
-    depthStack.push(node);
-    depth++;
+    const d = computeDepth(node);
+    nodeDepths.set(node, d);
+    print(`${pad(d)}▶ [${nodeType(node)}] ${node.name}`);
+    activeNodes.push(node);
   });
 
   on('node:exit', ({ node, status, durationMs }) => {
-    depth = Math.max(0, depth - 1);
-    depthStack.pop();
+    const d = currentDepth(node);
+    const idx = activeNodes.indexOf(node);
+    if (idx !== -1) activeNodes.splice(idx, 1);
+    nodeDepths.delete(node);
     const symbol = status === 'success' ? '✓' : status === 'failure' ? '✗' : '…';
-    print(`${indent()}${symbol} [${nodeType(node)}] ${node.name} (${round(durationMs)}ms)`);
+    print(`${pad(d)}${symbol} [${nodeType(node)}] ${node.name} (${round(durationMs)}ms)`);
   });
 
   on('node:error', ({ node, error }) => {
-    print(`${indent()}✗ [error] ${node.name}: ${error.message}`);
+    const d = currentDepth(node) + 1;
+    print(`${pad(d)}✗ [error] ${node.name}: ${error.message}`);
   });
 
   if (options.verbose) {
     on('agent:prompt', ({ node, prompt }) => {
+      const d = currentDepth(node) + 1;
       const truncated = prompt.length > 120 ? prompt.slice(0, 117) + '...' : prompt;
-      print(`${indent()}📋 [prompt] ${node.name}: ${truncated}`);
+      print(`${pad(d)}📋 [prompt] ${node.name}: ${truncated}`);
     });
 
     on('agent:thinking', ({ node, thinking }) => {
+      const d = currentDepth(node) + 1;
       const firstLine = thinking.split('\n')[0];
       const truncated = firstLine.length > 100 ? firstLine.slice(0, 97) + '...' : firstLine;
-      print(`${indent()}💭 [thinking] ${node.name}: ${truncated}`);
+      print(`${pad(d)}💭 [thinking] ${node.name}: ${truncated}`);
     });
 
     on('agent:tool_use', ({ node, tool }) => {
-      print(`${indent()}🔧 [tool] ${node.name}: ${tool}`);
+      const d = currentDepth(node) + 1;
+      print(`${pad(d)}🔧 [tool] ${node.name}: ${tool}`);
     });
   }
 
   on('agent:error', ({ node, subtype }) => {
-    print(`${indent()}✗ [agent-error] ${node.name}: ${subtype}`);
+    const d = currentDepth(node) + 1;
+    print(`${pad(d)}✗ [agent-error] ${node.name}: ${subtype}`);
   });
 
   on('tree:tick', ({ tree, status, durationMs }) => {
