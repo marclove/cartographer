@@ -59,7 +59,7 @@ export class BehaviorTree {
    */
   readonly events: EventEmitter<TreeEvents>;
 
-  private root: BTreeNode;
+  readonly root: BTreeNode;
   private abortController: AbortController;
 
   constructor(config: BehaviorTreeConfig) {
