@@ -146,7 +146,17 @@ A "cycle" is the span from when a composite begins working through its children 
 - **Other nodes** (actions, agents, decorators, sub-composites) that returned SUCCESS in this cycle return their cached result without re-executing.
 - **RUNNING nodes** are ticked (polled) normally.
 
-**How composites identify reactive (re-evaluable) nodes:** Nodes expose a `reactive` boolean property. Defaults to `true` for `ConditionNode` and `false` for `ActionNode`, `AgentNode`, and composites. Decorators inherit their child's `reactive` value — so an `Inverter(Condition)` is reactive, while an `Inverter(Action)` is not. This avoids the fragility of `instanceof` checks and lets custom node types opt into reactive re-evaluation.
+**How composites identify reactive (re-evaluable) nodes:** A helper function uses `instanceof` checks, recursing through single-child decorators to find the leaf:
+
+```typescript
+function isReactiveNode(node: BTreeNode): boolean {
+  if (node instanceof ConditionNode) return true;
+  if (node instanceof DecoratorNode) return isReactiveNode(node.child);
+  return false;
+}
+```
+
+This handles `Inverter(Condition)`, `AlwaysSucceed(Guard(Condition))`, etc. No interface changes required. If custom-node opt-in is ever needed, a static class property (`static reactive = true`) checked via duck-typing is sufficient — no need to add a property to the `BTreeNode` interface that every node must implement.
 
 **Cycle lifecycle:**
 
@@ -297,17 +307,11 @@ tree.events.on('tree:tick', ({ status }) => {
 - **Guard** — Already re-checks its condition on every call to `execute()`. Under the current blocking model this re-check never happens because `execute()` blocks until the child resolves. Under the new model, the child returns RUNNING quickly (via the poll path), so `execute()` resolves within a microtask (fast path) and is called again on the next tick — naturally re-checking the condition. The one code change needed: Guard must call `this.child.abort()` when the condition fails while the child has in-flight work, before returning FAILURE.
 - **Inverter, AlwaysSucceed, AlwaysFail** — Pass through child status (inverting/overriding as appropriate). No changes needed. RUNNING passes through unchanged.
 
-**ParallelNode** — Unlike Sequence and Selector, Parallel can remain in `execute()` (no `tick()` override needed). Its `execute()` uses `Promise.all(children.map(c => c.tick(context)))`, which under the new model resolves within a microtask since all child ticks return quickly (poll path or fast conditions). This hits BaseNode's fast path, so `execute()` is called again on every tick. Parallel also needs cycle-based completion tracking: children that returned SUCCESS in the current cycle should not be re-executed on subsequent ticks. The same `reactive` flag mechanism applies — reactive children (conditions) are re-ticked, non-reactive children (actions, agents) return their cached result.
+**ParallelNode** — Unlike Sequence and Selector, Parallel can remain in `execute()` (no `tick()` override needed). Its `execute()` uses `Promise.all(children.map(c => c.tick(context)))`, which under the new model resolves within a microtask since all child ticks return quickly (poll path or fast conditions). This hits BaseNode's fast path, so `execute()` is called again on every tick. Parallel also needs cycle-based completion tracking: children that returned SUCCESS in the current cycle should not be re-executed on subsequent ticks. The same `isReactiveNode()` check applies — reactive children (conditions, possibly decorated) are re-ticked, non-reactive children (actions, agents) return their cached result.
 
 ### 8. Type and Interface Changes
 
 The following changes to `src/types.ts` are required:
-
-**`BTreeNode` interface:** Add `reactive` property.
-
-```typescript
-readonly reactive: boolean;  // true = re-evaluated every tick, false = cached within a cycle
-```
 
 **`TreeEvents` interface:** Add new events.
 
@@ -316,14 +320,10 @@ readonly reactive: boolean;  // true = re-evaluated every tick, false = cached w
 'tree:tick:skipped': { timestamp: number };
 ```
 
-**`BaseNode`:** Add `reactive` property (defaults to `false`), `_inflight` and `_inflightResult` fields, updated `tick()`, `abort()`, and `reset()`.
+**`BaseNode`:** Add `_inflight` and `_inflightResult` fields, updated `tick()`, `abort()`, and `reset()`.
 
 - `abort()`: clears `_inflight` and `_inflightResult`
 - `reset()`: clears `_inflight` and `_inflightResult` (currently a no-op)
-
-**`ConditionNode`:** Override `reactive` to `true`.
-
-**Decorators:** Override `reactive` as a getter that returns `this.child.reactive`.
 
 **`BehaviorTree`:** Add `start(options: { intervalMs: number; signal?: AbortSignal }): TickLoopHandle`.
 
