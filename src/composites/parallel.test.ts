@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ParallelNode } from './parallel.js';
 import { NodeStatus } from '../types.js';
 import type { TreeContext, ParallelStrategy, ParallelPolicy, BTreeNode } from '../types.js';
@@ -6,6 +6,7 @@ import { EventEmitter } from '../core/event-emitter.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
 import type { TreeEvents } from '../types.js';
 import { ActionNode } from '../nodes/action.js';
+import { ConditionNode } from '../nodes/condition.js';
 import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
 
 function createContext(): TreeContext {
@@ -113,5 +114,252 @@ describe('ParallelNode', () => {
       strategy: customStrategy,
     });
     expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
+  });
+});
+
+describe('ParallelNode — reactive tick model', () => {
+  /** Create a stub BTreeNode (non-reactive) with controllable tick results. */
+  function stubNode(
+    name: string,
+    tickFn: () => NodeStatus,
+  ): BTreeNode & { tickCount: number } {
+    const node: BTreeNode & { tickCount: number } = {
+      id: name,
+      name,
+      children: [],
+      tickCount: 0,
+      tick: async () => {
+        node.tickCount++;
+        return tickFn();
+      },
+      reset: () => {},
+      abort: () => {},
+    };
+    return node;
+  }
+
+  it('reactive children (conditions) are re-ticked every tick', async () => {
+    let conditionTickCount = 0;
+    // ConditionNode is reactive — always re-ticked
+    const condition = new ConditionNode({
+      name: 'cond',
+      condition: () => {
+        conditionTickCount++;
+        return true;
+      },
+    });
+
+    // Non-reactive stub that returns RUNNING then SUCCESS
+    let actionCallCount = 0;
+    const action = stubNode('act', () => {
+      actionCallCount++;
+      return actionCallCount >= 2 ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
+    });
+
+    const node = new ParallelNode({
+      name: 'par',
+      children: [condition, action],
+    });
+
+    const ctx = createContext();
+
+    // Tick 1: condition SUCCESS (reactive), action RUNNING => RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    expect(conditionTickCount).toBe(1);
+    expect(action.tickCount).toBe(1);
+
+    // Tick 2: condition re-ticked (reactive), action polled => both SUCCESS
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(conditionTickCount).toBe(2); // re-ticked because reactive
+    expect(action.tickCount).toBe(2);
+  });
+
+  it('completed non-reactive children are cached within a cycle', async () => {
+    // action1 completes SUCCESS immediately
+    const action1 = stubNode('a1', () => NodeStatus.SUCCESS);
+
+    // action2 returns RUNNING first, then SUCCESS
+    let action2CallCount = 0;
+    const action2 = stubNode('a2', () => {
+      action2CallCount++;
+      return action2CallCount >= 2 ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
+    });
+
+    const node = new ParallelNode({
+      name: 'par',
+      children: [action1, action2],
+    });
+
+    const ctx = createContext();
+
+    // Tick 1: action1 SUCCESS (cached), action2 RUNNING => RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    expect(action1.tickCount).toBe(1);
+    expect(action2.tickCount).toBe(1);
+
+    // Tick 2: action1 NOT re-ticked (cached), action2 polled => SUCCESS
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(action1.tickCount).toBe(1); // not re-ticked!
+    expect(action2.tickCount).toBe(2);
+  });
+
+  it('cycle ends when all children resolve and clears state', async () => {
+    const action = stubNode('act', () => NodeStatus.SUCCESS);
+
+    const node = new ParallelNode({
+      name: 'par',
+      children: [action],
+    });
+
+    const ctx = createContext();
+
+    // Tick 1: action SUCCESS, cycle ends
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(action.tickCount).toBe(1);
+
+    // Tick 2: new cycle — action is ticked again (cache was cleared)
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(action.tickCount).toBe(2);
+  });
+
+  it('policy is committed once per cycle', async () => {
+    let policyCallCount = 0;
+
+    const strategy: ParallelStrategy = {
+      policy: async () => {
+        policyCallCount++;
+        return {};
+      },
+    };
+
+    // Returns RUNNING twice, then SUCCESS
+    let actionCallCount = 0;
+    const action = stubNode('act', () => {
+      actionCallCount++;
+      return actionCallCount >= 3 ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
+    });
+
+    const node = new ParallelNode({
+      name: 'par',
+      children: [action],
+      strategy,
+    });
+
+    const ctx = createContext();
+
+    // Tick 1: policy called, action RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    expect(policyCallCount).toBe(1);
+
+    // Tick 2: policy NOT called again (committed), action RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    expect(policyCallCount).toBe(1);
+
+    // Tick 3: policy NOT called again, action SUCCESS, cycle ends
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(policyCallCount).toBe(1);
+
+    // Tick 4: new cycle — policy called again
+    actionCallCount = 0;
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    expect(policyCallCount).toBe(2);
+  });
+
+  it('abort() and reset() clear all cycle state', async () => {
+    const action = stubNode('act', () => NodeStatus.SUCCESS);
+
+    const node = new ParallelNode({
+      name: 'par',
+      children: [action],
+    });
+
+    const ctx = createContext();
+
+    // Tick to populate cycle state
+    await node.tick(ctx);
+    expect(action.tickCount).toBe(1);
+
+    // reset() clears state — next tick starts a fresh cycle
+    node.reset();
+    await node.tick(ctx);
+    expect(action.tickCount).toBe(2); // re-ticked after reset
+
+    // Build up state with a RUNNING child and then abort
+    let callCount = 0;
+    const runningChild = stubNode('running', () => {
+      callCount++;
+      return callCount >= 2 ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
+    });
+
+    const node2 = new ParallelNode({
+      name: 'par2',
+      children: [runningChild],
+    });
+
+    await node2.tick(ctx); // RUNNING — cycle state populated
+    expect(runningChild.tickCount).toBe(1);
+
+    node2.abort(); // should clear all cycle state
+
+    callCount = 0; // reset counter
+    await node2.tick(ctx); // fresh cycle — child is ticked again
+    expect(runningChild.tickCount).toBe(2);
+  });
+
+  it('scoped abort controllers per child cascade from parent signal', async () => {
+    const receivedSignals: AbortSignal[] = [];
+
+    const child1: BTreeNode = {
+      id: 'c1',
+      name: 'c1',
+      children: [],
+      tick: async (ctx: TreeContext) => {
+        receivedSignals.push(ctx.signal!);
+        return NodeStatus.RUNNING;
+      },
+      reset: () => {},
+      abort: () => {},
+    };
+
+    const child2: BTreeNode = {
+      id: 'c2',
+      name: 'c2',
+      children: [],
+      tick: async (ctx: TreeContext) => {
+        receivedSignals.push(ctx.signal!);
+        return NodeStatus.RUNNING;
+      },
+      reset: () => {},
+      abort: () => {},
+    };
+
+    const parentController = new AbortController();
+    const ctx: TreeContext = {
+      blackboard: new InMemoryBlackboard(),
+      events: new EventEmitter<TreeEvents>(),
+      signal: parentController.signal,
+    };
+
+    const node = new ParallelNode({
+      name: 'par',
+      children: [child1, child2],
+    });
+
+    await node.tick(ctx);
+
+    // Each child gets its own signal (not the parent's)
+    expect(receivedSignals).toHaveLength(2);
+    expect(receivedSignals[0]).not.toBe(parentController.signal);
+    expect(receivedSignals[1]).not.toBe(parentController.signal);
+    expect(receivedSignals[0]).not.toBe(receivedSignals[1]);
+
+    // Signals are not yet aborted
+    expect(receivedSignals[0].aborted).toBe(false);
+    expect(receivedSignals[1].aborted).toBe(false);
+
+    // Parent abort cascades to child signals
+    parentController.abort();
+    expect(receivedSignals[0].aborted).toBe(true);
+    expect(receivedSignals[1].aborted).toBe(true);
   });
 });
