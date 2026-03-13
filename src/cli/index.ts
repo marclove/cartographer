@@ -27,6 +27,8 @@ async function main(): Promise<void> {
         verbose: parsed.flags.verbose,
         quiet: parsed.flags.quiet,
         envFile: parsed.flags.envFile,
+        port: parsed.flags.port,
+        noServe: parsed.flags.noServe,
       });
       break;
     }
