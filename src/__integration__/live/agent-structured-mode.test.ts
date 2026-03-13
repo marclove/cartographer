@@ -11,7 +11,7 @@ const LOG_FILE = 'logs/live-agent-structured-mode.log';
 let stopLogging: (() => void) | undefined;
 afterEach(() => { stopLogging?.(); stopLogging = undefined; });
 
-describe('Agent Structured Mode Integration', { timeout: 30_000 }, () => {
+describe('Agent Structured Mode Integration', { timeout: 90_000 }, () => {
   it('structured mode: classify sentiment with Zod schema', async () => {
     const SentimentSchema = z.object({
       sentiment: z.enum(['positive', 'negative', 'neutral']),
@@ -35,8 +35,15 @@ describe('Agent Structured Mode Integration', { timeout: 30_000 }, () => {
     stopLogging = createTreeLogger(ctx.events, { filePath: LOG_FILE, logBlackboard: true });
     const responseEvents = collectEvents(ctx, 'agent:response');
 
-    const status = await agent.tick(ctx);
+    // First tick starts the API call and returns RUNNING
+    const status1 = await agent.tick(ctx);
+    expect(status1).toBe(NodeStatus.RUNNING);
 
+    // Wait for the API call to complete
+    await new Promise(r => setTimeout(r, 30_000));
+
+    // Second tick polls the completed result
+    const status = await agent.tick(ctx);
     expect(status).toBe(NodeStatus.SUCCESS);
 
     const output = ctx.blackboard.get<z.infer<typeof SentimentSchema>>('sentiment-classifier:output');
@@ -83,7 +90,12 @@ describe('Agent Structured Mode Integration', { timeout: 30_000 }, () => {
       .build();
     stopLogging = createTreeLogger(tree.events, { filePath: LOG_FILE, logBlackboard: true });
 
-    const { status } = await tree.run();
+    // Tick until the tree completes (RUNNING means inflight work is pending)
+    let status = await tree.tick();
+    while (status === NodeStatus.RUNNING) {
+      await new Promise(r => setTimeout(r, 1_000));
+      status = await tree.tick();
+    }
     expect(status).toBe(NodeStatus.SUCCESS);
 
     const output = tree.blackboard.get<z.infer<typeof SummarySchema>>('summarizer:output');

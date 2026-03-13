@@ -57,10 +57,13 @@ describe('GET /api/status', () => {
   });
 
   it('reflects status after a tick', async () => {
+    const flush = () => new Promise<void>(r => setTimeout(r, 0));
+    await tree.tick();
+    await flush();
     await tree.tick();
     const res = await fetch(`http://localhost:${port}/api/status`);
     const body = await res.json();
-    expect(body.tickCount).toBe(1);
+    expect(body.tickCount).toBe(2);
     expect(body.lastStatus).toBe('success');
     expect(body.lastDurationMs).toBeGreaterThanOrEqual(0);
   });

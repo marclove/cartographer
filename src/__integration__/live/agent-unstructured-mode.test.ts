@@ -11,7 +11,7 @@ const LOG_FILE = 'logs/live-agent-unstructured-mode.log';
 let stopLogging: (() => void) | undefined;
 afterEach(() => { stopLogging?.(); stopLogging = undefined; });
 
-describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
+describe('Agent Unstructured Mode Integration', { timeout: 90_000 }, () => {
   it('unstructured mode with blackboard MCP tool use', async () => {
     const ctx = createContext({
       items: ['apple', 'banana', 'cherry'],
@@ -32,8 +32,15 @@ describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
       },
     });
 
-    const status = await agent.tick(ctx);
+    // First tick starts the API call and returns RUNNING
+    const status1 = await agent.tick(ctx);
+    expect(status1).toBe(NodeStatus.RUNNING);
 
+    // Wait for the API call to complete
+    await new Promise(r => setTimeout(r, 30_000));
+
+    // Second tick polls the completed result
+    const status = await agent.tick(ctx);
     expect(status).toBe(NodeStatus.SUCCESS);
     expect(responseEvents.length).toBeGreaterThanOrEqual(1);
     expect(toolUseEvents.length).toBeGreaterThanOrEqual(1);
@@ -70,7 +77,12 @@ describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
       .build();
     stopLogging = createTreeLogger(tree.events, { filePath: LOG_FILE, logBlackboard: true });
 
-    const { status } = await tree.run();
+    // Tick until the tree completes (RUNNING means inflight work is pending)
+    let status = await tree.tick();
+    while (status === NodeStatus.RUNNING) {
+      await new Promise(r => setTimeout(r, 1_000));
+      status = await tree.tick();
+    }
     expect(status).toBe(NodeStatus.SUCCESS);
     expect(tree.blackboard.get('total')).toBe(60);
   });
@@ -102,8 +114,15 @@ describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
       },
     });
 
-    const status = await agent.tick(ctx);
+    // First tick starts the API call and returns RUNNING
+    const status1 = await agent.tick(ctx);
+    expect(status1).toBe(NodeStatus.RUNNING);
 
+    // Wait for the API call to complete
+    await new Promise(r => setTimeout(r, 30_000));
+
+    // Second tick polls the completed result
+    const status = await agent.tick(ctx);
     expect(status).toBe(NodeStatus.FAILURE);
     expect(responseEvents).toHaveLength(1);
 
@@ -137,22 +156,38 @@ describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
       cache: true,
     });
 
-    // First tick — makes API call
+    // First tick — starts API call, returns RUNNING (inflight)
     const status1 = await agent.tick(ctx);
-    expect(status1).toBe(NodeStatus.SUCCESS);
-    expect(responseEvents).toHaveLength(1);
+    expect(status1).toBe(NodeStatus.RUNNING);
+    expect(responseEvents).toHaveLength(0);
 
-    // Second tick — uses cache, no new API call
+    // Wait for the API call to complete
+    await new Promise(r => setTimeout(r, 30_000));
+
+    // Second tick — polls completed result, caches it, returns SUCCESS
     const status2 = await agent.tick(ctx);
     expect(status2).toBe(NodeStatus.SUCCESS);
+    expect(responseEvents).toHaveLength(1);
+
+    // Third tick — cache hit, returns SUCCESS immediately (no new API call)
+    const status3 = await agent.tick(ctx);
+    expect(status3).toBe(NodeStatus.SUCCESS);
     expect(responseEvents).toHaveLength(1); // still 1
 
     // Reset clears cache
     agent.reset();
 
-    // Third tick — makes new API call
-    const status3 = await agent.tick(ctx);
-    expect(status3).toBe(NodeStatus.SUCCESS);
+    // Fourth tick — starts a new API call, returns RUNNING
+    const status4 = await agent.tick(ctx);
+    expect(status4).toBe(NodeStatus.RUNNING);
+    expect(responseEvents).toHaveLength(1); // still 1
+
+    // Wait for the second API call to complete
+    await new Promise(r => setTimeout(r, 30_000));
+
+    // Fifth tick — polls completed result, returns SUCCESS
+    const status5 = await agent.tick(ctx);
+    expect(status5).toBe(NodeStatus.SUCCESS);
     expect(responseEvents).toHaveLength(2); // now 2
   });
 });

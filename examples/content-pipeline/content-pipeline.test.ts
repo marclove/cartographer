@@ -14,7 +14,15 @@ describe('content-pipeline example', { timeout: 120_000 }, () => {
     stopLogging = createTreeLogger(tree.events, { filePath: LOG_FILE, logBlackboard: true });
     tree.blackboard.set('ticket', SAMPLE_TICKET);
 
-    const { status, blackboard } = await tree.run();
+    // Tick until the tree completes (RUNNING means inflight work is pending)
+    let status = await tree.tick();
+    while (status === NodeStatus.RUNNING) {
+      await new Promise(r => setTimeout(r, 1_000));
+      status = await tree.tick();
+    }
+    const blackboard = 'toRecord' in tree.blackboard && typeof (tree.blackboard as any).toRecord === 'function'
+      ? (tree.blackboard as any).toRecord()
+      : {};
 
     // Pipeline should complete successfully
     expect(status).toBe(NodeStatus.SUCCESS);

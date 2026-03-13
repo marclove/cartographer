@@ -56,6 +56,20 @@ describe('Agent Strategies Integration (Mocked SDK)', () => {
       strategy,
     });
 
+    const flush = () => new Promise<void>(r => setTimeout(r, 0));
+
+    // Each ActionNode takes one tick to start inflight and one flush+tick to
+    // resolve. With 3 children in sequence, we need 3 flush+tick cycles.
+    // Tick 1: child c starts inflight → RUNNING
+    expect(await sequence.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 2: child c resolves → SUCCESS; child a starts inflight → RUNNING
+    expect(await sequence.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 3: child a resolves → SUCCESS; child b starts inflight → RUNNING
+    expect(await sequence.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 4: child b resolves → SUCCESS; all children done → SUCCESS
     const status = await sequence.tick(ctx);
 
     expect(status).toBe(NodeStatus.SUCCESS);
@@ -87,7 +101,16 @@ describe('Agent Strategies Integration (Mocked SDK)', () => {
       }),
     });
 
-    // With successCount: 1 and 1 SUCCESS child (no RUNNING children), parallel should return SUCCESS
+    const flush = () => new Promise<void>(r => setTimeout(r, 0));
+
+    // Tick 1: all ActionNodes start inflight concurrently and return RUNNING
+    expect(await parallel.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // Let microtask promises resolve so all inflight results are captured
+    await flush();
+
+    // Tick 2: all ActionNodes poll their completed results; with successCount: 1
+    // and 1 SUCCESS child, parallel should return SUCCESS
     const status = await parallel.tick(ctx);
 
     expect(status).toBe(NodeStatus.SUCCESS);
