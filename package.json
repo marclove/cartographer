@@ -15,7 +15,9 @@
 		}
 	},
 	"scripts": {
-		"build": "tsc",
+		"build": "tsc && npm run dashboard:build",
+		"dashboard:build": "vite build --config dashboard/vite.config.ts",
+		"dashboard:dev": "vite dev --config dashboard/vite.config.ts",
 		"test": "vitest run --project unit",
 		"test:integration": "vitest run --project integration",
 		"test:live": "vitest run --project live",
@@ -37,8 +39,11 @@
 		"zod": "^4.3.6"
 	},
 	"devDependencies": {
+		"@sveltejs/vite-plugin-svelte": "^5.1.1",
 		"@types/uuid": "^10.0.0",
+		"svelte": "^5.53.11",
 		"typescript": "^5.9.3",
+		"vite": "^6.4.1",
 		"vitest": "^3.2.4"
 	}
 }
