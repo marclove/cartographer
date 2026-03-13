@@ -209,7 +209,7 @@ When a reactive composite determines that a RUNNING subtree should be preempted 
 
 ### 6. `BehaviorTree.start()` API
 
-The tree gains a `start()` method that starts a fixed-interval tick loop. (The existing `run()` method — which ticks once and returns a status/blackboard snapshot — is unchanged.)
+The tree gains a `start()` method that delegates to `TreeScheduler` with reactive-friendly defaults. This avoids duplicating interval management — TreeScheduler already handles interval ticking.
 
 ```typescript
 // Start ticking every second
@@ -224,17 +224,24 @@ tree.start({ intervalMs: 1000, signal: ac.signal });
 ac.abort(); // stops the loop
 ```
 
-**Behavior:**
+**Implementation:** `start()` creates a `TreeScheduler` with:
 
-- Ticks immediately on start (no initial delay), then every `intervalMs`.
-- If a tick is still in progress when the next interval fires, skip that tick. Ticks should be fast (polling and condition checks), so this is a safeguard.
-- No reset between ticks — state persists.
-- On `stop()`: cancels the interval, calls `tree.abort()` to clean up in-flight work.
+```typescript
+new TreeScheduler(tree, {
+  type: 'interval',
+  delayMs: intervalMs,
+  resetBetweenTicks: false,  // preserve RUNNING state across ticks
+  skipOnOverlap: true,       // NEW: skip tick if previous is still running
+  abortOnStop: true,         // NEW: call tree.abort() when scheduler stops
+});
+```
 
-**Events:**
+**TreeScheduler additions:**
 
-- Existing `tree:tick` fires after each tick with status and duration.
-- New `tree:tick:skipped` event (payload: `{ timestamp: number }`) when a tick is skipped due to overlap.
+- **`skipOnOverlap: boolean`** (default `false`) — When `true`, if the previous tick hasn't completed when the next interval fires, skip the tick and emit a `tree:tick:skipped` event (payload: `{ timestamp: number }`). When `false`, current behavior (wait for tick to complete before starting the next delay).
+- **`abortOnStop: boolean`** (default `false`) — When `true`, calls `tree.abort()` on `stop()` to clean up in-flight work. When `false`, current behavior (stop scheduling without aborting).
+
+These are small, backwards-compatible additions to TreeScheduler. Existing scheduler usage is unaffected.
 
 **Stop conditions** are handled in userland via event listeners:
 
@@ -244,7 +251,7 @@ tree.events.on('tree:tick', ({ status }) => {
 });
 ```
 
-**Existing `run()` method** remains unchanged (single tick, returns `{ status, blackboard }`). **Existing scheduler** remains unchanged for cron and one-shot use cases.
+**Existing `run()` method** remains unchanged (single tick, returns `{ status, blackboard }`).
 
 Calling `start()` while a loop is already running throws an error.
 
@@ -286,13 +293,9 @@ The following changes to `src/types.ts` are required:
 
 **`AgentNode`:** Same inflight fields as ActionNode.
 
-**`BehaviorTree`:** Add `start(options: { intervalMs: number; signal?: AbortSignal }): TickLoopHandle`.
+**`TreeSchedulerConfig`:** Add optional fields `skipOnOverlap?: boolean` and `abortOnStop?: boolean`.
 
-```typescript
-interface TickLoopHandle {
-  stop(): void;
-}
-```
+**`BehaviorTree`:** Add `start(options: { intervalMs: number; signal?: AbortSignal }): TickLoopHandle`. Internally creates a `TreeScheduler`. Returns the scheduler's existing stop handle.
 
 Calling `start()` while a loop is already running throws an error.
 
