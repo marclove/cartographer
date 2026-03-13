@@ -41,14 +41,16 @@ async function collectSSEEvents(
         }
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
+        let remainder = '';
 
         try {
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
-            const text = decoder.decode(value, { stream: true });
-            const lines = text.split('\n');
+            remainder += decoder.decode(value, { stream: true });
+            const lines = remainder.split('\n');
+            remainder = lines.pop()!; // keep incomplete trailing line for next chunk
 
             for (const line of lines) {
               if (line.startsWith('id:')) {
@@ -248,32 +250,31 @@ describe('GET /events — Last-Event-ID reconnection', () => {
   });
 
   it('sends a fresh snapshot when Last-Event-ID is before the buffer window', async () => {
-    // Fill the buffer with events by ticking a few times
+    // Close the default server and create one with a tiny buffer to force eviction
+    await server.close();
+    tree = createTree();
+    server = new DashboardServer(tree, { port: 0, eventBufferCapacity: 2 });
+    ({ port } = await server.start());
+
+    // Tick multiple times to generate events that overflow the 2-event buffer
     await tree.tick();
+    tree.reset();
+    await tree.tick();
+    tree.reset();
     await tree.tick();
 
-    // Get the current oldest buffered ID by connecting without Last-Event-ID
-    const initial = await collectSSEEvents(`http://localhost:${port}/events`, 1);
-    const currentId = Number(initial[0].id!);
-
-    // Use an ID that is older than the oldest buffered event to trigger a buffer gap.
-    // With a small buffer and many events, ID 0 should be before the window.
-    // The EventBuffer.getEventsSince returns null when lastId < oldestId.
-    // Force a gap by using a very small ID (1) which is before the oldest buffered event
-    // when we have enough events to overflow a small buffer. Since default capacity is 500
-    // which is plenty, use an ID that can't exist: negative / zero tricks won't work here.
-    //
-    // Instead, we test that when getEventsSince returns null, the server re-sends a snapshot.
-    // We achieve this by verifying the reconnect sends snapshot + replayed-events normally,
-    // and separately verify that a stale (pre-existing event) ID just gives replays.
-    //
-    // The key property: connecting with Last-Event-ID always gets the initial snapshot first.
+    // Connect with Last-Event-ID = 1, which has been evicted from the tiny buffer.
+    // getEventsSince(1) returns null → server sends a second snapshot instead of replays.
     const reconnected = await collectSSEEvents(
       `http://localhost:${port}/events`,
-      1,
-      { 'Last-Event-ID': String(currentId) },
+      2,
+      { 'Last-Event-ID': '1' },
     );
-    // Even with a recent Last-Event-ID, the initial snapshot is always sent
+
+    // First event is the initial snapshot (always sent)
     expect(reconnected[0].event).toBe('snapshot');
+    // Second event should also be a snapshot (the buffer-gap re-snapshot),
+    // not a replayed event like node:enter
+    expect(reconnected[1].event).toBe('snapshot');
   });
 });
