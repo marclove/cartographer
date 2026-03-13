@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import Header from './components/Header.svelte';
   import TreePanel from './components/TreePanel.svelte';
+  import EventTimeline from './components/EventTimeline.svelte';
   import './styles/theme.css';
 
   let selectedNodeId = $derived(getSelectedNodeId());
@@ -17,10 +18,7 @@
   <Header />
   <main class="dash-body">
     <TreePanel />
-    <div class="panel timeline-panel">
-      <div class="panel-header"><div class="panel-title">Events</div></div>
-      <div class="panel-body">Timeline placeholder</div>
-    </div>
+    <EventTimeline />
     <div class="panel blackboard-panel">
       <div class="panel-header"><div class="panel-title">Blackboard</div></div>
       <div class="panel-body">Blackboard placeholder</div>
@@ -46,8 +44,7 @@
     flex: 1;
     overflow: hidden;
   }
-.timeline-panel { border-right: 1px solid var(--border); }
-  .blackboard-panel { border-right: none; }
+.blackboard-panel { border-right: none; }
   .drawer {
     border-top: 1px solid var(--border);
     background: var(--bg-surface);
