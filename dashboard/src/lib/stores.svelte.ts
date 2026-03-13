@@ -203,7 +203,11 @@ export function connect(): void {
     },
 
     'node:enter'(data, id) {
-      const next = new Map(nodeStatuses);
+      // When the root node is entered, a new tick is starting — clear stale
+      // statuses from the previous tick so indicators don't mix across ticks.
+      const next = (treeRoot && data.node.id === treeRoot.id)
+        ? new Map<string, NodeStatus>()
+        : new Map(nodeStatuses);
       next.set(data.node.id, 'running');
       nodeStatuses = next;
       pushEvent('node:enter', data, id);
@@ -286,9 +290,8 @@ export function connect(): void {
     'agent:error'(data, id) {
       pushEvent('agent:error', data, id);
     },
-    'agent:message'(data, id) {
-      pushEvent('agent:message', data, id);
-    },
+    // agent:message intentionally ignored — duplicates the specialized
+    // agent:thinking, agent:text, agent:tool_use, and agent:response events.
     'agent:tool_progress'(data, id) {
       pushEvent('agent:tool_progress', data, id);
     },
@@ -313,4 +316,22 @@ export function disconnect(): void {
     cleanup = null;
   }
   connectionState = 'disconnected';
+}
+
+/** Reset all store state. Exported for tests only. */
+export function _resetForTest(): void {
+  disconnect();
+  connectionState = 'connecting';
+  treeName = '';
+  treeRoot = null;
+  nodeStatuses = new Map();
+  tickCount = 0;
+  lastStatus = null;
+  lastDurationMs = null;
+  events = [];
+  activeFilters = new Set(['nodes', 'agent', 'blackboard', 'strategy']);
+  blackboard = {};
+  recentlyUpdatedKeys = new Set();
+  selectedNodeId = null;
+  nodeDetail = null;
 }

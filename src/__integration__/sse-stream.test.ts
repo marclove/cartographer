@@ -160,9 +160,9 @@ describe('GET /events — snapshot on connect', () => {
 describe('GET /events — live event streaming', () => {
   it('streams tree events to connected clients after a tick', async () => {
     // Start collecting enough events to capture the full tick lifecycle:
-    // snapshot + node:enter(root) + node:enter(do-work) +
-    // node:exit(do-work) + node:exit(root) + tree:tick = 6 events
-    const eventsPromise = collectSSEEvents(`http://localhost:${port}/events`, 6);
+    // snapshot + node:enter(root) + node:enter(do-work) + blackboard:write +
+    // node:exit(do-work) + node:exit(root) + tree:tick = 7 events
+    const eventsPromise = collectSSEEvents(`http://localhost:${port}/events`, 7);
 
     // Give the SSE connection a moment to establish, then tick
     await new Promise((r) => setTimeout(r, 50));

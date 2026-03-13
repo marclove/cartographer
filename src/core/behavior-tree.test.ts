@@ -210,6 +210,47 @@ describe('BehaviorTree', () => {
     expect(receivedContext!.onElicitation).toBe(handler);
   });
 
+  it('emits blackboard:write when a node writes to the blackboard during a tick', async () => {
+    const tree = new BehaviorTree({
+      name: 'test-tree',
+      root: new ActionNode({
+        name: 'writer',
+        action: (ctx) => {
+          ctx.blackboard.set('key', 'value');
+          return NodeStatus.SUCCESS;
+        },
+      }),
+    });
+    const spy = vi.fn();
+    tree.events.on('blackboard:write', spy);
+
+    await tree.tick();
+
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy).toHaveBeenCalledWith({ key: 'key', value: 'value', source: 'blackboard' });
+  });
+
+  it('emits blackboard:write with prefixed key for scoped writes', async () => {
+    const tree = new BehaviorTree({
+      name: 'test-tree',
+      root: new ActionNode({
+        name: 'writer',
+        action: (ctx) => {
+          const scoped = ctx.blackboard.scoped('agent');
+          scoped.set('result', 42);
+          return NodeStatus.SUCCESS;
+        },
+      }),
+    });
+    const spy = vi.fn();
+    tree.events.on('blackboard:write', spy);
+
+    await tree.tick();
+
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy).toHaveBeenCalledWith({ key: 'agent:result', value: 42, source: 'blackboard' });
+  });
+
   it('nodes share the same blackboard through context', async () => {
     const tree = new BehaviorTree({
       name: 'test-tree',

@@ -30,6 +30,13 @@
 
   let container: HTMLDivElement;
 
+  // Track which event is expanded
+  let expandedEventId = $state<number | null>(null);
+
+  function toggleExpand(id: number) {
+    expandedEventId = expandedEventId === id ? null : id;
+  }
+
   // Auto-scroll to bottom when new events arrive
   $effect(() => {
     // Access filteredEvents.length to trigger on change
@@ -50,7 +57,7 @@
     return `${min}:${sec}.${ms}`;
   }
 
-  function formatEventContent(e: TimelineEvent): string {
+  function formatEventSummary(e: TimelineEvent): string {
     const d = e.data as Record<string, unknown>;
     switch (e.event) {
       case 'node:enter':
@@ -71,6 +78,21 @@
         return `${d['tool'] ?? ''}`;
       case 'agent:response':
         return d['cost'] != null ? `cost: $${Number(d['cost']).toFixed(4)}` : 'completed';
+      case 'agent:init': {
+        const tools = (d['tools'] as unknown[])?.length ?? 0;
+        const mcps = (d['mcpServers'] as unknown[])?.length ?? 0;
+        return `model: ${d['model'] ?? ''}, ${tools} tools, ${mcps} MCP servers`;
+      }
+      case 'agent:status':
+        return `${d['status'] ?? ''}`;
+      case 'agent:prompt':
+        return `${d['prompt'] ?? ''}`;
+      case 'agent:tool_progress': {
+        const elapsed = d['elapsedSeconds'] != null ? `${d['elapsedSeconds']}s` : '';
+        return `${d['toolName'] ?? ''} ${elapsed}`;
+      }
+      case 'agent:rate_limit':
+        return JSON.stringify(d['info'] ?? '');
       case 'agent:error':
         return `${d['subtype'] ?? ''}: ${(d['errors'] as string[])?.join(', ') ?? ''}`;
       case 'blackboard:write':
@@ -85,8 +107,12 @@
       case 'strategy:decision':
         return `${d['strategy'] ?? ''}`;
       default:
-        return JSON.stringify(d).slice(0, 120);
+        return JSON.stringify(d);
     }
+  }
+
+  function formatEventDetail(e: TimelineEvent): string {
+    return JSON.stringify(e.data, null, 2);
   }
 </script>
 
@@ -104,10 +130,21 @@
   </div>
   <div class="panel-body" bind:this={container}>
     {#each filteredEvents as event (event.id)}
-      <div class="event-row">
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="event-row"
+        class:expanded={expandedEventId === event.id}
+        onclick={() => toggleExpand(event.id)}
+      >
         <div class="event-ts">{formatTimestamp(event.timestamp)}</div>
         <div class="event-tag-col"><EventTag event={event.event} /></div>
-        <div class="event-content">{formatEventContent(event)}</div>
+        <div class="event-content">
+          <div class="event-summary">{formatEventSummary(event)}</div>
+          {#if expandedEventId === event.id}
+            <pre class="event-detail">{formatEventDetail(event)}</pre>
+          {/if}
+        </div>
       </div>
     {/each}
     {#if filteredEvents.length === 0}
@@ -149,6 +186,13 @@
     border-bottom: 1px solid #111927;
     align-items: start;
     font-size: 12.5px;
+    cursor: pointer;
+  }
+  .event-row:hover {
+    background: var(--bg-hover);
+  }
+  .event-row.expanded {
+    background: var(--bg-hover);
   }
   .event-ts {
     font-family: var(--font-mono);
@@ -157,9 +201,26 @@
   }
   .event-content {
     color: var(--text-muted);
+    min-width: 0;
+  }
+  .event-summary {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .event-detail {
+    margin: 8px 0 4px;
+    padding: 8px 10px;
+    background: var(--bg-base);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 300px;
+    overflow-y: auto;
   }
   .empty {
     color: var(--text-faint);

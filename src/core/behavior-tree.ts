@@ -2,6 +2,7 @@ import { NodeStatus } from '../types.js';
 import type { BehaviorTreeConfig, BTreeNode, Blackboard, TreeContext, TreeEvents } from '../types.js';
 import { EventEmitter } from './event-emitter.js';
 import { InMemoryBlackboard } from './blackboard.js';
+import { ObservableBlackboard } from './observable-blackboard.js';
 import { BaseNode } from '../nodes/base.js';
 
 /**
@@ -126,7 +127,7 @@ export class BehaviorTree {
    */
   async tick(): Promise<NodeStatus> {
     const context: TreeContext = {
-      blackboard: this.blackboard,
+      blackboard: new ObservableBlackboard(this.blackboard, this.events),
       events: this.events,
       signal: this.abortController.signal,
     };
