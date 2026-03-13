@@ -258,6 +258,7 @@ export function createStrategyMessageHandler(
           node,
           result: output,
           cost: m.total_cost_usd,
+          modelUsage: m.modelUsage,
         });
       } else {
         events.emit('agent:error', {
@@ -266,6 +267,7 @@ export function createStrategyMessageHandler(
           errors: m.errors,
           permissionDenials: m.permission_denials,
           cost: m.total_cost_usd,
+          modelUsage: m.modelUsage,
         });
       }
     }

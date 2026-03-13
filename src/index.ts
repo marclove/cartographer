@@ -25,6 +25,7 @@ export type {
   BehaviorTreeConfig,
   SchedulerConfig,
   SchedulerEvents,
+  ModelUsage,
 } from './types.js';
 
 // Core

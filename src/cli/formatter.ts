@@ -1,4 +1,4 @@
-import type { TypedEventEmitter, TreeEvents, BTreeNode } from '../types.js';
+import type { TypedEventEmitter, TreeEvents, BTreeNode, ModelUsage } from '../types.js';
 
 export interface FormatterOptions {
   /** Emit events as JSON lines (NDJSON) instead of formatted text. */
@@ -77,12 +77,12 @@ function createJsonFormatter(
     write({ event: 'agent:tool_use', node: node.name, tool, input });
   });
 
-  on('agent:response', ({ node, result, cost }) => {
-    write({ event: 'agent:response', node: node.name, result, cost });
+  on('agent:response', ({ node, result, cost, modelUsage }) => {
+    write({ event: 'agent:response', node: node.name, result, cost, modelUsage });
   });
 
-  on('agent:error', ({ node, subtype, errors: errs, cost }) => {
-    write({ event: 'agent:error', node: node.name, subtype, errors: errs, cost });
+  on('agent:error', ({ node, subtype, errors: errs, cost, modelUsage }) => {
+    write({ event: 'agent:error', node: node.name, subtype, errors: errs, cost, modelUsage });
   });
 
   on('tree:tick', ({ tree, status, durationMs }) => {
@@ -139,6 +139,7 @@ function createTextFormatter(
   const cleanup: Array<() => void> = [];
   const activeNodes: BTreeNode[] = [];
   const nodeDepths = new Map<BTreeNode, number>();
+  const modelUsage = new Map<string, ModelUsage>();
 
   function on<K extends keyof TreeEvents & string>(
     event: K,
@@ -221,7 +222,12 @@ function createTextFormatter(
     });
   }
 
-  on('agent:error', ({ node, subtype }) => {
+  on('agent:response', ({ modelUsage: mu }) => {
+    if (mu) mergeModelUsage(modelUsage, mu);
+  });
+
+  on('agent:error', ({ node, subtype, modelUsage: mu }) => {
+    if (mu) mergeModelUsage(modelUsage, mu);
     const d = currentDepth(node) + 1;
     print(`${pad(d)}✗ [agent-error] ${node.name}: ${subtype}`);
   });
@@ -229,6 +235,11 @@ function createTextFormatter(
   on('tree:tick', ({ tree, status, durationMs }) => {
     print('');
     print(`Tree: ${tree} — ${status.toUpperCase()} (${round(durationMs)}ms)`);
+    if (status === 'success' || status === 'failure') {
+      for (const line of formatUsageSummary(modelUsage)) {
+        print(line);
+      }
+    }
   });
 
   on('tree:abort', ({ tree }) => {
@@ -240,4 +251,58 @@ function createTextFormatter(
 
 function round(ms: number): number {
   return Math.round(ms);
+}
+
+function mergeModelUsage(
+  accumulated: Map<string, ModelUsage>,
+  incoming: Record<string, ModelUsage>,
+): void {
+  for (const [model, usage] of Object.entries(incoming)) {
+    const existing = accumulated.get(model);
+    if (existing) {
+      existing.inputTokens += usage.inputTokens;
+      existing.outputTokens += usage.outputTokens;
+      existing.cacheReadInputTokens += usage.cacheReadInputTokens;
+      existing.cacheCreationInputTokens += usage.cacheCreationInputTokens;
+      existing.webSearchRequests += usage.webSearchRequests;
+      existing.costUSD += usage.costUSD;
+      existing.contextWindow = Math.max(existing.contextWindow, usage.contextWindow);
+      existing.maxOutputTokens = Math.max(existing.maxOutputTokens, usage.maxOutputTokens);
+    } else {
+      accumulated.set(model, { ...usage });
+    }
+  }
+}
+
+function formatUsageSummary(usage: Map<string, ModelUsage>): string[] {
+  if (usage.size === 0) return [];
+
+  const lines: string[] = ['', 'Usage:'];
+  let totalCost = 0;
+
+  for (const [model, u] of usage) {
+    totalCost += u.costUSD;
+    lines.push(`  ${model}`);
+
+    const cacheParts: string[] = [];
+    if (u.cacheReadInputTokens > 0) cacheParts.push(`cache read: ${fmt(u.cacheReadInputTokens)}`);
+    if (u.cacheCreationInputTokens > 0) cacheParts.push(`cache write: ${fmt(u.cacheCreationInputTokens)}`);
+    const cacheStr = cacheParts.length > 0 ? ` (${cacheParts.join(', ')})` : '';
+    lines.push(`    Input:  ${fmt(u.inputTokens)} tokens${cacheStr}`);
+
+    lines.push(`    Output: ${fmt(u.outputTokens)} tokens`);
+
+    if (u.webSearchRequests > 0) {
+      lines.push(`    Web searches: ${fmt(u.webSearchRequests)}`);
+    }
+
+    lines.push(`    Cost:   $${u.costUSD.toFixed(4)}`);
+  }
+
+  lines.push(`  Total: $${totalCost.toFixed(4)}`);
+  return lines;
+}
+
+function fmt(n: number): string {
+  return n.toLocaleString();
 }

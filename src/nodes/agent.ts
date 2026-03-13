@@ -247,6 +247,7 @@ export class AgentNode extends BaseNode {
               node: this,
               result: output,
               cost,
+              modelUsage: msg.modelUsage,
             });
 
             if (output !== undefined) {
@@ -275,6 +276,7 @@ export class AgentNode extends BaseNode {
             errors: msg.errors,
             permissionDenials: msg.permission_denials,
             cost,
+            modelUsage: msg.modelUsage,
           });
           return NodeStatus.FAILURE;
         }

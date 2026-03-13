@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createFormatter } from './formatter.js';
 import { EventEmitter } from '../core/event-emitter.js';
-import type { TreeEvents } from '../types.js';
+import type { TreeEvents, ModelUsage } from '../types.js';
 import { NodeStatus } from '../types.js';
 
 function makeNode(name: string, id = `${name}-id`, constructorName = 'ActionNode') {
@@ -201,6 +201,206 @@ describe('createFormatter', () => {
       const lines = stdoutLines();
       expect(lines[0]).toContain('my-tree');
       expect(lines[0]).toContain('SUCCESS');
+    });
+  });
+
+  // --- Usage tracking ---
+
+  function makeUsage(overrides: Partial<ModelUsage> = {}): ModelUsage {
+    return {
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
+      webSearchRequests: 0,
+      costUSD: 0.005,
+      contextWindow: 200000,
+      maxOutputTokens: 8192,
+      ...overrides,
+    };
+  }
+
+  describe('usage tracking (text mode)', () => {
+    it('prints usage summary on terminal success tick', () => {
+      createFormatter(events);
+      events.emit('agent:response', {
+        node: makeNode('agent1'),
+        result: 'ok',
+        cost: 0.005,
+        modelUsage: { 'claude-sonnet-4-5-20250514': makeUsage() },
+      });
+      events.emit('tree:tick', { tree: 'my-tree', status: NodeStatus.SUCCESS, durationMs: 100 });
+
+      const output = stdoutLines().join('');
+      expect(output).toContain('Usage:');
+      expect(output).toContain('claude-sonnet-4-5-20250514');
+      expect(output).toContain('Input:');
+      expect(output).toContain('Output:');
+      expect(output).toContain('$0.0050');
+      expect(output).toContain('Total:');
+    });
+
+    it('prints usage summary on terminal failure tick', () => {
+      createFormatter(events);
+      events.emit('agent:response', {
+        node: makeNode('agent1'),
+        result: 'ok',
+        modelUsage: { 'claude-sonnet-4-5-20250514': makeUsage() },
+      });
+      events.emit('tree:tick', { tree: 'my-tree', status: NodeStatus.FAILURE, durationMs: 100 });
+
+      const output = stdoutLines().join('');
+      expect(output).toContain('Usage:');
+    });
+
+    it('does not print usage on RUNNING tick', () => {
+      createFormatter(events);
+      events.emit('agent:response', {
+        node: makeNode('agent1'),
+        result: 'ok',
+        modelUsage: { 'claude-sonnet-4-5-20250514': makeUsage() },
+      });
+      events.emit('tree:tick', { tree: 'my-tree', status: NodeStatus.RUNNING, durationMs: 100 });
+
+      const output = stdoutLines().join('');
+      expect(output).not.toContain('Usage:');
+    });
+
+    it('accumulates usage across multiple responses from the same model', () => {
+      createFormatter(events);
+      const usage = makeUsage({ inputTokens: 100, outputTokens: 50, costUSD: 0.005 });
+      events.emit('agent:response', {
+        node: makeNode('agent1'),
+        result: 'ok',
+        modelUsage: { 'claude-sonnet-4-5-20250514': usage },
+      });
+      events.emit('agent:response', {
+        node: makeNode('agent2'),
+        result: 'ok',
+        modelUsage: { 'claude-sonnet-4-5-20250514': makeUsage({ inputTokens: 200, outputTokens: 100, costUSD: 0.01 }) },
+      });
+      events.emit('tree:tick', { tree: 'my-tree', status: NodeStatus.SUCCESS, durationMs: 100 });
+
+      const output = stdoutLines().join('');
+      expect(output).toContain('$0.0150'); // 0.005 + 0.01
+    });
+
+    it('shows per-model breakdown for multiple models', () => {
+      createFormatter(events);
+      events.emit('agent:response', {
+        node: makeNode('agent1'),
+        result: 'ok',
+        modelUsage: {
+          'claude-sonnet-4-5-20250514': makeUsage({ costUSD: 0.005 }),
+          'claude-haiku-4-5-20251001': makeUsage({ costUSD: 0.001 }),
+        },
+      });
+      events.emit('tree:tick', { tree: 'my-tree', status: NodeStatus.SUCCESS, durationMs: 100 });
+
+      const output = stdoutLines().join('');
+      expect(output).toContain('claude-sonnet-4-5-20250514');
+      expect(output).toContain('claude-haiku-4-5-20251001');
+      expect(output).toContain('$0.0060'); // total
+    });
+
+    it('displays cache info when present', () => {
+      createFormatter(events);
+      events.emit('agent:response', {
+        node: makeNode('agent1'),
+        result: 'ok',
+        modelUsage: {
+          'claude-sonnet-4-5-20250514': makeUsage({ cacheReadInputTokens: 500, cacheCreationInputTokens: 200 }),
+        },
+      });
+      events.emit('tree:tick', { tree: 'my-tree', status: NodeStatus.SUCCESS, durationMs: 100 });
+
+      const output = stdoutLines().join('');
+      expect(output).toContain('cache read:');
+      expect(output).toContain('cache write:');
+    });
+
+    it('omits cache info when zero', () => {
+      createFormatter(events);
+      events.emit('agent:response', {
+        node: makeNode('agent1'),
+        result: 'ok',
+        modelUsage: { 'claude-sonnet-4-5-20250514': makeUsage() },
+      });
+      events.emit('tree:tick', { tree: 'my-tree', status: NodeStatus.SUCCESS, durationMs: 100 });
+
+      const output = stdoutLines().join('');
+      expect(output).not.toContain('cache read:');
+      expect(output).not.toContain('cache write:');
+    });
+
+    it('displays web searches when present', () => {
+      createFormatter(events);
+      events.emit('agent:response', {
+        node: makeNode('agent1'),
+        result: 'ok',
+        modelUsage: { 'claude-sonnet-4-5-20250514': makeUsage({ webSearchRequests: 3 }) },
+      });
+      events.emit('tree:tick', { tree: 'my-tree', status: NodeStatus.SUCCESS, durationMs: 100 });
+
+      const output = stdoutLines().join('');
+      expect(output).toContain('Web searches:');
+    });
+
+    it('does not print usage when no agent responses occurred', () => {
+      createFormatter(events);
+      events.emit('tree:tick', { tree: 'my-tree', status: NodeStatus.SUCCESS, durationMs: 100 });
+
+      const output = stdoutLines().join('');
+      expect(output).not.toContain('Usage:');
+    });
+
+    it('accumulates usage from agent:error events', () => {
+      createFormatter(events);
+      events.emit('agent:error', {
+        node: makeNode('agent1'),
+        subtype: 'max_turns',
+        modelUsage: { 'claude-sonnet-4-5-20250514': makeUsage({ costUSD: 0.01 }) },
+      });
+      events.emit('tree:tick', { tree: 'my-tree', status: NodeStatus.FAILURE, durationMs: 100 });
+
+      const output = stdoutLines().join('');
+      expect(output).toContain('Usage:');
+      expect(output).toContain('$0.0100');
+    });
+  });
+
+  describe('usage tracking (JSON mode)', () => {
+    it('includes modelUsage in agent:response NDJSON', () => {
+      createFormatter(events, { json: true });
+      const mu = { 'claude-sonnet-4-5-20250514': makeUsage() };
+      events.emit('agent:response', { node: makeNode('agent1'), result: 'ok', cost: 0.005, modelUsage: mu });
+
+      const parsed = JSON.parse(stdoutLines()[0]);
+      expect(parsed.modelUsage).toEqual(mu);
+    });
+
+    it('includes modelUsage in agent:error NDJSON', () => {
+      createFormatter(events, { json: true });
+      const mu = { 'claude-sonnet-4-5-20250514': makeUsage() };
+      events.emit('agent:error', { node: makeNode('agent1'), subtype: 'max_turns', cost: 0.005, modelUsage: mu });
+
+      const parsed = JSON.parse(stdoutLines()[0]);
+      expect(parsed.modelUsage).toEqual(mu);
+    });
+  });
+
+  describe('usage tracking (quiet mode)', () => {
+    it('does not print usage summary', () => {
+      createFormatter(events, { quiet: true });
+      events.emit('agent:response', {
+        node: makeNode('agent1'),
+        result: 'ok',
+        modelUsage: { 'claude-sonnet-4-5-20250514': makeUsage() },
+      });
+      events.emit('tree:tick', { tree: 'my-tree', status: NodeStatus.SUCCESS, durationMs: 100 });
+
+      const output = stdoutLines().join('');
+      expect(output).not.toContain('Usage:');
     });
   });
 

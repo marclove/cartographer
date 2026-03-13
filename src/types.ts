@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import type { Options, OnElicitation, ElicitationRequest } from '@anthropic-ai/claude-agent-sdk';
+import type { Options, OnElicitation, ElicitationRequest, ModelUsage } from '@anthropic-ai/claude-agent-sdk';
 
 // --- Node Status ---
 
@@ -137,6 +137,8 @@ export interface Blackboard {
  * });
  * ```
  */
+export type { ModelUsage };
+
 export interface TreeEvents {
   'node:enter': { node: BTreeNode; context: TreeContext };
   'node:exit': { node: BTreeNode; status: NodeStatus; context: TreeContext; durationMs: number };
@@ -145,13 +147,14 @@ export interface TreeEvents {
   'agent:thinking': { node: BTreeNode; thinking: string };
   'agent:text': { node: BTreeNode; text: string };
   'agent:tool_use': { node: BTreeNode; tool: string; input: unknown };
-  'agent:response': { node: BTreeNode; result: unknown; cost?: number };
+  'agent:response': { node: BTreeNode; result: unknown; cost?: number; modelUsage?: Record<string, ModelUsage> };
   'agent:error': {
     node: BTreeNode;
     subtype: string;
     errors?: string[];
     permissionDenials?: unknown;
     cost?: number;
+    modelUsage?: Record<string, ModelUsage>;
   };
   'agent:stream': { node: BTreeNode; event: unknown };
   'agent:message': { node: BTreeNode; message: unknown };
