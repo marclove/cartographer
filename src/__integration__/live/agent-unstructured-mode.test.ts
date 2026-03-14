@@ -156,38 +156,36 @@ describe('Agent Unstructured Mode Integration', { timeout: 90_000 }, () => {
       cache: true,
     });
 
-    // First tick — starts API call, returns RUNNING (inflight)
-    const status1 = await agent.tick(ctx);
-    expect(status1).toBe(NodeStatus.RUNNING);
+    // Poll until the first API call completes
+    let status = await agent.tick(ctx);
+    expect(status).toBe(NodeStatus.RUNNING);
     expect(responseEvents).toHaveLength(0);
 
-    // Wait for the API call to complete
-    await new Promise(r => setTimeout(r, 30_000));
-
-    // Second tick — polls completed result, caches it, returns SUCCESS
-    const status2 = await agent.tick(ctx);
-    expect(status2).toBe(NodeStatus.SUCCESS);
+    while (status === NodeStatus.RUNNING) {
+      await new Promise(r => setTimeout(r, 200));
+      status = await agent.tick(ctx);
+    }
+    expect(status).toBe(NodeStatus.SUCCESS);
     expect(responseEvents).toHaveLength(1);
 
-    // Third tick — cache hit, returns SUCCESS immediately (no new API call)
-    const status3 = await agent.tick(ctx);
-    expect(status3).toBe(NodeStatus.SUCCESS);
+    // Cache hit — returns SUCCESS immediately (no new API call)
+    const cachedStatus = await agent.tick(ctx);
+    expect(cachedStatus).toBe(NodeStatus.SUCCESS);
     expect(responseEvents).toHaveLength(1); // still 1
 
     // Reset clears cache
     agent.reset();
 
-    // Fourth tick — starts a new API call, returns RUNNING
-    const status4 = await agent.tick(ctx);
-    expect(status4).toBe(NodeStatus.RUNNING);
+    // Poll until the second API call completes
+    status = await agent.tick(ctx);
+    expect(status).toBe(NodeStatus.RUNNING);
     expect(responseEvents).toHaveLength(1); // still 1
 
-    // Wait for the second API call to complete
-    await new Promise(r => setTimeout(r, 30_000));
-
-    // Fifth tick — polls completed result, returns SUCCESS
-    const status5 = await agent.tick(ctx);
-    expect(status5).toBe(NodeStatus.SUCCESS);
+    while (status === NodeStatus.RUNNING) {
+      await new Promise(r => setTimeout(r, 200));
+      status = await agent.tick(ctx);
+    }
+    expect(status).toBe(NodeStatus.SUCCESS);
     expect(responseEvents).toHaveLength(2); // now 2
   });
 });
