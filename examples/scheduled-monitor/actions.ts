@@ -55,11 +55,15 @@ export function updateHistory(ctx: TreeContext): NodeStatus {
 }
 
 /**
- * Increments the tick counter. Used for throttling status updates.
+ * Increments the cycle counter. Used for throttling status updates.
+ *
+ * In the reactive tick model, this action runs once per complete tree
+ * cycle (not once per raw tick) because the sequence caches its terminal
+ * result until the cycle ends.
  */
-export function incrementTickCount(ctx: TreeContext): NodeStatus {
-  const count = ctx.blackboard.get<number>('monitor:tickCount') ?? 0;
-  ctx.blackboard.set('monitor:tickCount', count + 1);
+export function incrementCycleCount(ctx: TreeContext): NodeStatus {
+  const count = ctx.blackboard.get<number>('monitor:cycleCount') ?? 0;
+  ctx.blackboard.set('monitor:cycleCount', count + 1);
   return NodeStatus.SUCCESS;
 }
 
@@ -81,32 +85,32 @@ export function noActiveIncident(ctx: TreeContext): boolean {
 }
 
 /**
- * Guard condition: allows a status update only if enough ticks have
+ * Guard condition: allows a status update only if enough cycles have
  * passed since the last update. Prevents flooding during sustained outages.
  */
 export function enoughTimeSinceLastUpdate(ctx: TreeContext): boolean {
-  const lastUpdateTick = ctx.blackboard.get<number>('incident:lastUpdateTick') ?? 0;
-  const currentTick = ctx.blackboard.get<number>('monitor:tickCount') ?? 0;
-  return currentTick - lastUpdateTick >= 3;
+  const lastUpdateCycle = ctx.blackboard.get<number>('incident:lastUpdateCycle') ?? 0;
+  const currentCycle = ctx.blackboard.get<number>('monitor:cycleCount') ?? 0;
+  return currentCycle - lastUpdateCycle >= 3;
 }
 
 // --- Incident lifecycle actions ---
 
 /**
- * Records that the current tick is part of an active incident.
+ * Records the current cycle as part of an active incident.
  * Creates the incident on the first call; updates on subsequent calls.
  */
-export function recordIncidentTick(ctx: TreeContext): NodeStatus {
-  const tick = ctx.blackboard.get<number>('monitor:tickCount') ?? 0;
+export function recordIncidentCycle(ctx: TreeContext): NodeStatus {
+  const cycle = ctx.blackboard.get<number>('monitor:cycleCount') ?? 0;
   const assessment = ctx.blackboard.get<HealthAssessment>('assess-health:output');
 
   if (!ctx.blackboard.has('incident:startTime')) {
     ctx.blackboard.set('incident:startTime', new Date().toISOString());
-    ctx.blackboard.set('incident:createdOnTick', tick);
+    ctx.blackboard.set('incident:createdOnCycle', cycle);
     ctx.blackboard.set('incident:updates', []);
-    console.log(`  [Tick ${tick}] Incident opened (assessment: ${assessment?.status})`);
+    console.log(`  [Cycle ${cycle}] Incident opened (assessment: ${assessment?.status})`);
   } else {
-    console.log(`  [Tick ${tick}] Incident ongoing (assessment: ${assessment?.status})`);
+    console.log(`  [Cycle ${cycle}] Incident ongoing (assessment: ${assessment?.status})`);
   }
 
   // Track status update outputs for the prompt context.
@@ -119,7 +123,7 @@ export function recordIncidentTick(ctx: TreeContext): NodeStatus {
     if (statusUpdate.update !== lastAccumulated) {
       updates.push(statusUpdate.update);
       ctx.blackboard.set('incident:updates', updates);
-      ctx.blackboard.set('incident:lastUpdateTick', ctx.blackboard.get<number>('monitor:tickCount') ?? 0);
+      ctx.blackboard.set('incident:lastUpdateCycle', ctx.blackboard.get<number>('monitor:cycleCount') ?? 0);
     }
   }
 
@@ -130,12 +134,12 @@ export function recordIncidentTick(ctx: TreeContext): NodeStatus {
  * Clears all incident state from the blackboard after recovery.
  */
 export function clearIncidentState(ctx: TreeContext): NodeStatus {
-  const tick = ctx.blackboard.get<number>('monitor:tickCount') ?? 0;
-  console.log(`  [Tick ${tick}] Incident resolved`);
+  const cycle = ctx.blackboard.get<number>('monitor:cycleCount') ?? 0;
+  console.log(`  [Cycle ${cycle}] Incident resolved`);
   ctx.blackboard.delete('incident:startTime');
-  ctx.blackboard.delete('incident:createdOnTick');
+  ctx.blackboard.delete('incident:createdOnCycle');
   ctx.blackboard.delete('incident:updates');
-  ctx.blackboard.delete('incident:lastUpdateTick');
+  ctx.blackboard.delete('incident:lastUpdateCycle');
   ctx.blackboard.delete('draft-incident-report:output');
   return NodeStatus.SUCCESS;
 }
@@ -145,9 +149,9 @@ export function clearIncidentState(ctx: TreeContext): NodeStatus {
  * Logs the actual assessment status, which may be healthy or degraded.
  */
 export function logHealthy(ctx: TreeContext): NodeStatus {
-  const tick = ctx.blackboard.get<number>('monitor:tickCount') ?? 0;
+  const cycle = ctx.blackboard.get<number>('monitor:cycleCount') ?? 0;
   const assessment = ctx.blackboard.get<HealthAssessment>('assess-health:output');
   const status = assessment?.status ?? 'unknown';
-  console.log(`  [Tick ${tick}] No incident (assessment: ${status})`);
+  console.log(`  [Cycle ${cycle}] No incident (assessment: ${status})`);
   return NodeStatus.SUCCESS;
 }

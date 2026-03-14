@@ -157,8 +157,7 @@ export abstract class BaseNode implements BTreeNode {
    * agent result — should override this method to clear that state.
    *
    * `reset()` is called by `BehaviorTree.reset()`, which cascades the call
-   * through all nodes in the tree. It is also called by the scheduler between
-   * ticks when `resetBetweenTicks` is enabled (the default).
+   * through all nodes in the tree.
    */
   reset(): void {
     // Subclasses override if they have state to reset

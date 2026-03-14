@@ -19,7 +19,7 @@ import { EventEmitter } from '../core/event-emitter.js';
  *
  * **Stopping conditions (checked in this order after each tick):**
  * 1. `stopOnStatus` — Stop when the tree returns a specific `NodeStatus`.
- * 2. `maxRuns` — Stop after a fixed number of ticks.
+ * 2. `maxCycles` — Stop after a fixed number of completed cycles (terminal statuses).
  * 3. `onError` — Stop or continue when the tree throws. Default is `'stop'`.
  *
  * **Running a tree hourly and stopping on success:**
@@ -42,12 +42,12 @@ import { EventEmitter } from '../core/event-emitter.js';
  * await scheduler.start(); // resolves when the scheduler stops
  * ```
  *
- * **Polling every 5 seconds for up to 10 attempts:**
+ * **Polling every 5 seconds for up to 10 completed cycles:**
  * ```ts
  * const scheduler = new TreeScheduler({
  *   tree: myBehaviorTree,
  *   schedule: { type: 'interval', delayMs: 5_000 },
- *   maxRuns: 10,
+ *   maxCycles: 10,
  *   stopOnStatus: NodeStatus.SUCCESS,
  * });
  *
@@ -94,6 +94,12 @@ export class TreeScheduler {
   private _lastStatus?: NodeStatus;
 
   /**
+   * Number of completed cycles (ticks that returned a terminal status).
+   * Only incremented when the tree returns SUCCESS or FAILURE, not RUNNING.
+   */
+  private _cycleCount = 0;
+
+  /**
    * Set to `true` by `stop()` to signal the scheduler loop to exit
    * after the current (or next) tick completes.
    */
@@ -120,7 +126,7 @@ export class TreeScheduler {
   /**
    * Guards against emitting `scheduler:stop` more than once if multiple
    * stop conditions are met simultaneously (e.g. `stopOnStatus` and
-   * `maxRuns` both trigger on the same tick).
+   * `maxCycles` both trigger on the same tick).
    */
   private _stopEmitted = false;
 
@@ -143,6 +149,15 @@ export class TreeScheduler {
   }
 
   /**
+   * Number of completed cycles since the last `start()` call.
+   * A cycle completes when the tree returns a terminal status
+   * (SUCCESS or FAILURE). RUNNING ticks do not increment this.
+   */
+  get cycleCount(): number {
+    return this._cycleCount;
+  }
+
+  /**
    * The `NodeStatus` returned by the most recent completed tick.
    * `undefined` before the first tick has finished.
    */
@@ -154,7 +169,7 @@ export class TreeScheduler {
    * Start the scheduler and begin ticking the tree on the configured schedule.
    *
    * Returns a `Promise` that resolves when the scheduler stops — either
-   * because a stopping condition was met (`maxRuns`, `stopOnStatus`, an
+   * because a stopping condition was met (`maxCycles`, `stopOnStatus`, an
    * error with `onError: 'stop'`) or because `stop()` was called manually.
    *
    * Calling `start()` while the scheduler is already running is a no-op.
@@ -169,9 +184,9 @@ export class TreeScheduler {
     try {
       if (this.config.schedule.type === 'once') {
         await this.executeTick();
-        // 'once' uses 'maxRuns' as the stop reason since it is semantically
-        // equivalent to maxRuns: 1.
-        this.emitStop('maxRuns');
+        // 'once' uses 'maxCycles' as the stop reason since it is semantically
+        // equivalent to maxCycles: 1.
+        this.emitStop('maxCycles');
       } else if (this.config.schedule.type === 'interval') {
         await this.runInterval(this.config.schedule.delayMs);
       } else if (this.config.schedule.type === 'cron') {
@@ -308,28 +323,17 @@ export class TreeScheduler {
    * Returns `true` if the scheduler should stop after this tick, `false`
    * if it should continue. Stopping conditions are checked in this order:
    * 1. `stopOnStatus` — tree returned the configured terminal status.
-   * 2. `maxRuns` — the run count has reached the configured limit.
+   * 2. `maxCycles` — the cycle count has reached the configured limit.
    *
    * On error, the configured `onError` handler (default: `'stop'`) decides
-   * whether to stop or continue. If continuing, `maxRuns` is still checked.
+   * whether to stop or continue. If continuing, `maxCycles` is still checked.
    *
-   * The tree is reset before the tick when `resetBetweenTicks` is `true`
-   * (the default) — but only from the second tick onwards, so the first
-   * tick always runs on the tree's current state.
    */
   private async executeTick(): Promise<boolean> {
     this._runCount++;
     const runCount = this._runCount;
     this._tickInProgress = true;
     try {
-      const resetBetweenTicks = this.config.resetBetweenTicks ?? true;
-
-      // Reset before tick 2, 3, … but not before tick 1, so that any state
-      // pre-loaded into the blackboard before start() is preserved on the first run.
-      if (runCount > 1 && resetBetweenTicks) {
-        this.config.tree.reset();
-      }
-
       this.events.emit('tick:start', { runCount, timestamp: new Date() });
       const start = performance.now();
       const status = await this.config.tree.tick();
@@ -338,15 +342,20 @@ export class TreeScheduler {
       this._lastStatus = status;
       this.events.emit('tick:complete', { runCount, status, durationMs });
 
-      // Check stopOnStatus before maxRuns — a status match is a more specific
+      // Increment cycle count only on terminal statuses (not RUNNING).
+      if (status !== NodeStatus.RUNNING) {
+        this._cycleCount++;
+      }
+
+      // Check stopOnStatus before maxCycles — a status match is a more specific
       // signal and should take precedence in the stop reason.
       if (this.config.stopOnStatus !== undefined && status === this.config.stopOnStatus) {
         this.emitStop('stopOnStatus');
         return true;
       }
 
-      if (this.config.maxRuns !== undefined && this._runCount >= this.config.maxRuns) {
-        this.emitStop('maxRuns');
+      if (this.config.maxCycles !== undefined && this._cycleCount >= this.config.maxCycles) {
+        this.emitStop('maxCycles');
         return true;
       }
 
@@ -369,9 +378,11 @@ export class TreeScheduler {
         return true;
       }
 
-      // Continuing after an error — still honour maxRuns.
-      if (this.config.maxRuns !== undefined && this._runCount >= this.config.maxRuns) {
-        this.emitStop('maxRuns');
+      // Continuing after an error — still honour maxCycles.
+      // Errors don't count as completed cycles, but if the cycle count
+      // was already at the limit from a prior tick, stop now.
+      if (this.config.maxCycles !== undefined && this._cycleCount >= this.config.maxCycles) {
+        this.emitStop('maxCycles');
         return true;
       }
 
@@ -403,7 +414,7 @@ export class TreeScheduler {
    * Guarded by `_stopEmitted` to ensure the event is emitted at most once,
    * even if multiple stopping conditions are met on the same tick.
    */
-  private emitStop(reason: 'manual' | 'maxRuns' | 'stopOnStatus' | 'error'): void {
+  private emitStop(reason: 'manual' | 'maxCycles' | 'stopOnStatus' | 'error'): void {
     if (this._stopEmitted) return;
     this._stopEmitted = true;
     this.events.emit('scheduler:stop', { reason });

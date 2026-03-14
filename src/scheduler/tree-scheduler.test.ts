@@ -65,25 +65,43 @@ describe('TreeScheduler', () => {
     expect(scheduler.isRunning).toBe(false);
   });
 
-  it('stops after maxRuns', async () => {
-    const tree = createTree(NodeStatus.SUCCESS);
+  it('stops after maxCycles (counts only terminal statuses)', async () => {
+    // Alternates RUNNING, SUCCESS to simulate the inflight pattern:
+    // each "cycle" takes 2 ticks (RUNNING then SUCCESS).
+    let callCount = 0;
+    const root = {
+      id: 'root', name: 'root', children: [] as any[],
+      tick: vi.fn(async () => {
+        callCount++;
+        return callCount % 2 === 1 ? NodeStatus.RUNNING : NodeStatus.SUCCESS;
+      }),
+      reset: vi.fn(),
+      abort: vi.fn(),
+    };
+    const tree = new BehaviorTree({ name: 'test-tree', root });
 
     const scheduler = new TreeScheduler({
       tree,
       schedule: { type: 'interval', delayMs: 50 },
-      maxRuns: 3,
+      maxCycles: 2,
     });
 
     const startPromise = scheduler.start();
 
+    // Tick 1: RUNNING (cycle not complete)
     await vi.advanceTimersByTimeAsync(50);
+    // Tick 2: SUCCESS (cycle 1 complete)
     await vi.advanceTimersByTimeAsync(50);
+    // Tick 3: RUNNING (cycle not complete)
+    await vi.advanceTimersByTimeAsync(50);
+    // Tick 4: SUCCESS (cycle 2 complete — maxCycles reached)
     await vi.advanceTimersByTimeAsync(50);
     await vi.advanceTimersByTimeAsync(50); // extra to ensure it stops
 
     await startPromise;
 
-    expect(scheduler.runCount).toBe(3);
+    expect(scheduler.cycleCount).toBe(2);
+    expect(scheduler.runCount).toBe(4); // 4 raw ticks
     expect(scheduler.isRunning).toBe(false);
   });
 
@@ -156,46 +174,41 @@ describe('TreeScheduler', () => {
     await scheduler.start();
 
     expect(stopSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ reason: 'maxRuns' }),
+      expect.objectContaining({ reason: 'maxCycles' }),
     );
   });
 
-  it('resets tree between ticks by default', async () => {
-    const tree = createTree(NodeStatus.SUCCESS);
-    const resetSpy = vi.spyOn(tree, 'reset');
+  it('emits maxCycles stop reason', async () => {
+    let callCount = 0;
+    const root = {
+      id: 'root', name: 'root', children: [] as any[],
+      tick: vi.fn(async () => {
+        callCount++;
+        return callCount % 2 === 1 ? NodeStatus.RUNNING : NodeStatus.SUCCESS;
+      }),
+      reset: vi.fn(),
+      abort: vi.fn(),
+    };
+    const tree = new BehaviorTree({ name: 'test-tree', root });
 
     const scheduler = new TreeScheduler({
       tree,
       schedule: { type: 'interval', delayMs: 50 },
-      maxRuns: 2,
+      maxCycles: 1,
     });
+
+    const stopSpy = vi.fn();
+    scheduler.events.on('scheduler:stop', stopSpy);
 
     const startPromise = scheduler.start();
     await vi.advanceTimersByTimeAsync(50);
     await vi.advanceTimersByTimeAsync(50);
-    await startPromise;
-
-    // Reset is called before each tick after the first
-    expect(resetSpy).toHaveBeenCalled();
-  });
-
-  it('does not reset tree when resetBetweenTicks is false', async () => {
-    const tree = createTree(NodeStatus.SUCCESS);
-    const resetSpy = vi.spyOn(tree, 'reset');
-
-    const scheduler = new TreeScheduler({
-      tree,
-      schedule: { type: 'interval', delayMs: 50 },
-      maxRuns: 2,
-      resetBetweenTicks: false,
-    });
-
-    const startPromise = scheduler.start();
-    await vi.advanceTimersByTimeAsync(50);
     await vi.advanceTimersByTimeAsync(50);
     await startPromise;
 
-    expect(resetSpy).not.toHaveBeenCalled();
+    expect(stopSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'maxCycles' }),
+    );
   });
 
   it('continues on error when onError is "continue"', async () => {
@@ -210,7 +223,7 @@ describe('TreeScheduler', () => {
     const scheduler = new TreeScheduler({
       tree,
       schedule: { type: 'interval', delayMs: 50 },
-      maxRuns: 2,
+      maxCycles: 1,
       onError: 'continue',
     });
 
@@ -223,7 +236,9 @@ describe('TreeScheduler', () => {
     await startPromise;
 
     expect(errorSpy).toHaveBeenCalledOnce();
+    // Tick 1: error, tick 2: SUCCESS (1 cycle complete)
     expect(scheduler.runCount).toBe(2);
+    expect(scheduler.cycleCount).toBe(1);
   });
 
   it('multi-tick pipeline resumes RUNNING sequence children', async () => {
@@ -262,7 +277,6 @@ describe('TreeScheduler', () => {
     const scheduler = new TreeScheduler({
       tree,
       schedule: { type: 'interval', delayMs: 100 },
-      resetBetweenTicks: false,
       stopOnStatus: NodeStatus.SUCCESS,
     });
 
@@ -404,7 +418,6 @@ describe('TreeScheduler skipOnOverlap and abortOnStop', () => {
     const scheduler = new TreeScheduler({
       tree,
       schedule: { type: 'interval', delayMs: 50 },
-      maxRuns: 3,
     });
 
     const startPromise = scheduler.start();
@@ -412,9 +425,11 @@ describe('TreeScheduler skipOnOverlap and abortOnStop', () => {
     await vi.advanceTimersByTimeAsync(50);
     await vi.advanceTimersByTimeAsync(50);
     await vi.advanceTimersByTimeAsync(50);
-    await startPromise;
 
     expect(scheduler.runCount).toBe(3);
+
+    await scheduler.stop();
+    await startPromise;
   });
 
   it('abortOnStop calls tree.abort() on stop', async () => {

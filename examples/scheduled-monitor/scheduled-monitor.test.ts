@@ -37,10 +37,9 @@ describe('scheduled-monitor example', { timeout: 300_000 }, () => {
     // raw ticks than before.
     //
     // We count completed cycles by tracking terminal tree statuses (SUCCESS)
-    // rather than the blackboard counter, because the inflight pattern causes
-    // action side effects (like incrementing monitor:tickCount) to fire on the
-    // start tick while the node still returns RUNNING. Reading the counter
-    // between ticks would exit the loop prematurely.
+    // rather than the blackboard counter (monitor:cycleCount), because in the
+    // reactive tick model the counter only increments once per completed cycle
+    // and intermediate ticks return RUNNING.
     //
     // Server failure profile for 'api':
     //   Request 1:   200 (healthy)

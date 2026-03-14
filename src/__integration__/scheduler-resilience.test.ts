@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { NodeStatus } from '../types.js';
-import { ActionNode } from '../nodes/action.js';
 import { ConditionNode } from '../nodes/condition.js';
-import { SequenceNode } from '../composites/sequence.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { TreeScheduler } from '../scheduler/tree-scheduler.js';
 import { EventEmitter } from '../core/event-emitter.js';
@@ -38,7 +36,7 @@ describe('Scheduler Resilience', () => {
       tree,
       schedule: { type: 'interval', delayMs: 10 },
       onError: 'continue',
-      maxRuns: 3,
+      maxCycles: 2,
     });
 
     const errorEvents: unknown[] = [];
@@ -54,8 +52,9 @@ describe('Scheduler Resilience', () => {
     expect(errorEvents).toHaveLength(1);
     expect(completeEvents).toHaveLength(2);
     expect(scheduler.runCount).toBe(3);
+    expect(scheduler.cycleCount).toBe(2);
     expect(stopEvents).toHaveLength(1);
-    expect((stopEvents[0] as any).reason).toBe('maxRuns');
+    expect((stopEvents[0] as any).reason).toBe('maxCycles');
   });
 
   it('onError callback — receives error and runCount, controls stop', async () => {
@@ -88,7 +87,7 @@ describe('Scheduler Resilience', () => {
     expect((stopEvents[0] as any).reason).toBe('error');
   });
 
-  it('maxRuns + stopOnStatus — stopOnStatus takes precedence when hit first', async () => {
+  it('maxCycles + stopOnStatus — stopOnStatus takes precedence when hit first', async () => {
     // Use makeFakeTree to bypass ActionNode's inflight pattern and directly
     // control the status returned per scheduler tick.
     let tickCount = 0;
@@ -101,7 +100,7 @@ describe('Scheduler Resilience', () => {
     const scheduler = new TreeScheduler({
       tree,
       schedule: { type: 'interval', delayMs: 10 },
-      maxRuns: 5,
+      maxCycles: 5,
       stopOnStatus: NodeStatus.SUCCESS,
     });
 
@@ -114,75 +113,6 @@ describe('Scheduler Resilience', () => {
     expect(scheduler.lastStatus).toBe(NodeStatus.SUCCESS);
     expect(stopEvents).toHaveLength(1);
     expect((stopEvents[0] as any).reason).toBe('stopOnStatus');
-  });
-
-  it('resetBetweenTicks — true resets RUNNING state, false preserves it', async () => {
-    // --- resetBetweenTicks: true (default) ---
-    let tickCountA = 0;
-    const treeA = new BehaviorTree({
-      name: 'reset-true',
-      root: new SequenceNode({
-        name: 'seq',
-        children: [
-          new ActionNode({
-            name: 'counter',
-            action: () => {
-              tickCountA++;
-              return NodeStatus.SUCCESS;
-            },
-          }),
-        ],
-      }),
-    });
-
-    const schedulerA = new TreeScheduler({
-      tree: treeA,
-      schedule: { type: 'interval', delayMs: 10 },
-      resetBetweenTicks: true,
-      maxRuns: 3,
-    });
-
-    await schedulerA.start();
-    expect(tickCountA).toBe(3);
-
-    // --- resetBetweenTicks: false ---
-    let runningTicks = 0;
-    let completionTicks = 0;
-
-    const treeB = new BehaviorTree({
-      name: 'reset-false',
-      root: new SequenceNode({
-        name: 'seq',
-        children: [
-          new ActionNode({
-            name: 'multi-tick',
-            action: () => {
-              runningTicks++;
-              return runningTicks < 3 ? NodeStatus.RUNNING : NodeStatus.SUCCESS;
-            },
-          }),
-          new ActionNode({
-            name: 'completion',
-            action: () => {
-              completionTicks++;
-              return NodeStatus.SUCCESS;
-            },
-          }),
-        ],
-      }),
-    });
-
-    const schedulerB = new TreeScheduler({
-      tree: treeB,
-      schedule: { type: 'interval', delayMs: 10 },
-      resetBetweenTicks: false,
-      stopOnStatus: NodeStatus.SUCCESS,
-    });
-
-    await schedulerB.start();
-
-    expect(runningTicks).toBe(3);
-    expect(completionTicks).toBe(1);
   });
 
   it('event ordering completeness — once scheduler fires events in order', async () => {
@@ -224,6 +154,6 @@ describe('Scheduler Resilience', () => {
     expect(typeof completeData.durationMs).toBe('number');
 
     const stopData = eventLog[2].data as any;
-    expect(stopData.reason).toBe('maxRuns');
+    expect(stopData.reason).toBe('maxCycles');
   });
 });

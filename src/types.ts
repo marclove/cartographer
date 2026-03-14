@@ -308,8 +308,7 @@ export interface BTreeNode {
    *
    * Clears any internal tracking such as the current child index in
    * composites, attempt counts in retry decorators, or cached results
-   * in agent nodes. Called between tree ticks when `resetBetweenTicks`
-   * is enabled on the scheduler.
+   * in agent nodes.
    */
   reset(): void;
 
@@ -948,7 +947,7 @@ export interface BehaviorTreeConfig {
  * const config: SchedulerConfig = {
  *   tree: myBehaviorTree,
  *   schedule: { type: 'interval', delayMs: 60_000 },
- *   maxRuns: 10,
+ *   maxCycles: 10,
  *   stopOnStatus: NodeStatus.SUCCESS,
  *   onError: (error, runCount) => {
  *     console.error(`Run ${runCount} failed:`, error);
@@ -970,17 +969,15 @@ export interface SchedulerConfig {
     | { type: 'interval'; delayMs: number }
     | { type: 'once' };
 
-  /** Maximum number of ticks before the scheduler stops. */
-  maxRuns?: number;
+  /**
+   * Maximum number of completed cycles before the scheduler stops.
+   * A cycle completes when the tree returns a terminal status (SUCCESS
+   * or FAILURE). RUNNING ticks do not count toward this limit.
+   */
+  maxCycles?: number;
 
   /** Stop the scheduler when the tree returns this status. */
   stopOnStatus?: NodeStatus;
-
-  /**
-   * Whether to call `tree.reset()` before each tick. Defaults to `true`.
-   * Set to `false` if the tree should retain RUNNING state between ticks.
-   */
-  resetBetweenTicks?: boolean;
 
   /**
    * How to handle errors thrown during a tick.
@@ -1025,5 +1022,5 @@ export interface SchedulerEvents {
   'tick:start': { runCount: number; timestamp: Date };
   'tick:complete': { runCount: number; status: NodeStatus; durationMs: number };
   'tick:error': { runCount: number; error: Error };
-  'scheduler:stop': { reason: 'manual' | 'maxRuns' | 'stopOnStatus' | 'error' };
+  'scheduler:stop': { reason: 'manual' | 'maxCycles' | 'stopOnStatus' | 'error' };
 }

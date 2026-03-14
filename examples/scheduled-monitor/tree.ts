@@ -15,12 +15,12 @@ import {
 import {
   createHealthCheck,
   updateHistory,
-  incrementTickCount,
+  incrementCycleCount,
   isUnhealthy,
   wasDownNowHealthy,
   noActiveIncident,
   enoughTimeSinceLastUpdate,
-  recordIncidentTick,
+  recordIncidentCycle,
   clearIncidentState,
   logHealthy,
 } from './actions.js';
@@ -30,7 +30,7 @@ import {
  *
  * Tree structure:
  *   sequence "monitor"
- *   ├── action "increment-tick"
+ *   ├── action "increment-cycle"
  *   ├── parallel "check-all-services"
  *   │   ├── action "check-api"
  *   │   ├── action "check-database"
@@ -46,7 +46,7 @@ import {
  *   │   │   │   │   └── agent "draft-incident-report" (structured)
  *   │   │   │   ├── guard(enoughTimeSinceLastUpdate) → agent "draft-status-update" (structured)
  *   │   │   │   └── action "skip-update"
- *   │   │   └── action "record-incident-tick"
+ *   │   │   └── action "record-incident-cycle"
  *   │   ├── sequence "recovery-path"
  *   │   │   ├── condition "was-down-now-healthy"
  *   │   │   ├── agent "draft-resolution" (structured)
@@ -58,7 +58,7 @@ import {
 export function buildHealthMonitor(baseUrl: string) {
   return new TreeBuilder('health-monitor')
     .sequence('monitor', (b) => {
-      b.action('increment-tick', incrementTickCount);
+      b.action('increment-cycle', incrementCycleCount);
 
       // Check all services concurrently
       b.parallel('check-all-services', (b) => {
@@ -116,7 +116,7 @@ export function buildHealthMonitor(baseUrl: string) {
             // Fallback: no update needed this tick
             b.action('skip-update', () => NodeStatus.SUCCESS);
           });
-          b.action('record-incident-tick', recordIncidentTick);
+          b.action('record-incident-cycle', recordIncidentCycle);
         });
 
         // Recovery path

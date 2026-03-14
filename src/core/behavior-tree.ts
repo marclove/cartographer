@@ -228,7 +228,6 @@ export class BehaviorTree {
    * Start a reactive tick loop that ticks the tree on a fixed interval.
    *
    * Creates a `TreeScheduler` with reactive-friendly defaults:
-   * - `resetBetweenTicks: false` — preserves RUNNING state across ticks
    * - `skipOnOverlap: true` — skips a tick if the previous one is still running
    * - `abortOnStop: true` — aborts in-flight work when the loop stops
    *
@@ -256,7 +255,6 @@ export class BehaviorTree {
     const scheduler = new TreeScheduler({
       tree: this,
       schedule: { type: 'interval', delayMs: options.intervalMs },
-      resetBetweenTicks: false,
       skipOnOverlap: true,
       abortOnStop: true,
     });
