@@ -103,6 +103,29 @@ describe('RetryNode instance field persistence', () => {
     expect(child.tick).toHaveBeenCalledTimes(5);
   });
 
+  it('abort() clears the attempt counter', async () => {
+    const child = dynamicChild([
+      NodeStatus.FAILURE,  // attempt 0 fails
+      NodeStatus.RUNNING,  // attempt 1 returns RUNNING
+      // after abort, counter is back to 0
+      NodeStatus.FAILURE,  // attempt 0 fails
+      NodeStatus.FAILURE,  // attempt 1 fails
+      NodeStatus.FAILURE,  // attempt 2 fails => exhausted
+    ]);
+    const node = new RetryNode({ name: 'retry', child, maxAttempts: 3 });
+    const ctx = createContext();
+
+    // Tick 1: attempt 0 fails, attempt 1 returns RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // Abort clears the counter
+    node.abort();
+
+    // Tick 2: starts from attempt 0 again
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
+    expect(child.tick).toHaveBeenCalledTimes(5);
+  });
+
   it('counter resets when all attempts exhausted', async () => {
     const child = dynamicChild([
       // First run: all attempts fail

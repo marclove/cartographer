@@ -95,6 +95,29 @@ describe('RepeatNode instance field persistence', () => {
     expect(child.tick).toHaveBeenCalledTimes(5);
   });
 
+  it('abort() clears the iteration counter', async () => {
+    const child = dynamicChild([
+      NodeStatus.SUCCESS,  // iteration 0
+      NodeStatus.RUNNING,  // iteration 1 RUNNING
+      // after abort, counter goes back to 0
+      NodeStatus.SUCCESS,  // iteration 0
+      NodeStatus.SUCCESS,  // iteration 1
+      NodeStatus.SUCCESS,  // iteration 2 => done (count=3)
+    ]);
+    const node = new RepeatNode({ name: 'rep', child, count: 3 });
+    const ctx = createContext();
+
+    // Tick 1: iteration 0 ok, iteration 1 RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // Abort clears the counter
+    node.abort();
+
+    // Tick 2: starts from iteration 0 again
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(child.tick).toHaveBeenCalledTimes(5);
+  });
+
   it('counter resets when repeat completes', async () => {
     const child = dynamicChild([
       // First run: count=2

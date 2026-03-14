@@ -63,5 +63,5 @@ export class RetryNode extends BaseNode {
   }
 
   reset(): void { this._attempt = 0; this.child.reset(); }
-  abort(): void { this.child.abort(); }
+  abort(): void { this._attempt = 0; this.child.abort(); }
 }

@@ -59,5 +59,5 @@ export class RepeatNode extends BaseNode {
   }
 
   reset(): void { this._iteration = 0; this.child.reset(); }
-  abort(): void { this.child.abort(); }
+  abort(): void { this._iteration = 0; this.child.abort(); }
 }
