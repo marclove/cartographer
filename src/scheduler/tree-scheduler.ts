@@ -203,6 +203,13 @@ export class TreeScheduler {
       this.currentTimerResolve();
       this.currentTimerResolve = undefined;
     }
+    // Wait for any in-flight tick to finish before aborting or emitting stop.
+    // Without this, abortOnStop would yank tree state mid-tick, and callers
+    // could call start() again while the old tick is still executing.
+    if (this._inflightTick) {
+      await this._inflightTick;
+      this._inflightTick = undefined;
+    }
     if (this.config.abortOnStop) {
       this.config.tree.abort?.();
     }

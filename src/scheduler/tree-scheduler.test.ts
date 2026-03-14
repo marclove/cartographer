@@ -436,6 +436,41 @@ describe('TreeScheduler skipOnOverlap and abortOnStop', () => {
     expect(tree.abort).toHaveBeenCalledOnce();
   });
 
+  it('stop() awaits in-flight tick before resolving', async () => {
+    const { tree, resolve } = createSlowTree();
+
+    const scheduler = new TreeScheduler({
+      tree,
+      schedule: { type: 'interval', delayMs: 50 },
+      skipOnOverlap: true,
+      abortOnStop: true,
+    });
+
+    const startPromise = scheduler.start();
+
+    // First interval fires, tick starts (blocks on deferred promise)
+    await vi.advanceTimersByTimeAsync(50);
+    expect(tree.tick).toHaveBeenCalledTimes(1);
+
+    // stop() should not resolve until the in-flight tick finishes
+    let stopResolved = false;
+    const stopPromise = scheduler.stop().then(() => { stopResolved = true; });
+
+    // Drain microtasks — stop should still be pending
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stopResolved).toBe(false);
+
+    // Resolve the in-flight tick — now stop can complete
+    resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await stopPromise;
+
+    expect(stopResolved).toBe(true);
+    // abort should be called after the tick finishes, not during
+    expect(tree.abort).toHaveBeenCalledOnce();
+    await startPromise;
+  });
+
   it('abortOnStop false (default) does not call abort', async () => {
     const { tree } = createSlowTree(10);
 
