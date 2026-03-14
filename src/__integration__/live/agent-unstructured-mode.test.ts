@@ -33,14 +33,14 @@ describe('Agent Unstructured Mode Integration', { timeout: 90_000 }, () => {
     });
 
     // First tick starts the API call and returns RUNNING
-    const status1 = await agent.tick(ctx);
-    expect(status1).toBe(NodeStatus.RUNNING);
+    let status = await agent.tick(ctx);
+    expect(status).toBe(NodeStatus.RUNNING);
 
-    // Wait for the API call to complete
-    await new Promise(r => setTimeout(r, 30_000));
-
-    // Second tick polls the completed result
-    const status = await agent.tick(ctx);
+    // Poll until the API call completes
+    while (status === NodeStatus.RUNNING) {
+      await new Promise(r => setTimeout(r, 200));
+      status = await agent.tick(ctx);
+    }
     expect(status).toBe(NodeStatus.SUCCESS);
     expect(responseEvents.length).toBeGreaterThanOrEqual(1);
     expect(toolUseEvents.length).toBeGreaterThanOrEqual(1);
@@ -115,14 +115,14 @@ describe('Agent Unstructured Mode Integration', { timeout: 90_000 }, () => {
     });
 
     // First tick starts the API call and returns RUNNING
-    const status1 = await agent.tick(ctx);
-    expect(status1).toBe(NodeStatus.RUNNING);
+    let status = await agent.tick(ctx);
+    expect(status).toBe(NodeStatus.RUNNING);
 
-    // Wait for the API call to complete
-    await new Promise(r => setTimeout(r, 30_000));
-
-    // Second tick polls the completed result
-    const status = await agent.tick(ctx);
+    // Poll until the API call completes
+    while (status === NodeStatus.RUNNING) {
+      await new Promise(r => setTimeout(r, 200));
+      status = await agent.tick(ctx);
+    }
     expect(status).toBe(NodeStatus.FAILURE);
     expect(responseEvents).toHaveLength(1);
 
