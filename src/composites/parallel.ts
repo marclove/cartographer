@@ -143,31 +143,56 @@ export class ParallelNode extends BaseNode {
   }
 
   protected async execute(context: TreeContext): Promise<NodeStatus> {
-    // Commit the policy once per execution cycle. The strategy is only
-    // consulted when starting a new cycle (committedPolicy is null).
+    // --- Phase 1: Resolve the policy for this cycle ---
+    // The policy determines how many children must succeed/fail for the
+    // parallel to resolve. It is committed once on the first tick of a
+    // cycle and reused on subsequent ticks so that the success criteria
+    // remain stable while children are still running. Agent strategies
+    // (e.g., AgentParallelStrategy) may call Claude here, which is why
+    // this is async and only runs once per cycle.
     if (this.committedPolicy === null) {
       this.committedPolicy = await this.strategy.policy(this._children, context);
     }
     const policy = this.committedPolicy;
 
-    // Tick all children concurrently. Non-reactive children that already
-    // completed in this cycle use their cached result. Reactive children
-    // are always re-ticked.
+    // --- Phase 2: Tick all children concurrently ---
+    // Every child is dispatched in parallel via Promise.all. Two kinds of
+    // children are handled differently:
+    //
+    //   Reactive (conditions, guards): Always re-ticked on every call to
+    //   execute(). This allows conditions to "trip" mid-cycle and change
+    //   the outcome even after they previously succeeded.
+    //
+    //   Non-reactive (actions, agents, composites): Ticked until they
+    //   return a terminal status (SUCCESS or FAILURE), then their result
+    //   is cached in completedMap for the rest of the cycle. This avoids
+    //   redundantly re-running expensive work like API calls.
     const results = await Promise.all(
       this._children.map(async (child) => {
-        // Return cached result for non-reactive completed children
+        // Non-reactive child already finished this cycle — return the
+        // cached terminal result without ticking again.
         if (!isReactiveNode(child) && this.completedMap.has(child)) {
           return this.completedMap.get(child)!;
         }
 
-        // Get or create a scoped AbortController for this child
+        // --- Scoped AbortController per child ---
+        // Each child gets its own AbortController so that individual
+        // children can be cancelled without affecting siblings. The
+        // child's controller is linked to the parent context's signal:
+        // if the tree is aborted externally, the abort propagates down
+        // to every child automatically.
         let controller = this.childControllers.get(child);
         if (!controller) {
           controller = new AbortController();
           if (context.signal) {
+            // If the parent signal is already aborted (e.g., tree was
+            // aborted between ticks), immediately abort this child too.
             if (context.signal.aborted) {
               controller.abort();
             } else {
+              // Forward future parent aborts to this child's controller.
+              // The cleanup function is stored so we can remove the
+              // listener when the cycle ends, preventing memory leaks.
               const handler = () => controller!.abort();
               context.signal.addEventListener('abort', handler, { once: true });
               const signal = context.signal;
@@ -177,10 +202,13 @@ export class ParallelNode extends BaseNode {
           this.childControllers.set(child, controller);
         }
 
+        // Pass the child-scoped signal so the child can respond to
+        // cancellation independently of its siblings.
         const childContext: TreeContext = { ...context, signal: controller.signal };
         const status = await child.tick(childContext);
 
-        // Cache terminal results for non-reactive children
+        // Cache terminal results for non-reactive children so they
+        // are not re-ticked on subsequent calls within this cycle.
         if (!isReactiveNode(child) && status !== NodeStatus.RUNNING) {
           this.completedMap.set(child, status);
         }
@@ -189,18 +217,29 @@ export class ParallelNode extends BaseNode {
       }),
     );
 
-    // Evaluate the policy against current results. Some policies can
-    // short-circuit before all children resolve (e.g., failureCount
-    // already met, or successCount already met). Percentage-based
-    // policies defer until all children have resolved since the
-    // denominator isn't known until then.
+    // --- Phase 3: Evaluate the policy ---
+    // The policy is checked against the current snapshot of results.
+    // Some policies can short-circuit with partial results (e.g.,
+    // failureCount threshold already met, or successCount already met),
+    // while percentage-based policies must wait for all children to
+    // resolve since the denominator isn't known until then.
+    //
+    // evaluatePolicy returns RUNNING when no terminal decision can be
+    // made yet — the parallel will be ticked again on the next tree tick.
     const hasRunning = results.includes(NodeStatus.RUNNING);
     const finalStatus = this.evaluatePolicy(results, policy, hasRunning);
 
+    // If the outcome is still indeterminate, keep the cycle alive so
+    // that running children continue on the next tick.
     if (finalStatus === NodeStatus.RUNNING) {
       return NodeStatus.RUNNING;
     }
 
+    // --- Phase 4: Cycle cleanup ---
+    // The policy has reached a terminal verdict (SUCCESS or FAILURE).
+    // Abort any children still running (they are no longer needed),
+    // then clear all cycle state (completion cache, child controllers,
+    // committed policy) so the next execution cycle starts fresh.
     this.abortAllChildren();
     this.clearCycle();
     return finalStatus;

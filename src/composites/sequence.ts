@@ -86,22 +86,40 @@ export class SequenceNode extends BaseNode {
   }
 
   protected async execute(context: TreeContext): Promise<NodeStatus> {
-    // Commit the child order once per execution cycle.
+    // --- Phase 1: Resolve child order for this cycle ---
+    // The strategy determines execution order. It is consulted once on
+    // the first tick of a cycle and committed for all subsequent ticks,
+    // ensuring a stable evaluation order while children are running.
+    // Agent strategies (e.g., AgentExecutionStrategy) may call Claude
+    // here to reorder steps based on current blackboard state.
     if (this.committedOrder === null) {
       this.committedOrder = await this.strategy.order(this._children, context);
     }
     const ordered = this.committedOrder;
 
+    // --- Phase 2: Evaluate children sequentially (AND logic) ---
+    // Children are ticked one at a time in the committed order. The
+    // sequence succeeds only when every child succeeds, and fails the
+    // moment any child fails (short-circuit). This models a multi-step
+    // procedure: check a condition, perform an action, store a result.
     for (const child of ordered) {
-      // Get or create scoped controller for this child
+      // --- Scoped AbortController per child ---
+      // Each child gets its own controller so it can be individually
+      // cancelled when the sequence short-circuits on FAILURE. The
+      // controller is linked to the parent signal so tree-wide aborts
+      // cascade down automatically.
       let controller = this.childControllers.get(child);
       if (!controller) {
         controller = new AbortController();
-        // Bridge parent signal to child controller
         if (context.signal) {
+          // If the parent was already aborted between ticks, propagate
+          // immediately so the child sees the abort on its first tick.
           if (context.signal.aborted) {
             controller.abort();
           } else {
+            // Forward future parent aborts to this child. The cleanup
+            // is stored so we can remove the listener when the cycle
+            // ends, preventing memory leaks in long-running trees.
             const handler = () => controller!.abort();
             context.signal.addEventListener('abort', handler, { once: true });
             const signal = context.signal;
@@ -115,29 +133,48 @@ export class SequenceNode extends BaseNode {
 
       let status: NodeStatus;
 
+      // Non-reactive children that already finished this cycle use
+      // their cached result. Reactive children (conditions, guards)
+      // are always re-ticked so they can detect predicate changes —
+      // e.g., a guard condition that was true on tick 1 may now be
+      // false, causing the sequence to fail and preempt running work.
       if (!isReactiveNode(child) && this.completedMap.has(child)) {
-        // Use cached result for non-reactive completed children
         status = this.completedMap.get(child)!;
       } else {
         status = await child.tick(childContext);
-        // Cache terminal results for non-reactive children
+        // Cache terminal results for non-reactive children so they
+        // are not re-ticked on subsequent calls within this cycle.
         if (!isReactiveNode(child) && status !== NodeStatus.RUNNING) {
           this.completedMap.set(child, status);
         }
       }
 
+      // --- Short-circuit on FAILURE ---
+      // A sequence fails the moment any child fails. Abort all
+      // children (including any still-running siblings from earlier
+      // ticks) and clear the cycle so the next execution starts fresh.
       if (status === NodeStatus.FAILURE) {
         this.abortAllChildren();
         this.clearCycle();
         return NodeStatus.FAILURE;
       }
 
+      // --- Pause on RUNNING ---
+      // This child is still in progress. Return RUNNING to the parent
+      // so the tree scheduler will tick us again. The cycle state
+      // (committed order, cached results, controllers) is preserved
+      // so the next tick resumes where we left off.
       if (status === NodeStatus.RUNNING) {
         return NodeStatus.RUNNING;
       }
-      // SUCCESS: continue to the next child
+
+      // SUCCESS: this step passed — continue to the next child.
     }
 
+    // --- Phase 3: All children succeeded ---
+    // Every child returned SUCCESS — the full procedure completed.
+    // Clear the cycle so the next execution starts with a fresh
+    // strategy call.
     this.clearCycle();
     return NodeStatus.SUCCESS;
   }
