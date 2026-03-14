@@ -306,22 +306,20 @@ export class TreeScheduler {
    * tick always runs on the tree's current state.
    */
   private async executeTick(): Promise<boolean> {
-    const resetBetweenTicks = this.config.resetBetweenTicks ?? true;
-
-    // Reset before tick 2, 3, … but not before tick 1, so that any state
-    // pre-loaded into the blackboard before start() is preserved on the first run.
-    if (this._runCount > 0 && resetBetweenTicks) {
-      this.config.tree.reset();
-    }
-
     this._runCount++;
     const runCount = this._runCount;
-
-    this.events.emit('tick:start', { runCount, timestamp: new Date() });
-    const start = performance.now();
-
     this._tickInProgress = true;
     try {
+      const resetBetweenTicks = this.config.resetBetweenTicks ?? true;
+
+      // Reset before tick 2, 3, … but not before tick 1, so that any state
+      // pre-loaded into the blackboard before start() is preserved on the first run.
+      if (runCount > 1 && resetBetweenTicks) {
+        this.config.tree.reset();
+      }
+
+      this.events.emit('tick:start', { runCount, timestamp: new Date() });
+      const start = performance.now();
       const status = await this.config.tree.tick();
       const durationMs = performance.now() - start;
 
