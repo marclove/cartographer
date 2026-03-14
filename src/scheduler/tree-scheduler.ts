@@ -244,11 +244,14 @@ export class TreeScheduler {
         continue;
       }
 
-      const shouldStop = await this.executeTick();
+      this._inflightTick = this.executeTick();
+      const shouldStop = await this._inflightTick;
+      this._inflightTick = undefined;
       if (shouldStop) break;
     }
 
-    // If skipOnOverlap is enabled, wait for any in-flight tick to finish
+    // Wait for any in-flight tick to finish (skipOnOverlap path may have
+    // a fire-and-forget tick still running when the loop exits).
     if (this._inflightTick) {
       await this._inflightTick;
       this._inflightTick = undefined;
@@ -287,7 +290,9 @@ export class TreeScheduler {
         continue;
       }
 
-      const shouldStop = await this.executeTick();
+      this._inflightTick = this.executeTick();
+      const shouldStop = await this._inflightTick;
+      this._inflightTick = undefined;
       if (shouldStop) break;
     }
 
