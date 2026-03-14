@@ -189,14 +189,18 @@ export class ParallelNode extends BaseNode {
       }),
     );
 
-    // If any child is still in progress, defer policy evaluation until
-    // all children have produced a terminal status.
-    if (results.includes(NodeStatus.RUNNING)) {
+    // Evaluate the policy against current results. Some policies can
+    // short-circuit before all children resolve (e.g., failureCount
+    // already met, or successCount already met). Percentage-based
+    // policies defer until all children have resolved since the
+    // denominator isn't known until then.
+    const hasRunning = results.includes(NodeStatus.RUNNING);
+    const finalStatus = this.evaluatePolicy(results, policy, hasRunning);
+
+    if (finalStatus === NodeStatus.RUNNING) {
       return NodeStatus.RUNNING;
     }
 
-    // All children resolved — evaluate policy and end the cycle.
-    const finalStatus = this.evaluatePolicy(results, policy);
     this.abortAllChildren();
     this.clearCycle();
     return finalStatus;
@@ -204,10 +208,23 @@ export class ParallelNode extends BaseNode {
 
   /**
    * Evaluate the parallel policy against the collected results.
-   * Uses the same logic as before: failureCount, successPercentage,
-   * successCount, then default (all must succeed).
+   *
+   * When `hasRunning` is true, only policies that can be determined from
+   * partial results will short-circuit:
+   * - `failureCount` — threshold already met → FAILURE
+   * - `successCount` — threshold already met → SUCCESS
+   * - default (all must succeed) — any failure → FAILURE
+   *
+   * Percentage-based policies defer until all children resolve because
+   * the denominator (total count) isn't meaningful with RUNNING children.
+   *
+   * Returns RUNNING when a terminal outcome cannot yet be determined.
    */
-  private evaluatePolicy(results: NodeStatus[], policy: ParallelPolicy): NodeStatus {
+  private evaluatePolicy(
+    results: NodeStatus[],
+    policy: ParallelPolicy,
+    hasRunning: boolean,
+  ): NodeStatus {
     const successCount = results.filter((r) => r === NodeStatus.SUCCESS).length;
     const failureCount = results.filter((r) => r === NodeStatus.FAILURE).length;
 
@@ -218,16 +235,27 @@ export class ParallelNode extends BaseNode {
     }
 
     if (policy.successPercentage !== undefined) {
+      // Percentage requires all children to have resolved — defer if any RUNNING.
+      if (hasRunning) return NodeStatus.RUNNING;
       const percentage = (successCount / results.length) * 100;
       return percentage >= policy.successPercentage ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
     }
 
     if (policy.successCount !== undefined) {
-      return successCount >= policy.successCount ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
+      if (successCount >= policy.successCount) return NodeStatus.SUCCESS;
+      // Check if the threshold is impossible to meet: remaining children
+      // (RUNNING) can't close the gap even if they all succeed.
+      const runningCount = results.filter((r) => r === NodeStatus.RUNNING).length;
+      if (successCount + runningCount < policy.successCount) return NodeStatus.FAILURE;
+      // Threshold still reachable — defer if children are still running.
+      if (hasRunning) return NodeStatus.RUNNING;
+      return NodeStatus.FAILURE;
     }
 
     // Default: require all children to succeed (zero failures allowed).
-    return failureCount === 0 ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
+    if (failureCount > 0) return NodeStatus.FAILURE;
+    if (hasRunning) return NodeStatus.RUNNING;
+    return NodeStatus.SUCCESS;
   }
 
   /**

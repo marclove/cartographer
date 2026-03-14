@@ -305,6 +305,9 @@ root:
     // sequentialAction helper increments its counter once per action-fn call
     // (i.e. once per inflight start), not once per tree tick.
     //
+    // With early policy evaluation, the parallel short-circuits as soon as
+    // the successCount threshold is met, without waiting for all children.
+    //
     // Logical sequence:
     //   Tick 1: all start inflight                     → RUNNING
     //   Tick 2: fast polls SUCCESS (cached);
@@ -312,13 +315,9 @@ root:
     //   Tick 3: fast cached; medium & slow start inflight → RUNNING
     //           (medium action fn call 2 → SUCCESS; slow action fn call 2 → RUNNING)
     //   Tick 4: fast cached; medium polls SUCCESS (cached);
-    //           slow polls RUNNING                     → RUNNING
-    //   Tick 5: fast cached; medium cached;
-    //           slow starts inflight                   → RUNNING
-    //           (slow action fn call 3 → SUCCESS)
-    //   Tick 6: fast cached; medium cached;
-    //           slow polls SUCCESS (cached)
-    //           → policy: 3 of 3 ≥ successCount(2)    → SUCCESS
+    //           slow polls RUNNING
+    //           → policy: 2 of 2 resolved ≥ successCount(2) → SUCCESS
+    //           (slow is aborted, cycle ends)
 
     // Tick 1 – all three start inflight
     const status1 = await parallel.tick(ctx);
@@ -338,18 +337,9 @@ root:
     expect(status3).toBe(NodeStatus.RUNNING);
 
     // Tick 4 – fast cached; medium resolves SUCCESS; slow still RUNNING
+    // Early evaluation: successCount(2) met → SUCCESS, slow aborted
     await flush();
     const status4 = await parallel.tick(ctx);
-    expect(status4).toBe(NodeStatus.RUNNING);
-
-    // Tick 5 – fast/medium cached; slow starts last inflight cycle
-    await flush();
-    const status5 = await parallel.tick(ctx);
-    expect(status5).toBe(NodeStatus.RUNNING);
-
-    // Tick 6 – fast/medium cached; slow resolves SUCCESS → policy satisfied
-    await flush();
-    const status6 = await parallel.tick(ctx);
-    expect(status6).toBe(NodeStatus.SUCCESS);
+    expect(status4).toBe(NodeStatus.SUCCESS);
   });
 });

@@ -328,6 +328,110 @@ describe('ParallelNode — reactive tick model', () => {
     expect(runningChild.tickCount).toBe(2);
   });
 
+  it('failureCount policy short-circuits before all children resolve', async () => {
+    // child1 fails immediately, child2 stays RUNNING
+    const child1 = stubNode('c1', () => NodeStatus.FAILURE);
+    let c2Calls = 0;
+    const child2 = stubNode('c2', () => {
+      c2Calls++;
+      return NodeStatus.RUNNING;
+    });
+
+    const node = new ParallelNode({
+      name: 'par',
+      children: [child1, child2],
+      strategy: new DefaultParallelStrategy({ failureCount: 1 }),
+    });
+
+    const ctx = createContext();
+
+    // Tick 1: child1 FAILURE, child2 RUNNING. Policy says failureCount >= 1 → FAILURE
+    // Should short-circuit immediately, not wait for child2
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
+  });
+
+  it('successCount policy short-circuits before all children resolve', async () => {
+    // child1 and child2 succeed immediately, child3 stays RUNNING
+    const child1 = stubNode('c1', () => NodeStatus.SUCCESS);
+    const child2 = stubNode('c2', () => NodeStatus.SUCCESS);
+    let c3Calls = 0;
+    const child3 = stubNode('c3', () => {
+      c3Calls++;
+      return NodeStatus.RUNNING;
+    });
+
+    const node = new ParallelNode({
+      name: 'par',
+      children: [child1, child2, child3],
+      strategy: new DefaultParallelStrategy({ successCount: 2 }),
+    });
+
+    const ctx = createContext();
+
+    // Tick 1: child1 SUCCESS, child2 SUCCESS, child3 RUNNING.
+    // Policy says successCount >= 2 → SUCCESS. Short-circuit.
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+  });
+
+  it('default policy (all must succeed) short-circuits on first failure', async () => {
+    const child1 = stubNode('c1', () => NodeStatus.FAILURE);
+    const child2 = stubNode('c2', () => NodeStatus.RUNNING);
+
+    const node = new ParallelNode({
+      name: 'par',
+      children: [child1, child2],
+    });
+
+    const ctx = createContext();
+
+    // Default policy: zero failures allowed. child1 failed → FAILURE immediately
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
+  });
+
+  it('early policy termination aborts remaining RUNNING children', async () => {
+    const child1 = stubNode('c1', () => NodeStatus.FAILURE);
+    const abortSpy = vi.fn();
+    const child2: BTreeNode = {
+      id: 'c2', name: 'c2', children: [],
+      tick: async () => NodeStatus.RUNNING,
+      reset: () => {}, abort: abortSpy,
+    };
+
+    const node = new ParallelNode({
+      name: 'par',
+      children: [child1, child2],
+      strategy: new DefaultParallelStrategy({ failureCount: 1 }),
+    });
+
+    await node.tick(createContext());
+    expect(abortSpy).toHaveBeenCalled();
+  });
+
+  it('successPercentage defers until all children resolve', async () => {
+    // With RUNNING children we can't compute a meaningful percentage,
+    // so successPercentage should wait for all children to resolve.
+    const child1 = stubNode('c1', () => NodeStatus.SUCCESS);
+    let c2Calls = 0;
+    const child2 = stubNode('c2', () => {
+      c2Calls++;
+      return c2Calls >= 2 ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
+    });
+
+    const node = new ParallelNode({
+      name: 'par',
+      children: [child1, child2],
+      strategy: new DefaultParallelStrategy({ successPercentage: 50 }),
+    });
+
+    const ctx = createContext();
+
+    // Tick 1: child1 SUCCESS, child2 RUNNING. Can't evaluate percentage yet.
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // Tick 2: child1 cached, child2 SUCCESS. 100% >= 50% → SUCCESS
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+  });
+
   it('scoped abort controllers per child cascade from parent signal', async () => {
     const receivedSignals: AbortSignal[] = [];
 
