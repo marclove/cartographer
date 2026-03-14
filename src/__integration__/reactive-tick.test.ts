@@ -470,6 +470,88 @@ describe('Reactive Tick Model', () => {
     });
   });
 
+  describe('parent signal listener cleanup', () => {
+    it('sequence removes parent signal listeners when cycle ends', async () => {
+      const ac = new AbortController();
+      const addSpy = vi.spyOn(ac.signal, 'addEventListener');
+      const removeSpy = vi.spyOn(ac.signal, 'removeEventListener');
+
+      const a1 = tracked('a1', () => NodeStatus.SUCCESS);
+      const a2 = tracked('a2', () => NodeStatus.SUCCESS);
+      const seq = new SequenceNode({ name: 'seq', children: [a1.node, a2.node] });
+      const ctx = { ...createContext(), signal: ac.signal };
+
+      // Cycle 1
+      expect(await seq.tick(ctx)).toBe(NodeStatus.RUNNING);
+      await flush();
+      expect(await seq.tick(ctx)).toBe(NodeStatus.RUNNING);
+      await flush();
+      expect(await seq.tick(ctx)).toBe(NodeStatus.SUCCESS);
+
+      // Every listener added should have been removed
+      expect(addSpy.mock.calls.length).toBeGreaterThan(0);
+      expect(removeSpy.mock.calls.length).toBe(addSpy.mock.calls.length);
+
+      // Cycle 2: listeners should not accumulate
+      addSpy.mockClear();
+      removeSpy.mockClear();
+      expect(await seq.tick(ctx)).toBe(NodeStatus.RUNNING);
+      await flush();
+      expect(await seq.tick(ctx)).toBe(NodeStatus.RUNNING);
+      await flush();
+      expect(await seq.tick(ctx)).toBe(NodeStatus.SUCCESS);
+
+      expect(removeSpy.mock.calls.length).toBe(addSpy.mock.calls.length);
+
+      vi.restoreAllMocks();
+    });
+
+    it('selector removes parent signal listeners when cycle ends', async () => {
+      const ac = new AbortController();
+      const addSpy = vi.spyOn(ac.signal, 'addEventListener');
+      const removeSpy = vi.spyOn(ac.signal, 'removeEventListener');
+
+      const a1 = tracked('a1', () => NodeStatus.FAILURE);
+      const a2 = tracked('a2', () => NodeStatus.SUCCESS);
+      const sel = new SelectorNode({ name: 'sel', children: [a1.node, a2.node] });
+      const ctx = { ...createContext(), signal: ac.signal };
+
+      // Cycle 1: a1 FAILURE → a2 SUCCESS
+      expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+      await flush();
+      expect(await sel.tick(ctx)).toBe(NodeStatus.RUNNING);
+      await flush();
+      // a1 polled → FAILURE (cached), a2 polled → SUCCESS
+      expect(await sel.tick(ctx)).toBe(NodeStatus.SUCCESS);
+
+      expect(addSpy.mock.calls.length).toBeGreaterThan(0);
+      expect(removeSpy.mock.calls.length).toBe(addSpy.mock.calls.length);
+
+      vi.restoreAllMocks();
+    });
+
+    it('parallel removes parent signal listeners when cycle ends', async () => {
+      const ac = new AbortController();
+      const addSpy = vi.spyOn(ac.signal, 'addEventListener');
+      const removeSpy = vi.spyOn(ac.signal, 'removeEventListener');
+
+      const a1 = tracked('a1', () => NodeStatus.SUCCESS);
+      const a2 = tracked('a2', () => NodeStatus.SUCCESS);
+      const par = new ParallelNode({ name: 'par', children: [a1.node, a2.node] });
+      const ctx = { ...createContext(), signal: ac.signal };
+
+      // Cycle 1
+      expect(await par.tick(ctx)).toBe(NodeStatus.RUNNING);
+      await flush();
+      expect(await par.tick(ctx)).toBe(NodeStatus.SUCCESS);
+
+      expect(addSpy.mock.calls.length).toBeGreaterThan(0);
+      expect(removeSpy.mock.calls.length).toBe(addSpy.mock.calls.length);
+
+      vi.restoreAllMocks();
+    });
+  });
+
   describe('strategy commitment', () => {
     it('sync default strategy commits order on first tick of cycle', async () => {
       const ctx = createContext();

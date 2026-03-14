@@ -91,6 +91,12 @@ export class SelectorNode extends BaseNode {
   private childControllers: Map<BTreeNode, AbortController> = new Map();
 
   /**
+   * Cleanup functions that remove parent-signal listeners added during the
+   * current cycle. Called by {@link clearCycle} to prevent listener leaks.
+   */
+  private signalCleanups: (() => void)[] = [];
+
+  /**
    * The committed child order for the current execution cycle.
    * Set on the first tick of a cycle and cleared on terminal results
    * (SUCCESS/FAILURE) or `reset()`. While non-null, the strategy is
@@ -126,11 +132,10 @@ export class SelectorNode extends BaseNode {
           if (context.signal.aborted) {
             controller.abort();
           } else {
-            context.signal.addEventListener(
-              'abort',
-              () => controller!.abort(),
-              { once: true },
-            );
+            const handler = () => controller!.abort();
+            context.signal.addEventListener('abort', handler, { once: true });
+            const signal = context.signal;
+            this.signalCleanups.push(() => signal.removeEventListener('abort', handler));
           }
         }
         this.childControllers.set(child, controller);
@@ -183,6 +188,8 @@ export class SelectorNode extends BaseNode {
    * committed order.
    */
   private clearCycle(): void {
+    for (const cleanup of this.signalCleanups) cleanup();
+    this.signalCleanups = [];
     this.completedMap.clear();
     this.childControllers.clear();
     this.committedOrder = null;

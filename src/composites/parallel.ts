@@ -120,6 +120,12 @@ export class ParallelNode extends BaseNode {
   private childControllers: Map<BTreeNode, AbortController> = new Map();
 
   /**
+   * Cleanup functions that remove parent-signal listeners added during the
+   * current cycle. Called by {@link clearCycle} to prevent listener leaks.
+   */
+  private signalCleanups: (() => void)[] = [];
+
+  /**
    * The committed policy for the current execution cycle.
    * Set on the first tick of a cycle and cleared when the cycle ends
    * (all children resolve) or when `reset()` / `abort()` is called.
@@ -162,7 +168,10 @@ export class ParallelNode extends BaseNode {
             if (context.signal.aborted) {
               controller.abort();
             } else {
-              context.signal.addEventListener('abort', () => controller!.abort(), { once: true });
+              const handler = () => controller!.abort();
+              context.signal.addEventListener('abort', handler, { once: true });
+              const signal = context.signal;
+              this.signalCleanups.push(() => signal.removeEventListener('abort', handler));
             }
           }
           this.childControllers.set(child, controller);
@@ -237,6 +246,8 @@ export class ParallelNode extends BaseNode {
    * Clear all cycle state: completion map, child controllers, committed policy.
    */
   private clearCycle(): void {
+    for (const cleanup of this.signalCleanups) cleanup();
+    this.signalCleanups = [];
     this.completedMap.clear();
     this.childControllers.clear();
     this.committedPolicy = null;

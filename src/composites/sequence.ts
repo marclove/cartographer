@@ -68,6 +68,13 @@ export class SequenceNode extends BaseNode {
    */
   private childControllers = new Map<BTreeNode, AbortController>();
 
+  /**
+   * Cleanup functions that remove parent-signal listeners added during the
+   * current cycle. Called by {@link clearCycle} to prevent listener leaks
+   * across cycles in long-running tick loops.
+   */
+  private signalCleanups: (() => void)[] = [];
+
   override get children(): readonly BTreeNode[] {
     return this._children;
   }
@@ -95,11 +102,10 @@ export class SequenceNode extends BaseNode {
           if (context.signal.aborted) {
             controller.abort();
           } else {
-            context.signal.addEventListener(
-              'abort',
-              () => controller!.abort(),
-              { once: true },
-            );
+            const handler = () => controller!.abort();
+            context.signal.addEventListener('abort', handler, { once: true });
+            const signal = context.signal;
+            this.signalCleanups.push(() => signal.removeEventListener('abort', handler));
           }
         }
         this.childControllers.set(child, controller);
@@ -152,6 +158,8 @@ export class SequenceNode extends BaseNode {
    * Clear all cycle state: completedMap, childControllers, committedOrder.
    */
   private clearCycle(): void {
+    for (const cleanup of this.signalCleanups) cleanup();
+    this.signalCleanups = [];
     this.completedMap.clear();
     this.childControllers.clear();
     this.committedOrder = null;
