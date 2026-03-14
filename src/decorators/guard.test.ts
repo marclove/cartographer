@@ -36,10 +36,15 @@ describe('GuardNode', () => {
     expect(child.tick).not.toHaveBeenCalled();
   });
 
-  it('supports async conditions', async () => {
+  it('supports async conditions (inflight pattern)', async () => {
     const child = mockChild(NodeStatus.SUCCESS);
     const node = new GuardNode({ name: 'guard', child, condition: async () => true });
-    expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
+    const ctx = createContext();
+    // Tick 1: async condition starts, returns RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await new Promise<void>((r) => setTimeout(r, 0));
+    // Tick 2: condition resolved true, child ticked
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
   it('returns FAILURE when condition throws', async () => {
@@ -50,6 +55,107 @@ describe('GuardNode', () => {
     });
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
     expect(child.tick).not.toHaveBeenCalled();
+  });
+});
+
+describe('GuardNode async condition inflight', () => {
+  it('returns RUNNING while async condition is pending', async () => {
+    let resolveCondition!: (v: boolean) => void;
+    const condition = () => new Promise<boolean>((r) => { resolveCondition = r; });
+    const child = mockChild(NodeStatus.SUCCESS);
+    const node = new GuardNode({ name: 'guard', child, condition });
+    const ctx = createContext();
+
+    // Tick 1: condition is pending → RUNNING, child not ticked
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    expect(child.tick).not.toHaveBeenCalled();
+
+    // Resolve condition to true
+    resolveCondition(true);
+    await new Promise<void>((r) => setTimeout(r, 0));
+
+    // Tick 2: condition resolved true → tick child
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(child.tick).toHaveBeenCalledOnce();
+  });
+
+  it('returns FAILURE when async condition resolves to false', async () => {
+    let resolveCondition!: (v: boolean) => void;
+    const condition = () => new Promise<boolean>((r) => { resolveCondition = r; });
+    const child = mockChild(NodeStatus.SUCCESS);
+    const node = new GuardNode({ name: 'guard', child, condition });
+    const ctx = createContext();
+
+    // Tick 1: condition pending → RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // Resolve condition to false
+    resolveCondition(false);
+    await new Promise<void>((r) => setTimeout(r, 0));
+
+    // Tick 2: condition resolved false → FAILURE, child aborted
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
+    expect(child.tick).not.toHaveBeenCalled();
+    expect(child.abort).toHaveBeenCalledOnce();
+  });
+
+  it('returns FAILURE when async condition rejects', async () => {
+    let rejectCondition!: (e: Error) => void;
+    const condition = () => new Promise<boolean>((_, r) => { rejectCondition = r; });
+    const child = mockChild(NodeStatus.SUCCESS);
+    const node = new GuardNode({ name: 'guard', child, condition });
+    const ctx = createContext();
+
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    rejectCondition(new Error('boom'));
+    await new Promise<void>((r) => setTimeout(r, 0));
+
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
+    expect(child.abort).toHaveBeenCalledOnce();
+  });
+
+  it('abort() clears pending condition inflight state', async () => {
+    let resolveCondition!: (v: boolean) => void;
+    const condition = vi.fn(() => new Promise<boolean>((r) => { resolveCondition = r; }));
+    const child = mockChild(NodeStatus.SUCCESS);
+    const node = new GuardNode({ name: 'guard', child, condition });
+    const ctx = createContext();
+
+    // Tick 1: condition pending
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    expect(condition).toHaveBeenCalledTimes(1);
+
+    // Abort clears inflight state
+    node.abort();
+
+    // Tick 2: fresh condition call, not polling the old one
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    expect(condition).toHaveBeenCalledTimes(2);
+  });
+
+  it('reset() clears pending condition inflight state', async () => {
+    let resolveCondition!: (v: boolean) => void;
+    const condition = vi.fn(() => new Promise<boolean>((r) => { resolveCondition = r; }));
+    const child = mockChild(NodeStatus.SUCCESS);
+    const node = new GuardNode({ name: 'guard', child, condition });
+    const ctx = createContext();
+
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    expect(condition).toHaveBeenCalledTimes(1);
+
+    node.reset();
+
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    expect(condition).toHaveBeenCalledTimes(2);
+  });
+
+  it('synchronous conditions still work without inflight overhead', async () => {
+    const child = mockChild(NodeStatus.SUCCESS);
+    const node = new GuardNode({ name: 'guard', child, condition: () => true });
+    // Synchronous condition resolves in a single tick
+    expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
+    expect(child.tick).toHaveBeenCalledOnce();
   });
 });
 
