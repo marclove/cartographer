@@ -64,4 +64,23 @@ describe('isReactiveNode', () => {
     });
     expect(isReactiveNode(guard)).toBe(true);
   });
+
+  it('returns true for GuardNode wrapping an ActionNode (guard has its own condition)', () => {
+    const guard = new GuardNode({
+      name: 'guard',
+      child: action,
+      condition: () => true,
+    });
+    expect(isReactiveNode(guard)).toBe(true);
+  });
+
+  it('returns true for decorator wrapping a GuardNode', () => {
+    const guard = new GuardNode({
+      name: 'guard',
+      child: action,
+      condition: () => true,
+    });
+    const wrapper = new AlwaysSucceedNode({ name: 'as', child: guard });
+    expect(isReactiveNode(wrapper)).toBe(true);
+  });
 });

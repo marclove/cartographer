@@ -174,6 +174,45 @@ describe('Reactive Tick Model', () => {
   });
 
   describe('guard decorator', () => {
+    it('guard in a sequence is re-evaluated when its condition changes mid-cycle', async () => {
+      const ctx = createContext({ gate: true });
+
+      // Guard wrapping an action — as a child of a sequence alongside another action.
+      // The guard's condition reads from the blackboard.
+      const guardedAction = tracked('guarded', () => NodeStatus.SUCCESS);
+      const guard = new GuardNode({
+        name: 'gate-guard',
+        condition: (c) => c.blackboard.get('gate') === true,
+        child: guardedAction.node,
+      });
+
+      const followUp = tracked('follow-up', () => NodeStatus.SUCCESS);
+
+      const seq = new SequenceNode({
+        name: 'seq',
+        children: [guard, followUp.node],
+      });
+
+      // Tick 1: guard condition passes → guarded action starts → RUNNING
+      expect(await seq.tick(ctx)).toBe(NodeStatus.RUNNING);
+      expect(guardedAction.getCalls()).toBe(1);
+
+      await flush();
+
+      // Tick 2: guard re-evaluated (reactive!) → condition still true →
+      // guarded action polled → SUCCESS → follow-up starts → RUNNING
+      expect(await seq.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+      await flush();
+
+      // Change gate between ticks — guard must be re-evaluated, not cached
+      ctx.blackboard.set('gate', false);
+
+      // Tick 3: guard re-evaluated → condition false → FAILURE →
+      // sequence returns FAILURE (guard is reactive, not cached as SUCCESS)
+      expect(await seq.tick(ctx)).toBe(NodeStatus.FAILURE);
+    });
+
     it('aborts child when condition changes to false', async () => {
       const ctx = createContext({ allowed: true });
 
