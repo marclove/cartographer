@@ -208,6 +208,78 @@ describe('TimeoutNode wall-clock tracking', () => {
     expect(status).toBe(NodeStatus.RUNNING);
   });
 
+  it('background timer fires timeout even without a second tick', async () => {
+    const child = mockChild(NodeStatus.RUNNING);
+    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 500 });
+    const ctx = createContext();
+
+    // Single tick — child returns RUNNING, starts background timer
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // Advance past timeout — no second tick happens
+    await vi.advanceTimersByTimeAsync(600);
+
+    // Child should have been aborted by the background timer
+    expect(child.abort).toHaveBeenCalledOnce();
+
+    // Next tick should see the timeout and return FAILURE immediately
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
+    // Child should not be ticked again after the timeout fired
+    expect(child.tick).toHaveBeenCalledTimes(1);
+  });
+
+  it('background timer is cleared when child completes before deadline', async () => {
+    // Child returns RUNNING on first tick, SUCCESS on second
+    let tickCount = 0;
+    const child: BTreeNode = {
+      id: 'child', name: 'child', children: [],
+      tick: vi.fn(async () => ++tickCount === 1 ? NodeStatus.RUNNING : NodeStatus.SUCCESS),
+      reset: vi.fn(), abort: vi.fn(),
+    };
+    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 500 });
+    const ctx = createContext();
+
+    // Tick 1 — RUNNING, starts background timer
+    await node.tick(ctx);
+
+    // Tick 2 — child completes before deadline
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+
+    // Advance past original deadline — abort should NOT be called
+    await vi.advanceTimersByTimeAsync(500);
+    expect(child.abort).not.toHaveBeenCalled();
+  });
+
+  it('background timer is cleared on reset()', async () => {
+    const child = mockChild(NodeStatus.RUNNING);
+    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 500 });
+    const ctx = createContext();
+
+    await node.tick(ctx);
+    node.reset();
+
+    // Advance past original deadline — abort should NOT fire
+    await vi.advanceTimersByTimeAsync(600);
+    expect(child.abort).not.toHaveBeenCalled();
+  });
+
+  it('background timer is cleared on abort()', async () => {
+    const child = mockChild(NodeStatus.RUNNING);
+    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 500 });
+    const ctx = createContext();
+
+    await node.tick(ctx);
+
+    // abort() calls child.abort() immediately
+    node.abort();
+    expect(child.abort).toHaveBeenCalledOnce();
+
+    // Advance past original deadline — should NOT fire again
+    await vi.advanceTimersByTimeAsync(600);
+    expect(child.abort).toHaveBeenCalledOnce();
+  });
+
   it('abort() clears startTime and aborts child', async () => {
     const child = mockChild(NodeStatus.RUNNING);
     const node = new TimeoutNode({ name: 'to', child, timeoutMs: 500 });

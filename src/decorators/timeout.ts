@@ -25,6 +25,12 @@ export class TimeoutNode extends BaseNode {
   private timeoutMs: number;
   private _startTime: number | null = null;
 
+  /** Whether the background timer has fired, aborting the child. */
+  private _timedOut = false;
+
+  /** Handle for the background setTimeout so it can be cleared. */
+  private _timer: ReturnType<typeof setTimeout> | null = null;
+
   override get children(): readonly BTreeNode[] {
     return [this.child];
   }
@@ -36,35 +42,54 @@ export class TimeoutNode extends BaseNode {
   }
 
   protected async execute(context: TreeContext): Promise<NodeStatus> {
-    // Check timeout before ticking child
+    // Background timer already fired — return FAILURE without re-ticking
+    if (this._timedOut) {
+      this.clearTimeout();
+      return NodeStatus.FAILURE;
+    }
+
+    // Check timeout before ticking child (poll-based path for frequent ticks)
     if (this._startTime !== null && Date.now() - this._startTime > this.timeoutMs) {
       this.child.abort();
-      this._startTime = null;
+      this.clearTimeout();
       return NodeStatus.FAILURE;
     }
 
     const status = await this.child.tick(context);
 
     if (status === NodeStatus.RUNNING) {
-      // Record start time on first RUNNING tick
+      // Record start time and start background timer on first RUNNING tick
       if (this._startTime === null) {
         this._startTime = Date.now();
+        this._timer = setTimeout(() => {
+          this._timedOut = true;
+          this.child.abort();
+        }, this.timeoutMs);
       }
       return NodeStatus.RUNNING;
     }
 
     // Child completed (SUCCESS or FAILURE) — clear timer
-    this._startTime = null;
+    this.clearTimeout();
     return status;
   }
 
-  reset(): void {
+  private clearTimeout(): void {
     this._startTime = null;
+    this._timedOut = false;
+    if (this._timer !== null) {
+      clearTimeout(this._timer);
+      this._timer = null;
+    }
+  }
+
+  reset(): void {
+    this.clearTimeout();
     this.child.reset();
   }
 
   abort(): void {
-    this._startTime = null;
+    this.clearTimeout();
     this.child.abort();
   }
 }
