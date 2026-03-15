@@ -147,7 +147,7 @@ export function selectNode(id: string | null): void {
   selectedNodeId = selectedNodeId === id ? null : id;
   if (selectedNodeId) {
     fetchNode(selectedNodeId).then((data) => {
-      nodeDetail = data as Record<string, unknown>;
+      nodeDetail = data as unknown as Record<string, unknown>;
     }).catch(() => {
       nodeDetail = null;
     });
