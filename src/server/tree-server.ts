@@ -12,6 +12,7 @@ import { handleApiTree, handleApiStatus, handleApiBlackboard, handleApiNode } fr
 import type { StatusState } from './api-handlers.js';
 import { handleSseStream, broadcastSseEvent } from './sse-handler.js';
 import type { SseClient } from './sse-handler.js';
+import { jsonResponse, jsonError } from './http-utils.js';
 
 export interface TreeServerOptions {
   port?: number;
@@ -30,15 +31,6 @@ const CONTENT_TYPES: Record<string, string> = {
 
 /** Events that are too noisy or too large to broadcast to clients. */
 const EXCLUDED_EVENTS: ReadonlySet<keyof TreeEvents> = new Set(['agent:stream']);
-
-export function jsonResponse(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(body));
-}
-
-export function jsonError(res: ServerResponse, status: number, message: string): void {
-  jsonResponse(res, status, { error: message, status });
-}
 
 export class TreeServer {
   private server: Server | null = null;
