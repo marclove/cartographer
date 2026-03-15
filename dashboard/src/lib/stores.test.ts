@@ -514,31 +514,17 @@ describe('stores — cycleCount', () => {
     expect(getCycleCount()).toBe(0);
   });
 
-  it('first tick always starts cycle 1 (regardless of status)', () => {
+  it('RUNNING ticks do not increment cycleCount', () => {
     h['tree:tick']!({ status: 'running', durationMs: 10 }, 2);
-    expect(getCycleCount()).toBe(1);
-  });
-
-  it('subsequent RUNNING ticks within the same cycle do not increment', () => {
-    h['tree:tick']!({ status: 'running', durationMs: 5 }, 2);
+    expect(getCycleCount()).toBe(0);
     h['tree:tick']!({ status: 'running', durationMs: 5 }, 3);
-    expect(getCycleCount()).toBe(1);
+    expect(getCycleCount()).toBe(0);
   });
 
-  it('terminal tick does not increment — cycle was already counted at start', () => {
+  it('terminal tick increments cycleCount', () => {
     h['tree:tick']!({ status: 'running', durationMs: 5 }, 2);
     h['tree:tick']!({ status: 'success', durationMs: 10 }, 3);
     expect(getCycleCount()).toBe(1);
-  });
-
-  it('new cycle starts on the first tick after a terminal tick', () => {
-    // Cycle 1
-    h['tree:tick']!({ status: 'running', durationMs: 5 }, 2);
-    h['tree:tick']!({ status: 'success', durationMs: 10 }, 3);
-    expect(getCycleCount()).toBe(1);
-    // Cycle 2 starts here
-    h['tree:tick']!({ status: 'running', durationMs: 5 }, 4);
-    expect(getCycleCount()).toBe(2);
   });
 
   it('cycleCount accumulates correctly across multiple cycles', () => {

@@ -4,6 +4,7 @@ import { join, extname } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { BehaviorTree } from '../core/behavior-tree.js';
+import { NodeStatus } from '../types.js';
 import type { TreeEvents } from '../types.js';
 import { EventBuffer } from './event-buffer.js';
 import { serializeEvent } from './serializers.js';
@@ -102,12 +103,10 @@ export class DashboardServer {
     // Track tick stats
     const onTick = (data: TreeEvents['tree:tick']) => {
       this.state.tickCount++;
-      // Increment cycle count at the start of a new cycle — when the previous
-      // tick was terminal (or this is the very first tick, i.e. lastStatus is null).
-      if (this.state.lastStatus !== 'running') {
+      this.state.lastStatus = data.status;
+      if (data.status !== NodeStatus.RUNNING) {
         this.state.cycleCount++;
       }
-      this.state.lastStatus = data.status;
       this.state.lastDurationMs = data.durationMs;
     };
     this.tree.events.on('tree:tick', onTick);

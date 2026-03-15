@@ -237,12 +237,10 @@ export function connect(): void {
       // TreeTickEvent fields are all unknown; cast defensively
       const d = data as Record<string, unknown>;
       if (typeof d['status'] === 'string') {
-        // Increment cycle count at the start of a new cycle — when the previous
-        // tick was terminal (or this is the very first tick, i.e. lastStatus is null).
-        if (lastStatus !== 'running') {
+        lastStatus = d['status'];
+        if (d['status'] !== 'running') {
           cycleCount += 1;
         }
-        lastStatus = d['status'];
       }
       if (typeof d['durationMs'] === 'number') lastDurationMs = d['durationMs'];
       pushEvent('tree:tick', data, id);
