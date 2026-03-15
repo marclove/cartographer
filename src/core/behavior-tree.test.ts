@@ -406,4 +406,15 @@ describe('BehaviorTree.start()', () => {
     await vi.advanceTimersByTimeAsync(200);
     expect(tickSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('manual stop removes abort listener from signal', async () => {
+    const tree = makeTree();
+    const ac = new AbortController();
+    const removeSpy = vi.spyOn(ac.signal, 'removeEventListener');
+
+    const handle = tree.start({ intervalMs: 100, signal: ac.signal });
+    await handle.stop();
+
+    expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
+  });
 });

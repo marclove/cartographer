@@ -262,14 +262,14 @@ export class BehaviorTree {
     this._scheduler = scheduler;
     scheduler.start(); // fire-and-forget, resolves when stopped
 
+    const abortHandler = () => { scheduler.stop(); };
     if (options.signal) {
-      options.signal.addEventListener('abort', () => {
-        scheduler.stop();
-      }, { once: true });
+      options.signal.addEventListener('abort', abortHandler, { once: true });
     }
 
     return {
       stop: async () => {
+        options.signal?.removeEventListener('abort', abortHandler);
         await scheduler.stop();
         this._scheduler = null;
       },
