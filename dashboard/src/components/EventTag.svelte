@@ -15,6 +15,7 @@
     'agent:tool_progress': { bg: 'var(--tag-tool-bg)', fg: 'var(--tag-tool-fg)' },
     'agent:init': { bg: 'var(--tag-text-bg)', fg: 'var(--tag-text-fg)' },
     'agent:status': { bg: 'var(--tag-text-bg)', fg: 'var(--tag-text-fg)' },
+    'blackboard:keys': { bg: 'var(--tag-bb-bg)', fg: 'var(--tag-bb-fg)' },
     'blackboard:read': { bg: 'var(--tag-bb-bg)', fg: 'var(--tag-bb-fg)' },
     'blackboard:write': { bg: 'var(--tag-bb-bg)', fg: 'var(--tag-bb-fg)' },
     'strategy:decision': { bg: 'var(--tag-thinking-bg)', fg: 'var(--tag-thinking-fg)' },

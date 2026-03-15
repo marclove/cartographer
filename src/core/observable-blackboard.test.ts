@@ -59,6 +59,32 @@ describe('ObservableBlackboard', () => {
     expect(handler).toHaveBeenCalledWith({ key: 'ns:result', value: 'done', hit: true, source: 'blackboard' });
   });
 
+  it('emits blackboard:keys on keys()', () => {
+    const { events, bb } = setup();
+    const handler = vi.fn();
+    events.on('blackboard:keys', handler);
+
+    bb.set('a', 1);
+    bb.set('b', 2);
+    bb.keys();
+
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler).toHaveBeenCalledWith({ keys: ['a', 'b'], source: 'blackboard' });
+  });
+
+  it('scoped() emits blackboard:keys with prefixed namespace', () => {
+    const { events, bb } = setup();
+    const handler = vi.fn();
+    events.on('blackboard:keys', handler);
+
+    const scoped = bb.scoped('ns');
+    scoped.set('x', 1);
+    scoped.keys();
+
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler).toHaveBeenCalledWith({ keys: ['x'], source: 'blackboard' });
+  });
+
   it('delegates get() to inner blackboard', () => {
     const { bb } = setup();
     bb.set('key', 'value');

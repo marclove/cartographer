@@ -184,6 +184,16 @@ describe('formatEventSummary — tree events', () => {
 // ---------------------------------------------------------------------------
 
 describe('formatEventSummary — other events', () => {
+  it('blackboard:keys shows key count', () => {
+    const e = event('blackboard:keys', { keys: ['a', 'b', 'c'] });
+    expect(formatEventSummary(e)).toBe('3 keys');
+  });
+
+  it('blackboard:keys shows singular for one key', () => {
+    const e = event('blackboard:keys', { keys: ['only'] });
+    expect(formatEventSummary(e)).toBe('1 key');
+  });
+
   it('blackboard:read shows key and value on hit', () => {
     const e = event('blackboard:read', { key: 'counter', value: 42, hit: true });
     expect(formatEventSummary(e)).toBe('counter = 42');

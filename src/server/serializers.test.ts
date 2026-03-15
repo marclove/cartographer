@@ -105,6 +105,17 @@ describe('serializeEvent', () => {
     });
   });
 
+  it('serializes blackboard:keys — passes through directly', () => {
+    const result = serializeEvent('blackboard:keys', {
+      keys: ['a', 'b'],
+      source: 'blackboard',
+    });
+    expect(result).toEqual({
+      keys: ['a', 'b'],
+      source: 'blackboard',
+    });
+  });
+
   it('serializes blackboard:read — passes through directly', () => {
     const result = serializeEvent('blackboard:read', {
       key: 'foo',

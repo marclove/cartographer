@@ -53,6 +53,10 @@ export function formatEventSummary(e: TimelineEvent): string {
       return JSON.stringify(d['info'] ?? '');
     case 'agent:error':
       return `${d['subtype'] ?? ''}: ${(d['errors'] as string[])?.join(', ') ?? ''}`;
+    case 'blackboard:keys': {
+      const keys = d['keys'] as string[];
+      return `${keys.length} ${keys.length === 1 ? 'key' : 'keys'}`;
+    }
     case 'blackboard:read':
       return d['hit'] ? `${d['key']} = ${JSON.stringify(d['value'])}` : `${d['key']} (miss)`;
     case 'blackboard:write':

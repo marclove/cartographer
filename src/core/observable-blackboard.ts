@@ -41,7 +41,9 @@ export class ObservableBlackboard implements Blackboard {
   }
 
   keys(): string[] {
-    return this.inner.keys();
+    const keys = this.inner.keys();
+    this.events.emit('blackboard:keys', { keys, source: 'blackboard' });
+    return keys;
   }
 
   scoped(namespace: string): Blackboard {

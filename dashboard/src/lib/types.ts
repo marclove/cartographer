@@ -159,6 +159,11 @@ export interface TreeTickSkippedEvent {
   timestamp: number;
 }
 
+export interface BlackboardKeysEvent {
+  keys: string[];
+  [key: string]: unknown;
+}
+
 export interface BlackboardReadEvent {
   key: string;
   value: unknown;
@@ -202,6 +207,7 @@ export type SseEventMap = {
   'tree:reset': TreeResetEvent;
   'tree:abort': TreeAbortEvent;
   'tree:tick:skipped': TreeTickSkippedEvent;
+  'blackboard:keys': BlackboardKeysEvent;
   'blackboard:read': BlackboardReadEvent;
   'blackboard:write': BlackboardWriteEvent;
   'strategy:decision': StrategyDecisionEvent;
