@@ -55,11 +55,9 @@ export function updateHistory(ctx: TreeContext): NodeStatus {
 }
 
 /**
- * Increments the cycle counter. Used for throttling status updates.
- *
- * In the reactive tick model, this action runs once per complete tree
- * cycle (not once per raw tick) because the sequence caches its terminal
- * result until the cycle ends.
+ * Increments the cycle counter. Placed at the end of the root sequence
+ * so it only runs after all monitoring work succeeds, matching the
+ * scheduler's and dashboard's completed-cycle semantics.
  */
 export function incrementCycleCount(ctx: TreeContext): NodeStatus {
   const count = ctx.blackboard.get<number>('monitor:cycleCount') ?? 0;

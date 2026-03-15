@@ -30,7 +30,6 @@ import {
  *
  * Tree structure:
  *   sequence "monitor"
- *   ├── action "increment-cycle"
  *   ├── parallel "check-all-services"
  *   │   ├── action "check-api"
  *   │   ├── action "check-database"
@@ -52,14 +51,13 @@ import {
  *   │   │   ├── agent "draft-resolution" (structured)
  *   │   │   └── action "clear-incident"
  *   │   └── action "log-healthy"
+ *   └── action "increment-cycle"
  *
  * @param baseUrl Base URL of the test server (e.g. "http://localhost:3456")
  */
 export function buildHealthMonitor(baseUrl: string) {
   return new TreeBuilder('health-monitor')
     .sequence('monitor', (b) => {
-      b.action('increment-cycle', incrementCycleCount);
-
       // Check all services concurrently
       b.parallel('check-all-services', (b) => {
         b.action('check-api', createHealthCheck('api', baseUrl));
@@ -135,6 +133,10 @@ export function buildHealthMonitor(baseUrl: string) {
         // Healthy fallback
         b.action('log-healthy', logHealthy);
       });
+
+      // Increment cycle count at the end so it reflects completed cycles,
+      // matching TreeScheduler.cycleCount and dashboard semantics.
+      b.action('increment-cycle', incrementCycleCount);
     })
     .build();
 }
