@@ -29,6 +29,8 @@ async function main(): Promise<void> {
         envFile: parsed.flags.envFile,
         port: parsed.flags.port,
         noServe: parsed.flags.noServe,
+        noDashboard: parsed.flags.noDashboard,
+        dashboardPort: parsed.flags.dashboardPort,
       });
       break;
     }

@@ -10,6 +10,8 @@ export interface ParsedArgs {
     help: boolean;
     port?: number;
     noServe: boolean;
+    noDashboard: boolean;
+    dashboardPort?: number;
   };
 }
 
@@ -25,6 +27,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
     help: false,
     port: undefined as number | undefined,
     noServe: false,
+    noDashboard: false,
+    dashboardPort: undefined as number | undefined,
   };
 
   const positional: string[] = [];
@@ -54,6 +58,17 @@ export function parseArgs(argv: string[]): ParsedArgs {
       flags.port = parsed;
     } else if (arg === '--no-serve') {
       flags.noServe = true;
+    } else if (arg === '--no-dashboard') {
+      flags.noDashboard = true;
+    } else if (arg === '--dashboard-port') {
+      i++;
+      const parsed = parseInt(args[i], 10);
+      if (isNaN(parsed) || parsed < 1 || parsed > 65535) {
+        process.stderr.write(`Error: --dashboard-port requires a valid port number\n\n`);
+        process.stdout.write(USAGE);
+        process.exit(1);
+      }
+      flags.dashboardPort = parsed;
     } else if (arg === '--') {
       // Everything after -- is positional
       positional.push(...args.slice(i + 1));
@@ -89,4 +104,6 @@ Run options:
   --env-file <path>        Load environment variables from a file
   --port <number>          Port for the tree server (default: 3147)
   --no-serve               Disable the tree server
+  --dashboard-port <num>   Port for the dashboard server (default: 3148)
+  --no-dashboard           Disable the dashboard server
 `;

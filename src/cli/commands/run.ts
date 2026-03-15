@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { NodeStatus } from '../../types.js';
 import { TreeScheduler } from '../../scheduler/tree-scheduler.js';
@@ -15,10 +16,12 @@ export interface RunOptions {
   envFile?: string;
   port?: number;
   noServe?: boolean;
+  noDashboard?: boolean;
+  dashboardPort?: number;
 }
 
 export async function runCommand(options: RunOptions): Promise<void> {
-  const { file, args, json, verbose, quiet, envFile, port, noServe } = options;
+  const { file, args, json, verbose, quiet, envFile, port, noServe, noDashboard, dashboardPort } = options;
 
   // Load env file if provided
   const env = { ...process.env };
@@ -71,18 +74,48 @@ export async function runCommand(options: RunOptions): Promise<void> {
 
   // Start tree server
   let treeServer: TreeServer | undefined;
+
+  let exit = async (code: number): Promise<void> => {
+    if (treeServer) await treeServer.close();
+    stopFormatter();
+    process.exit(code);
+  };
+
   if (!noServe) {
     treeServer = new TreeServer(tree, { port });
     const { port: serverPort } = await treeServer.start();
     if (!quiet) {
-      process.stderr.write(`Server: http://localhost:${serverPort}\n`);
+      process.stderr.write(`API: http://localhost:${serverPort}\n`);
     }
-  }
 
-  async function exit(code: number): Promise<void> {
-    if (treeServer) await treeServer.close();
-    stopFormatter();
-    process.exit(code);
+    // Start dashboard server (unless disabled or tree server is disabled)
+    if (!noDashboard) {
+      try {
+        const dashboardServerPath = new URL('../../dashboard-server/server.js', import.meta.url);
+        const { DashboardServer } = await import(dashboardServerPath.href);
+        const staticDir = new URL('../../dashboard/', import.meta.url);
+        const dashServer = new DashboardServer({
+          port: dashboardPort,
+          staticDir: fileURLToPath(staticDir),
+          apiUrl: `http://localhost:${serverPort}`,
+        });
+        const { port: dashPort } = await dashServer.start();
+        if (!quiet) {
+          process.stderr.write(`Dashboard: http://localhost:${dashPort}\n`);
+        }
+        // Clean up dashboard server on exit
+        const origExit = exit;
+        exit = async (code: number) => {
+          await dashServer.close();
+          await origExit(code);
+        };
+      } catch {
+        // Dashboard not built — skip silently
+        if (!quiet) {
+          process.stderr.write('Dashboard: not available (run npm run build first)\n');
+        }
+      }
+    }
   }
 
   // Track final status for exit code

@@ -87,4 +87,19 @@ describe('parseArgs', () => {
     expect(result.flags.verbose).toBe(true);
     expect(result.flags.envFile).toBe('.env.local');
   });
+
+  it('parses --no-dashboard flag', () => {
+    const result = parseArgs(['node', 'cli', 'run', 'tree.ts', '--no-dashboard']);
+    expect(result.flags.noDashboard).toBe(true);
+  });
+
+  it('noDashboard defaults to false', () => {
+    const result = parseArgs(['node', 'cli', 'run', 'tree.ts']);
+    expect(result.flags.noDashboard).toBe(false);
+  });
+
+  it('parses --dashboard-port flag', () => {
+    const result = parseArgs(['node', 'cli', 'run', 'tree.ts', '--dashboard-port', '4000']);
+    expect(result.flags.dashboardPort).toBe(4000);
+  });
 });
