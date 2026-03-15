@@ -11,5 +11,8 @@
 			"Bash(find node_modules/@modelcontextprotocol:*)",
 			"Bash(find node_modules/@anthropic-ai:*)"
 		]
+	},
+	"enabledPlugins": {
+		"frontend-design@claude-code-plugins": true
 	}
 }
