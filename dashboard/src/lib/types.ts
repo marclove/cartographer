@@ -134,18 +134,24 @@ export interface AgentElicitationDeclinedEvent {
 }
 
 export interface TreeInitEvent {
+  tree: string;
   [key: string]: unknown;
 }
 
 export interface TreeTickEvent {
+  tree: string;
+  status: string;
+  durationMs: number;
   [key: string]: unknown;
 }
 
 export interface TreeResetEvent {
+  tree: string;
   [key: string]: unknown;
 }
 
 export interface TreeAbortEvent {
+  tree: string;
   [key: string]: unknown;
 }
 
@@ -154,6 +160,8 @@ export interface TreeTickSkippedEvent {
 }
 
 export interface BlackboardWriteEvent {
+  key: string;
+  value: unknown;
   [key: string]: unknown;
 }
 

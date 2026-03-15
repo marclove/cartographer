@@ -4,7 +4,7 @@ import type { TimelineEvent } from './stores.svelte.js';
  * Format a unix timestamp into a `mm:ss.SSS` display string.
  */
 export function formatTimestamp(ts: number): string {
-  if (!ts) return '--:--';
+  if (ts == null) return '--:--';
   const d = new Date(ts);
   const min = String(d.getMinutes()).padStart(2, '0');
   const sec = String(d.getSeconds()).padStart(2, '0');

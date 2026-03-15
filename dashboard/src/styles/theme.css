@@ -61,7 +61,7 @@
 
   /* Sizing */
   --header-height: 48px;
-  --panel-header-height: 38px;
+  --panel-header-height: 44px;
 
   /* Fonts */
   --font-ui: 'Inter', -apple-system, sans-serif;
@@ -110,4 +110,27 @@ body {
   padding: 12px 16px;
   overflow-y: auto;
   flex: 1;
+}
+
+.collapse-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+}
+.collapse-btn:hover {
+  color: var(--text-muted);
+  background: var(--bg-hover);
+}
+
+.empty {
+  color: var(--text-faint);
+  font-size: 12px;
+  padding: 20px 0;
+  text-align: center;
 }

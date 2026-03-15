@@ -144,6 +144,12 @@ export function getNodeDetail(): Record<string, unknown> | null {
   return nodeDetail;
 }
 export function selectNode(id: string | null): void {
+  if (id === null) {
+    selectedNodeId = null;
+    nodeDetail = null;
+    return;
+  }
+  // Toggle: clicking the already-selected node deselects it
   selectedNodeId = selectedNodeId === id ? null : id;
   if (selectedNodeId) {
     fetchNode(selectedNodeId).then((data) => {
@@ -172,13 +178,21 @@ function pushEvent<K extends SseEventName>(
     data,
     category: getEventCategory(event),
   };
-  // Cast to the wider union type for the state array
-  events = [...events, entry as TimelineEvent].slice(-MAX_EVENTS);
+  // Mutate-then-trim: only reallocate when the buffer overflows
+  events.push(entry as TimelineEvent);
+  if (events.length > MAX_EVENTS) {
+    events = events.slice(-MAX_EVENTS);
+  } else {
+    events = events;  // trigger Svelte reactivity
+  }
 }
 
 // ---------------------------------------------------------------------------
 // SSE connection
 // ---------------------------------------------------------------------------
+
+// Per-key highlight timers for blackboard updates
+let highlightTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 let cleanup: (() => void) | null = null;
 
@@ -234,15 +248,11 @@ export function connect(): void {
 
     'tree:tick'(data, id) {
       tickCount += 1;
-      // TreeTickEvent fields are all unknown; cast defensively
-      const d = data as Record<string, unknown>;
-      if (typeof d['status'] === 'string') {
-        lastStatus = d['status'];
-        if (d['status'] !== 'running') {
-          cycleCount += 1;
-        }
+      lastStatus = data.status;
+      if (data.status !== 'running') {
+        cycleCount += 1;
       }
-      if (typeof d['durationMs'] === 'number') lastDurationMs = d['durationMs'];
+      lastDurationMs = data.durationMs;
       pushEvent('tree:tick', data, id);
     },
 
@@ -264,20 +274,22 @@ export function connect(): void {
     },
 
     'blackboard:write'(data, id) {
-      // BlackboardWriteEvent is Record<string, unknown>
-      const d = data as Record<string, unknown>;
-      const key = typeof d['key'] === 'string' ? d['key'] : null;
+      const key = typeof data.key === 'string' ? data.key : null;
       if (key !== null) {
-        blackboard = { ...blackboard, [key]: d['value'] };
+        blackboard = { ...blackboard, [key]: data.value };
         const next = new Set(recentlyUpdatedKeys);
         next.add(key);
         recentlyUpdatedKeys = next;
-        // Clear the highlight after 2 seconds
-        setTimeout(() => {
+        // Cancel any existing timer for this key so the highlight stays
+        // for a full 2 seconds from the most recent write
+        const existing = highlightTimers.get(key);
+        if (existing !== undefined) clearTimeout(existing);
+        highlightTimers.set(key, setTimeout(() => {
           const cleared = new Set(recentlyUpdatedKeys);
           cleared.delete(key);
           recentlyUpdatedKeys = cleared;
-        }, 2000);
+          highlightTimers.delete(key);
+        }, 2000));
       }
       pushEvent('blackboard:write', data, id);
     },
@@ -346,6 +358,8 @@ export function _resetForTest(): void {
   events = [];
   activeFilters = new Set(['nodes', 'agent', 'blackboard', 'strategy']);
   blackboard = {};
+  for (const timer of highlightTimers.values()) clearTimeout(timer);
+  highlightTimers.clear();
   recentlyUpdatedKeys = new Set();
   selectedNodeId = null;
   nodeDetail = null;

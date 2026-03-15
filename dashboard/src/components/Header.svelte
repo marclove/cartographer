@@ -32,7 +32,7 @@
 
   let connectionClass = $derived(
     connectionState === 'connected' ? 'connected' :
-    connectionState === 'reconnecting' ? 'reconnecting' : 'disconnected'
+    connectionState === 'connecting' ? 'connecting' : 'disconnected'
   );
 </script>
 
@@ -52,7 +52,7 @@
     </div>
     <div class="connection-badge {connectionClass}">
       <div class="connection-dot"></div>
-      {connectionState === 'connected' ? 'Live' : connectionState === 'reconnecting' ? 'Reconnecting' : 'Disconnected'}
+      {connectionState === 'connected' ? 'Live' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'}
     </div>
   </div>
 </header>
@@ -134,8 +134,8 @@
   .connection-dot { width: 5px; height: 5px; border-radius: 50%; }
   .connected { color: var(--status-success); }
   .connected .connection-dot { background: var(--status-success); }
-  .reconnecting { color: var(--status-running); }
-  .reconnecting .connection-dot { background: var(--status-running); animation: pulse 1s ease-in-out infinite; }
+  .connecting { color: var(--status-running); }
+  .connecting .connection-dot { background: var(--status-running); animation: pulse 1s ease-in-out infinite; }
   .disconnected { color: var(--status-failure); }
   .disconnected .connection-dot { background: var(--status-failure); }
 </style>

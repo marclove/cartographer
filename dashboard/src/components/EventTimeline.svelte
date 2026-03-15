@@ -4,7 +4,6 @@
     getEvents,
     getActiveFilters,
     toggleFilter,
-    getEventCategory,
     getSelectedNodeId,
   } from '../lib/stores.svelte.js';
   import { formatTimestamp, formatEventSummary, formatEventDetail } from '../lib/format.js';
@@ -17,8 +16,7 @@
 
   let filteredEvents = $derived(
     events.filter((e) => {
-      const category = getEventCategory(e.event);
-      if (!activeFilters.has(category)) return false;
+      if (!activeFilters.has(e.category)) return false;
       // If a node is selected, only show events related to that node
       if (selectedNodeId) {
         const nodeId = (e.data as any)?.node?.id ?? (e.data as any)?.nodeId ?? (e.data as any)?.compositeId;
@@ -37,14 +35,17 @@
     expandedEventId = expandedEventId === id ? null : id;
   }
 
-  // Auto-scroll to bottom when new events arrive
+  // Auto-scroll to bottom when new events arrive, but only if the user
+  // hasn't scrolled up to read older events
   $effect(() => {
-    // Access filteredEvents.length to trigger on change
     filteredEvents.length;
     if (container) {
-      requestAnimationFrame(() => {
-        container.scrollTop = container.scrollHeight;
-      });
+      const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (distFromBottom < 60) {
+        requestAnimationFrame(() => {
+          container.scrollTop = container.scrollHeight;
+        });
+      }
     }
   });
 </script>
@@ -89,8 +90,10 @@
 <style>
   .filter-bar {
     display: flex;
+    align-items: center;
     gap: 6px;
-    padding: 10px 16px;
+    padding: 0 16px;
+    height: var(--panel-header-height);
     border-bottom: 1px solid var(--border);
     background: var(--bg-surface);
     flex-shrink: 0;
@@ -154,11 +157,5 @@
     word-break: break-all;
     max-height: 300px;
     overflow-y: auto;
-  }
-  .empty {
-    color: var(--text-faint);
-    font-size: 12px;
-    padding: 20px 0;
-    text-align: center;
   }
 </style>

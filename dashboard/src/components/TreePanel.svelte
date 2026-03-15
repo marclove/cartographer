@@ -31,24 +31,4 @@
 </div>
 
 <style>
-  .empty {
-    color: var(--text-faint);
-    font-size: 12px;
-    padding: 8px;
-  }
-  .collapse-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-dim);
-    cursor: pointer;
-    font-size: 12px;
-    padding: 2px 4px;
-    border-radius: 3px;
-    line-height: 1;
-    transition: color 0.15s, background 0.15s;
-  }
-  .collapse-btn:hover {
-    color: var(--text-muted);
-    background: var(--bg-hover);
-  }
 </style>

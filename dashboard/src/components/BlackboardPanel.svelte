@@ -11,11 +11,14 @@
   let blackboard = $derived(getBlackboard());
   let recentlyUpdatedKeys = $derived(getRecentlyUpdatedKeys());
 
-  interface GroupedEntry {
+  interface BaseEntry {
     key: string;       // display key (without scope prefix)
     fullKey: string;   // full key for lookup
     value: unknown;
     type: string;
+  }
+
+  interface GroupedEntry extends BaseEntry {
     updated: boolean;
   }
 
@@ -24,8 +27,9 @@
     entries: GroupedEntry[];
   }
 
-  let groups = $derived.by(() => {
-    const groupMap = new Map<string, GroupedEntry[]>();
+  // Structural grouping: only recomputes when blackboard keys/values change
+  let groupsBase = $derived.by(() => {
+    const groupMap = new Map<string, BaseEntry[]>();
 
     for (const [fullKey, value] of Object.entries(blackboard)) {
       const colonIdx = fullKey.indexOf(':');
@@ -45,22 +49,27 @@
         fullKey,
         value,
         type: getTypeLabel(value),
-        updated: recentlyUpdatedKeys.has(fullKey),
       });
     }
 
-    const result: Group[] = [];
-    // Root group first
+    const result: { scope: string; entries: BaseEntry[] }[] = [];
     if (groupMap.has('root')) {
       result.push({ scope: 'root', entries: groupMap.get('root')! });
       groupMap.delete('root');
     }
-    // Then scoped groups alphabetically
     for (const [scope, entries] of [...groupMap.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
       result.push({ scope, entries });
     }
     return result;
   });
+
+  // Highlight flags: cheap to recompute on timer-driven recentlyUpdatedKeys changes
+  let groups: Group[] = $derived(
+    groupsBase.map(g => ({
+      ...g,
+      entries: g.entries.map(e => ({ ...e, updated: recentlyUpdatedKeys.has(e.fullKey) })),
+    }))
+  );
 
   function getTypeLabel(value: unknown): string {
     if (value === null || value === undefined) return 'null';
@@ -156,26 +165,5 @@
     color: var(--text-dim);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-  }
-  .empty {
-    color: var(--text-faint);
-    font-size: 12px;
-    padding: 20px 0;
-    text-align: center;
-  }
-  .collapse-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-dim);
-    cursor: pointer;
-    font-size: 12px;
-    padding: 2px 4px;
-    border-radius: 3px;
-    line-height: 1;
-    transition: color 0.15s, background 0.15s;
-  }
-  .collapse-btn:hover {
-    color: var(--text-muted);
-    background: var(--bg-hover);
   }
 </style>
