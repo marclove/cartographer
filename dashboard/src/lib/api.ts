@@ -104,6 +104,7 @@ export function connectSSE(handlers: SseHandlers): () => void {
     'agent:elicitation_declined',
     'tree:init',
     'tree:tick',
+    'tree:tick:skipped',
     'tree:reset',
     'tree:abort',
     'blackboard:write',

@@ -163,6 +163,11 @@ describe('formatEventSummary — tree events', () => {
     expect(formatEventSummary(e)).toBe('MyTree — SUCCESS (150ms)');
   });
 
+  it('tree:tick:skipped shows overlap message', () => {
+    const e = event('tree:tick:skipped', { timestamp: 1234567890 });
+    expect(formatEventSummary(e)).toBe('tick skipped (overlap)');
+  });
+
   it('tree:reset shows tree name', () => {
     const e = event('tree:reset', { tree: 'MyTree' });
     expect(formatEventSummary(e)).toBe('MyTree');

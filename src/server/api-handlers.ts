@@ -7,6 +7,7 @@ import { jsonResponse, jsonError } from './dashboard-server.js';
 
 export interface StatusState {
   tickCount: number;
+  cycleCount: number;
   lastStatus: string | null;
   lastDurationMs: number | null;
   startedAt: number;
@@ -20,6 +21,7 @@ export function handleApiStatus(res: ServerResponse, tree: BehaviorTree, state: 
   jsonResponse(res, 200, {
     tree: tree.name,
     tickCount: state.tickCount,
+    cycleCount: state.cycleCount,
     lastStatus: state.lastStatus,
     lastDurationMs: state.lastDurationMs,
     uptime: Date.now() - state.startedAt,

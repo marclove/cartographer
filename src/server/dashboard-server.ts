@@ -55,6 +55,7 @@ export class DashboardServer {
     this.eventBuffer = new EventBuffer(options.eventBufferCapacity ?? 500);
     this.state = {
       tickCount: 0,
+      cycleCount: 0,
       lastStatus: null,
       lastDurationMs: null,
       startedAt: Date.now(),
@@ -101,6 +102,11 @@ export class DashboardServer {
     // Track tick stats
     const onTick = (data: TreeEvents['tree:tick']) => {
       this.state.tickCount++;
+      // Increment cycle count at the start of a new cycle — when the previous
+      // tick was terminal (or this is the very first tick, i.e. lastStatus is null).
+      if (this.state.lastStatus !== 'running') {
+        this.state.cycleCount++;
+      }
       this.state.lastStatus = data.status;
       this.state.lastDurationMs = data.durationMs;
     };
@@ -113,7 +119,7 @@ export class DashboardServer {
       'agent:prompt', 'agent:thinking', 'agent:text', 'agent:tool_use',
       'agent:response', 'agent:error', 'agent:message', 'agent:tool_progress',
       'agent:init', 'agent:status', 'agent:rate_limit', 'agent:elicitation_declined',
-      'tree:init', 'tree:tick', 'tree:reset', 'tree:abort',
+      'tree:init', 'tree:tick', 'tree:tick:skipped', 'tree:reset', 'tree:abort',
       'blackboard:write', 'strategy:decision',
     ];
 

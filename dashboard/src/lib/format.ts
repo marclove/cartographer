@@ -59,6 +59,8 @@ export function formatEventSummary(e: TimelineEvent): string {
       const s = (d['status'] as string)?.toUpperCase() ?? '';
       return `${d['tree'] ?? ''} — ${s} (${d['durationMs']}ms)`;
     }
+    case 'tree:tick:skipped':
+      return 'tick skipped (overlap)';
     case 'tree:reset':
     case 'tree:abort':
       return `${d['tree'] ?? ''}`;

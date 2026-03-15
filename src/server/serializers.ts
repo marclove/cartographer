@@ -92,6 +92,9 @@ export function serializeEvent<K extends keyof TreeEvents>(
   if (event === 'agent:elicitation_declined') {
     return { nodeId: d.node.id, request: d.request };
   }
+  if (event === 'tree:tick:skipped') {
+    return { timestamp: d.timestamp };
+  }
   if (event === 'strategy:decision') {
     return { compositeId: d.composite.id, strategy: d.strategy, decision: d.decision };
   }
