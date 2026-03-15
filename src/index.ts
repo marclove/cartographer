@@ -25,6 +25,7 @@ export type {
   BehaviorTreeConfig,
   SchedulerConfig,
   SchedulerEvents,
+  TickLoopHandle,
   ModelUsage,
 } from './types.js';
 
@@ -43,6 +44,7 @@ export { AgentNode } from './nodes/agent.js';
 export { SelectorNode } from './composites/selector.js';
 export { SequenceNode } from './composites/sequence.js';
 export { ParallelNode } from './composites/parallel.js';
+export { isReactiveNode } from './composites/is-reactive-node.js';
 
 // Decorators
 export { InverterNode } from './decorators/inverter.js';

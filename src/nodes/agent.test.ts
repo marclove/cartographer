@@ -17,6 +17,8 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 
 const mockQuery = vi.mocked(query);
 
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
 function createContext(): TreeContext {
   return {
     blackboard: new InMemoryBlackboard(),
@@ -52,6 +54,8 @@ describe('AgentNode - structured output', () => {
     });
 
     const ctx = createContext();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
@@ -72,6 +76,8 @@ describe('AgentNode - structured output', () => {
     });
 
     const ctx = createContext();
+    await node.tick(ctx);
+    await flush();
     await node.tick(ctx);
     expect(ctx.blackboard.get('classify:output')).toEqual({ answer: 'yes' });
   });
@@ -96,7 +102,10 @@ describe('AgentNode - structured output', () => {
       },
     });
 
-    expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
+    const ctx = createContext();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
   });
 
   it('returns FAILURE on SDK error', async () => {
@@ -109,7 +118,10 @@ describe('AgentNode - structured output', () => {
       prompt: 'Classify',
     });
 
-    expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
+    const ctx = createContext();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
   });
 
   it('supports dynamic prompts from context', async () => {
@@ -124,7 +136,9 @@ describe('AgentNode - structured output', () => {
 
     const ctx = createContext();
     ctx.blackboard.set('input', 'test data');
-    await node.tick(ctx);
+    await node.tick(ctx); // starts inflight
+    await flush();
+    await node.tick(ctx); // completes
 
     expect(mockQuery).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -151,7 +165,10 @@ describe('AgentNode - unstructured output', () => {
       options: { allowedTools: ['Read', 'Edit'] },
     });
 
-    expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
+    const ctx = createContext();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
   it('returns FAILURE on max_turns error', async () => {
@@ -165,7 +182,10 @@ describe('AgentNode - unstructured output', () => {
       options: { maxTurns: 5 },
     });
 
-    expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
+    const ctx = createContext();
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
   });
 
   it('writes result text to blackboard', async () => {
@@ -179,6 +199,8 @@ describe('AgentNode - unstructured output', () => {
     });
 
     const ctx = createContext();
+    await node.tick(ctx);
+    await flush();
     await node.tick(ctx);
     expect(ctx.blackboard.get('runner:output')).toBe('All tests pass');
   });
@@ -195,6 +217,8 @@ describe('AgentNode - unstructured output', () => {
     });
 
     const ctx = createContext();
+    await node.tick(ctx);
+    await flush();
     await node.tick(ctx);
     expect(ctx.blackboard.get('integration:runner:output')).toBe('namespaced result');
     expect(ctx.blackboard.get('runner:output')).toBeUndefined();
@@ -213,6 +237,8 @@ describe('AgentNode - unstructured output', () => {
     const ctx = createContext();
     const responseSpy = vi.fn();
     ctx.events.on('agent:response', responseSpy);
+    await node.tick(ctx);
+    await flush();
     await node.tick(ctx);
 
     expect(responseSpy).toHaveBeenCalledWith(
@@ -242,6 +268,8 @@ describe('AgentNode - unstructured output', () => {
     const toolSpy = vi.fn();
     ctx.events.on('agent:tool_use', toolSpy);
     await node.tick(ctx);
+    await flush();
+    await node.tick(ctx);
 
     expect(toolSpy).toHaveBeenCalledWith(
       expect.objectContaining({ tool: 'Read', input: { file_path: 'test.ts' } }),
@@ -267,7 +295,9 @@ describe('AgentNode - abort support', () => {
 
     const node = new AgentNode({ name: 'abortable', prompt: 'Do work' });
     const ctx = createContext();
-    await node.tick(ctx);
+    await node.tick(ctx); // starts inflight
+    await flush();
+    await node.tick(ctx); // completes
 
     expect(capturedAbortController).toBeInstanceOf(AbortController);
     expect(capturedAbortController!.signal.aborted).toBe(false);
@@ -317,8 +347,12 @@ describe('AgentNode - abort support', () => {
     const node = new AgentNode({ name: 'fresh-ac', prompt: 'Do work' });
     const ctx = createContext();
 
-    await node.tick(ctx);
-    await node.tick(ctx);
+    await node.tick(ctx); // starts first inflight
+    await flush();
+    await node.tick(ctx); // completes first, clears inflight
+    await node.tick(ctx); // starts second inflight
+    await flush();
+    await node.tick(ctx); // completes second
 
     expect(controllers).toHaveLength(2);
     expect(controllers[0]).not.toBe(controllers[1]);
@@ -378,6 +412,8 @@ describe('AgentNode - observability events', () => {
     const thinkingSpy = vi.fn();
     ctx.events.on('agent:thinking', thinkingSpy);
     await node.tick(ctx);
+    await flush();
+    await node.tick(ctx);
 
     expect(thinkingSpy).toHaveBeenCalledWith(
       expect.objectContaining({ thinking: 'Let me reason about this...' }),
@@ -397,6 +433,8 @@ describe('AgentNode - observability events', () => {
     const ctx = createContext();
     const textSpy = vi.fn();
     ctx.events.on('agent:text', textSpy);
+    await node.tick(ctx);
+    await flush();
     await node.tick(ctx);
 
     expect(textSpy).toHaveBeenCalledWith(
@@ -432,6 +470,8 @@ describe('AgentNode - observability events', () => {
     const toolSpy = vi.fn();
     ctx.events.on('agent:tool_use', toolSpy);
     await node.tick(ctx);
+    await flush();
+    await node.tick(ctx);
 
     expect(toolSpy).toHaveBeenCalledWith(
       expect.objectContaining({ tool: 'mcp__blackboard__get', input: { key: 'data' } }),
@@ -453,6 +493,8 @@ describe('AgentNode - observability events', () => {
     const errorSpy = vi.fn();
     ctx.events.on('agent:error', errorSpy);
     await node.tick(ctx);
+    await flush();
+    await node.tick(ctx);
 
     expect(errorSpy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -473,6 +515,8 @@ describe('AgentNode - observability events', () => {
     const errorSpy = vi.fn();
     ctx.events.on('agent:error', errorSpy);
     await node.tick(ctx);
+    await flush();
+    await node.tick(ctx);
 
     expect(errorSpy).toHaveBeenCalledWith(
       expect.objectContaining({ subtype: 'error_during_execution', errors: ['Something broke'] }),
@@ -490,6 +534,8 @@ describe('AgentNode - observability events', () => {
     const ctx = createContext();
     const streamSpy = vi.fn();
     ctx.events.on('agent:stream', streamSpy);
+    await node.tick(ctx);
+    await flush();
     await node.tick(ctx);
 
     expect(streamSpy).toHaveBeenCalledWith(
@@ -510,6 +556,8 @@ describe('AgentNode - observability events', () => {
     const msgSpy = vi.fn();
     ctx.events.on('agent:message', msgSpy);
     await node.tick(ctx);
+    await flush();
+    await node.tick(ctx);
 
     expect(msgSpy).toHaveBeenCalledTimes(3);
     expect(msgSpy.mock.calls[0][0].message).toEqual(messages[0]);
@@ -527,6 +575,8 @@ describe('AgentNode - observability events', () => {
     const ctx = createContext();
     const progressSpy = vi.fn();
     ctx.events.on('agent:tool_progress', progressSpy);
+    await node.tick(ctx);
+    await flush();
     await node.tick(ctx);
 
     expect(progressSpy).toHaveBeenCalledWith(
@@ -552,6 +602,8 @@ describe('AgentNode - observability events', () => {
     const initSpy = vi.fn();
     ctx.events.on('agent:init', initSpy);
     await node.tick(ctx);
+    await flush();
+    await node.tick(ctx);
 
     expect(initSpy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -574,6 +626,8 @@ describe('AgentNode - observability events', () => {
     const statusSpy = vi.fn();
     ctx.events.on('agent:status', statusSpy);
     await node.tick(ctx);
+    await flush();
+    await node.tick(ctx);
 
     expect(statusSpy).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'thinking' }),
@@ -591,6 +645,8 @@ describe('AgentNode - observability events', () => {
     const ctx = createContext();
     const rateSpy = vi.fn();
     ctx.events.on('agent:rate_limit', rateSpy);
+    await node.tick(ctx);
+    await flush();
     await node.tick(ctx);
 
     expect(rateSpy).toHaveBeenCalledWith(
@@ -627,6 +683,8 @@ describe('AgentNode - onElicitation wrapping', () => {
     context.onElicitation = contextHandler;
 
     await node.tick(context);
+    await flush();
+    await node.tick(context);
 
     expect(contextHandler).toHaveBeenCalledWith(testRequest, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
@@ -644,6 +702,8 @@ describe('AgentNode - onElicitation wrapping', () => {
     const context = createContext();
     context.onElicitation = contextHandler;
 
+    await node.tick(context);
+    await flush();
     await node.tick(context);
 
     expect(nodeHandler).toHaveBeenCalled();
@@ -663,6 +723,8 @@ describe('AgentNode - onElicitation wrapping', () => {
     context.events.on('agent:elicitation_declined', declineSpy);
 
     await node.tick(context);
+    await flush();
+    await node.tick(context);
 
     expect(declineSpy).toHaveBeenCalledWith({
       node,
@@ -679,8 +741,192 @@ describe('AgentNode - onElicitation wrapping', () => {
     } as any);
 
     const node = new AgentNode({ name: 'test', prompt: 'test' });
-    await node.tick(createContext());
+    const ctx = createContext();
+    await node.tick(ctx);
+    await flush();
+    await node.tick(ctx);
 
     expect(capturedOptions.onElicitation).toBeTypeOf('function');
+  });
+});
+
+describe('AgentNode - inflight state management', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns RUNNING on first tick while SDK call is in progress', async () => {
+    let resolveMessage!: () => void;
+
+    mockQuery.mockImplementation((() => {
+      return (async function* () {
+        await new Promise<void>((resolve) => { resolveMessage = resolve; });
+        yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+      })();
+    }) as any);
+
+    const node = new AgentNode({ name: 'inflight-test', prompt: 'Do work' });
+    const ctx = createContext();
+
+    // First tick should return RUNNING immediately
+    const status = await node.tick(ctx);
+    expect(status).toBe(NodeStatus.RUNNING);
+
+    // Clean up: let the background work finish
+    resolveMessage();
+    // Wait for the promise to settle
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
+  it('returns SUCCESS on subsequent tick after SDK call completes', async () => {
+    let resolveMessage!: () => void;
+
+    mockQuery.mockImplementation((() => {
+      return (async function* () {
+        await new Promise<void>((resolve) => { resolveMessage = resolve; });
+        yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+      })();
+    }) as any);
+
+    const node = new AgentNode({ name: 'inflight-test', prompt: 'Do work' });
+    const ctx = createContext();
+
+    // First tick: starts work, returns RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // Let the SDK call complete
+    resolveMessage();
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Second tick: polls and returns the final status
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+  });
+
+  it('abort() clears inflight state', async () => {
+    let resolveMessage!: () => void;
+
+    mockQuery.mockImplementation((() => {
+      return (async function* () {
+        await new Promise<void>((resolve) => { resolveMessage = resolve; });
+        yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+      })();
+    }) as any);
+
+    const node = new AgentNode({ name: 'abort-inflight', prompt: 'Do work' });
+    const ctx = createContext();
+
+    // First tick starts the work
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // Abort clears inflight state
+    node.abort();
+
+    // Next tick should start fresh work (new inflight), not poll the old one
+    // We need a new mock for the second invocation
+    mockQuery.mockImplementation((() => {
+      return (async function* () {
+        yield { type: 'result', subtype: 'success', result: 'done2', total_cost_usd: 0.01 };
+      })();
+    }) as any);
+
+    const status = await node.tick(ctx);
+    // It starts a new inflight, so returns RUNNING again
+    expect(status).toBe(NodeStatus.RUNNING);
+
+    // Clean up
+    resolveMessage();
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
+  it('reset() clears inflight state', async () => {
+    let resolveMessage!: () => void;
+
+    mockQuery.mockImplementation((() => {
+      return (async function* () {
+        await new Promise<void>((resolve) => { resolveMessage = resolve; });
+        yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+      })();
+    }) as any);
+
+    const node = new AgentNode({ name: 'reset-inflight', prompt: 'Do work' });
+    const ctx = createContext();
+
+    // First tick starts the work
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // Reset clears inflight state
+    node.reset();
+
+    // Next tick should start fresh work
+    mockQuery.mockImplementation((() => {
+      return (async function* () {
+        yield { type: 'result', subtype: 'success', result: 'done2', total_cost_usd: 0.01 };
+      })();
+    }) as any);
+
+    const status = await node.tick(ctx);
+    expect(status).toBe(NodeStatus.RUNNING);
+
+    // Clean up
+    resolveMessage();
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
+  it('multiple poll ticks do not re-invoke the SDK', async () => {
+    let resolveMessage!: () => void;
+
+    mockQuery.mockImplementation((() => {
+      return (async function* () {
+        await new Promise<void>((resolve) => { resolveMessage = resolve; });
+        yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
+      })();
+    }) as any);
+
+    const node = new AgentNode({ name: 'no-reinvoke', prompt: 'Do work' });
+    const ctx = createContext();
+
+    // First tick starts the work
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    // Second tick polls (still running)
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    // Third tick polls (still running)
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // SDK should only have been called once
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+
+    // Let it complete and collect result
+    resolveMessage();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+
+    // Still only one SDK call
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('cached results still return immediately without inflight', async () => {
+    mockQuery.mockImplementation((() => {
+      return (async function* () {
+        yield { type: 'result', subtype: 'success', result: 'cached-result', total_cost_usd: 0.01 };
+      })();
+    }) as any);
+
+    const node = new AgentNode({ name: 'cached-agent', prompt: 'Do work', cache: true });
+    const ctx = createContext();
+
+    // First tick: starts inflight, returns RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    // Let the SDK call complete
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Second tick: polls inflight, gets SUCCESS, caches it
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+
+    // Third tick: returns cached result immediately (no new SDK call)
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+
+    // SDK was only called once (for the initial inflight)
+    expect(mockQuery).toHaveBeenCalledTimes(1);
   });
 });

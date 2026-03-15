@@ -1,11 +1,14 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { BehaviorTree } from './behavior-tree.js';
 import { NodeStatus } from '../types.js';
 import type { TreeContext } from '../types.js';
 import { ActionNode } from '../nodes/action.js';
+import { ConditionNode } from '../nodes/condition.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { InMemoryBlackboard } from './blackboard.js';
 import { EventEmitter } from './event-emitter.js';
+
+const flush = () => new Promise(r => setTimeout(r, 0));
 
 describe('BehaviorTree', () => {
   it('tick() returns the root node status', async () => {
@@ -13,6 +16,8 @@ describe('BehaviorTree', () => {
       name: 'test-tree',
       root: new ActionNode({ name: 'root', action: () => NodeStatus.SUCCESS }),
     });
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -21,6 +26,8 @@ describe('BehaviorTree', () => {
       name: 'test-tree',
       root: new ActionNode({ name: 'root', action: () => NodeStatus.FAILURE }),
     });
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
     expect(await tree.tick()).toBe(NodeStatus.FAILURE);
   });
 
@@ -48,6 +55,8 @@ describe('BehaviorTree', () => {
       }),
       blackboard: bb,
     });
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -62,9 +71,16 @@ describe('BehaviorTree', () => {
         },
       }),
     });
-    const result = await tree.run();
-    expect(result.status).toBe(NodeStatus.SUCCESS);
-    expect(result.blackboard.result).toBe('done');
+    // First run returns RUNNING (action is inflight)
+    const result1 = await tree.run();
+    expect(result1.status).toBe(NodeStatus.RUNNING);
+
+    await flush();
+
+    // Second run returns SUCCESS with blackboard data
+    const result2 = await tree.run();
+    expect(result2.status).toBe(NodeStatus.SUCCESS);
+    expect(result2.blackboard.result).toBe('done');
   });
 
   it('events emitter is accessible', async () => {
@@ -74,7 +90,7 @@ describe('BehaviorTree', () => {
     });
     const enterSpy = vi.fn();
     tree.events.on('node:enter', enterSpy);
-    await tree.tick();
+    await tree.tick(); // starts inflight, still emits node:enter
     expect(enterSpy).toHaveBeenCalled();
   });
 
@@ -153,11 +169,11 @@ describe('BehaviorTree', () => {
     const spy = vi.fn();
     tree.events.on('tree:tick', spy);
 
-    await tree.tick();
+    await tree.tick(); // RUNNING (inflight started)
 
     expect(spy).toHaveBeenCalledOnce();
     expect(spy).toHaveBeenCalledWith(
-      expect.objectContaining({ tree: 'my-tree', status: NodeStatus.SUCCESS })
+      expect.objectContaining({ tree: 'my-tree', status: NodeStatus.RUNNING })
     );
     expect(spy.mock.calls[0][0].durationMs).toBeGreaterThanOrEqual(0);
   });
@@ -206,7 +222,7 @@ describe('BehaviorTree', () => {
       onElicitation: handler,
     });
 
-    await tree.tick();
+    await tree.tick(); // action starts inflight, context is captured
     expect(receivedContext!.onElicitation).toBe(handler);
   });
 
@@ -224,7 +240,8 @@ describe('BehaviorTree', () => {
     const spy = vi.fn();
     tree.events.on('blackboard:write', spy);
 
-    await tree.tick();
+    await tree.tick(); // action runs in inflight, writes to blackboard
+    await flush(); // let inflight complete
 
     expect(spy).toHaveBeenCalledOnce();
     expect(spy).toHaveBeenCalledWith({ key: 'key', value: 'value', source: 'blackboard' });
@@ -245,7 +262,8 @@ describe('BehaviorTree', () => {
     const spy = vi.fn();
     tree.events.on('blackboard:write', spy);
 
-    await tree.tick();
+    await tree.tick(); // action runs in inflight, writes to blackboard
+    await flush();
 
     expect(spy).toHaveBeenCalledOnce();
     expect(spy).toHaveBeenCalledWith({ key: 'agent:result', value: 42, source: 'blackboard' });
@@ -272,6 +290,131 @@ describe('BehaviorTree', () => {
         ],
       }),
     });
+    // Tick 1: writer starts inflight → RUNNING
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 2: writer completes (cached), reader starts inflight → RUNNING
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 3: writer cached, reader completes → SUCCESS
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
+  });
+});
+
+describe('BehaviorTree.start()', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function makeTree(bb?: InMemoryBlackboard) {
+    const blackboard = bb ?? new InMemoryBlackboard({ ready: true });
+    return new BehaviorTree({
+      name: 'test-tree',
+      root: new ConditionNode({
+        name: 'check-ready',
+        condition: (ctx) => ctx.blackboard.get<boolean>('ready') === true,
+      }),
+      blackboard,
+    });
+  }
+
+  it('ticks the tree on interval', async () => {
+    const tree = makeTree();
+    const tickSpy = vi.spyOn(tree, 'tick');
+
+    const handle = tree.start({ intervalMs: 100 });
+
+    // No tick at t=0
+    expect(tickSpy).not.toHaveBeenCalled();
+
+    // Advance past one interval
+    await vi.advanceTimersByTimeAsync(100);
+    expect(tickSpy).toHaveBeenCalledTimes(1);
+
+    // Advance past another interval
+    await vi.advanceTimersByTimeAsync(100);
+    expect(tickSpy).toHaveBeenCalledTimes(2);
+
+    await handle.stop();
+  });
+
+  it('returns handle with stop()', async () => {
+    const tree = makeTree();
+    const tickSpy = vi.spyOn(tree, 'tick');
+
+    const handle = tree.start({ intervalMs: 100 });
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(tickSpy).toHaveBeenCalledTimes(1);
+
+    await handle.stop();
+
+    // After stop, no more ticks should fire
+    await vi.advanceTimersByTimeAsync(200);
+    expect(tickSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws if already running', async () => {
+    const tree = makeTree();
+
+    const handle = tree.start({ intervalMs: 100 });
+
+    expect(() => tree.start({ intervalMs: 100 })).toThrow(
+      /tick loop is already running/i,
+    );
+
+    await handle.stop();
+  });
+
+  it('after stop(), start() can be called again', async () => {
+    const tree = makeTree();
+    const tickSpy = vi.spyOn(tree, 'tick');
+
+    const handle1 = tree.start({ intervalMs: 100 });
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(tickSpy).toHaveBeenCalledTimes(1);
+
+    await handle1.stop();
+
+    // Start again
+    const handle2 = tree.start({ intervalMs: 50 });
+
+    await vi.advanceTimersByTimeAsync(50);
+    expect(tickSpy).toHaveBeenCalledTimes(2);
+
+    await handle2.stop();
+  });
+
+  it('signal option stops the loop', async () => {
+    const tree = makeTree();
+    const tickSpy = vi.spyOn(tree, 'tick');
+
+    const ac = new AbortController();
+    tree.start({ intervalMs: 100, signal: ac.signal });
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(tickSpy).toHaveBeenCalledTimes(1);
+
+    ac.abort();
+
+    // After abort, no more ticks
+    await vi.advanceTimersByTimeAsync(200);
+    expect(tickSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('manual stop removes abort listener from signal', async () => {
+    const tree = makeTree();
+    const ac = new AbortController();
+    const removeSpy = vi.spyOn(ac.signal, 'removeEventListener');
+
+    const handle = tree.start({ intervalMs: 100, signal: ac.signal });
+    await handle.stop();
+
+    expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
   });
 });

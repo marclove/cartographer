@@ -10,25 +10,27 @@ Constructor: `new TreeScheduler(config: SchedulerConfig)`
 
 ```typescript
 interface SchedulerConfig {
-  tree: { tick(): Promise<NodeStatus>; reset(): void; readonly events: TypedEventEmitter<TreeEvents> };
+  tree: { tick(): Promise<NodeStatus>; reset(): void; abort?(): void; readonly events: TypedEventEmitter<TreeEvents> };
   schedule:
     | { type: 'cron'; expression: string }
     | { type: 'interval'; delayMs: number }
     | { type: 'once' };
-  maxRuns?: number;
+  maxCycles?: number;
   stopOnStatus?: NodeStatus;
-  resetBetweenTicks?: boolean;
+  skipOnOverlap?: boolean;
+  abortOnStop?: boolean;
   onError?: 'stop' | 'continue' | ((error: Error, runCount: number) => 'stop' | 'continue');
 }
 ```
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `tree` | `object` | Yes | — | Object with `tick()`, `reset()`, and `events` (typically a `BehaviorTree` instance) |
+| `tree` | `object` | Yes | — | Object with `tick()`, `reset()`, optional `abort()`, and `events` (typically a `BehaviorTree` instance) |
 | `schedule` | `object` | Yes | — | Schedule type: `once`, `interval` (with `delayMs`), or `cron` (with `expression`) |
-| `maxRuns` | `number` | No | — | Stop after N ticks |
+| `maxCycles` | `number` | No | — | Stop after N completed cycles (terminal statuses; RUNNING ticks do not count) |
 | `stopOnStatus` | `NodeStatus` | No | — | Stop when tree returns this status |
-| `resetBetweenTicks` | `boolean` | No | `true` | Call `tree.reset()` before each tick (except first) |
+| `skipOnOverlap` | `boolean` | No | `false` | Skip tick if previous tick is still in progress; emits `tree:tick:skipped` |
+| `abortOnStop` | `boolean` | No | `false` | Call `tree.abort()` when the scheduler stops |
 | `onError` | `string \| function` | No | `'stop'` | Error handling: `'stop'`, `'continue'`, or custom function |
 
 ## Properties (read-only)
@@ -36,12 +38,13 @@ interface SchedulerConfig {
 - `events: EventEmitter<SchedulerEvents>` — Scheduler event emitter
 - `isRunning: boolean` — Whether the scheduler is currently running
 - `runCount: number` — Total ticks executed
+- `cycleCount: number` — Number of completed cycles (terminal statuses)
 - `lastStatus: NodeStatus | undefined` — Status from most recent tick
 
 ## Methods
 
 - `start(): Promise<void>` — Start the schedule loop. Resolves when scheduler stops. No-op if already running.
-- `stop(): Promise<void>` — Stop the scheduler. Clears timers, emits `scheduler:stop` with reason `'manual'`. No-op if not running.
+- `stop(): Promise<void>` — Stop the scheduler. Awaits any in-flight tick, calls `tree.abort()` if `abortOnStop` is set, then emits `scheduler:stop` with reason `'manual'`. No-op if not running.
 
 ## SchedulerEvents
 
@@ -50,7 +53,7 @@ interface SchedulerEvents {
   'tick:start': { runCount: number; timestamp: Date };
   'tick:complete': { runCount: number; status: NodeStatus; durationMs: number };
   'tick:error': { runCount: number; error: Error };
-  'scheduler:stop': { reason: 'manual' | 'maxRuns' | 'stopOnStatus' | 'error' };
+  'scheduler:stop': { reason: 'manual' | 'maxCycles' | 'stopOnStatus' | 'error' };
 }
 ```
 
@@ -63,7 +66,7 @@ interface SchedulerEvents {
 
 ## Schedule Types
 
-**Once:** Ticks once, stops with reason `'maxRuns'`.
+**Once:** Ticks once, stops with reason `'maxCycles'`.
 
 ```typescript
 { type: 'once' }
@@ -89,7 +92,7 @@ import { TreeScheduler, NodeStatus } from 'cartographer';
 const scheduler = new TreeScheduler({
   tree,
   schedule: { type: 'interval', delayMs: 5000 },
-  maxRuns: 10,
+  maxCycles: 10,
   stopOnStatus: NodeStatus.FAILURE,
   onError: 'continue',
 });

@@ -22,6 +22,7 @@ import {
   getBlackboard,
   getRecentlyUpdatedKeys,
   getTickCount,
+  getCycleCount,
   getLastStatus,
   getLastDurationMs,
   getActiveFilters,
@@ -269,6 +270,7 @@ describe('stores — getEventCategory', () => {
   it('maps tree events to "nodes"', () => {
     expect(getEventCategory('tree:init')).toBe('nodes');
     expect(getEventCategory('tree:tick')).toBe('nodes');
+    expect(getEventCategory('tree:tick:skipped')).toBe('nodes');
     expect(getEventCategory('tree:reset')).toBe('nodes');
     expect(getEventCategory('tree:abort')).toBe('nodes');
   });
@@ -478,5 +480,70 @@ describe('stores — recentlyUpdatedKeys', () => {
     // Blackboard should remain unchanged
     expect(getBlackboard()).toEqual({});
     expect(getRecentlyUpdatedKeys().size).toBe(0);
+  });
+});
+
+describe('stores — tree:tick:skipped', () => {
+  let h: SseHandlers;
+
+  beforeEach(() => {
+    _resetForTest();
+    h = getHandlers();
+    h.snapshot!(snapshot(), 1);
+  });
+
+  it('tree:tick:skipped events appear in the timeline with category "nodes"', () => {
+    h['tree:tick:skipped']!({ timestamp: 1234567890 }, 2);
+    const evts = getEvents();
+    const skipped = evts.find((e) => e.event === 'tree:tick:skipped');
+    expect(skipped).toBeDefined();
+    expect(skipped!.category).toBe('nodes');
+  });
+});
+
+describe('stores — cycleCount', () => {
+  let h: SseHandlers;
+
+  beforeEach(() => {
+    _resetForTest();
+    h = getHandlers();
+    h.snapshot!(snapshot(), 1);
+  });
+
+  it('cycleCount starts at 0', () => {
+    expect(getCycleCount()).toBe(0);
+  });
+
+  it('RUNNING ticks do not increment cycleCount', () => {
+    h['tree:tick']!({ status: 'running', durationMs: 10 }, 2);
+    expect(getCycleCount()).toBe(0);
+    h['tree:tick']!({ status: 'running', durationMs: 5 }, 3);
+    expect(getCycleCount()).toBe(0);
+  });
+
+  it('terminal tick increments cycleCount', () => {
+    h['tree:tick']!({ status: 'running', durationMs: 5 }, 2);
+    h['tree:tick']!({ status: 'success', durationMs: 10 }, 3);
+    expect(getCycleCount()).toBe(1);
+  });
+
+  it('cycleCount accumulates correctly across multiple cycles', () => {
+    // Cycle 1: running → success
+    h['tree:tick']!({ status: 'running', durationMs: 5 }, 2);
+    h['tree:tick']!({ status: 'success', durationMs: 10 }, 3);
+    // Cycle 2: running → failure
+    h['tree:tick']!({ status: 'running', durationMs: 5 }, 4);
+    h['tree:tick']!({ status: 'failure', durationMs: 8 }, 5);
+    expect(getCycleCount()).toBe(2);
+    expect(getTickCount()).toBe(4);
+  });
+
+  it('single-tick cycles (immediate terminal) each count', () => {
+    // Cycle 1: immediate success
+    h['tree:tick']!({ status: 'success', durationMs: 1 }, 2);
+    expect(getCycleCount()).toBe(1);
+    // Cycle 2: immediate failure
+    h['tree:tick']!({ status: 'failure', durationMs: 1 }, 3);
+    expect(getCycleCount()).toBe(2);
   });
 });

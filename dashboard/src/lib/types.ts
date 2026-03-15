@@ -23,6 +23,7 @@ export interface ApiTree {
 export interface RunStatus {
   tree: string;
   tickCount: number;
+  cycleCount: number;
   lastStatus: string | null;
   lastDurationMs: number | null;
   uptime: number;
@@ -148,6 +149,10 @@ export interface TreeAbortEvent {
   [key: string]: unknown;
 }
 
+export interface TreeTickSkippedEvent {
+  timestamp: number;
+}
+
 export interface BlackboardWriteEvent {
   [key: string]: unknown;
 }
@@ -181,6 +186,7 @@ export type SseEventMap = {
   'tree:tick': TreeTickEvent;
   'tree:reset': TreeResetEvent;
   'tree:abort': TreeAbortEvent;
+  'tree:tick:skipped': TreeTickSkippedEvent;
   'blackboard:write': BlackboardWriteEvent;
   'strategy:decision': StrategyDecisionEvent;
 };

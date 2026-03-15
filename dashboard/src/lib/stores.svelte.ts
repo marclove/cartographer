@@ -33,6 +33,7 @@ const EVENT_CATEGORIES: Partial<Record<SseEventName, string>> = {
   'tree:tick': 'nodes',
   'tree:reset': 'nodes',
   'tree:abort': 'nodes',
+  'tree:tick:skipped': 'nodes',
   'agent:prompt': 'agent',
   'agent:thinking': 'agent',
   'agent:text': 'agent',
@@ -84,10 +85,14 @@ export function getNodeStatuses(): Map<string, NodeStatus> {
 
 // Run stats (updated from tree:tick events)
 let tickCount = $state(0);
+let cycleCount = $state(0);
 let lastStatus = $state<string | null>(null);
 let lastDurationMs = $state<number | null>(null);
 export function getTickCount(): number {
   return tickCount;
+}
+export function getCycleCount(): number {
+  return cycleCount;
 }
 export function getLastStatus(): string | null {
   return lastStatus;
@@ -142,7 +147,7 @@ export function selectNode(id: string | null): void {
   selectedNodeId = selectedNodeId === id ? null : id;
   if (selectedNodeId) {
     fetchNode(selectedNodeId).then((data) => {
-      nodeDetail = data as Record<string, unknown>;
+      nodeDetail = data as unknown as Record<string, unknown>;
     }).catch(() => {
       nodeDetail = null;
     });
@@ -231,9 +236,18 @@ export function connect(): void {
       tickCount += 1;
       // TreeTickEvent fields are all unknown; cast defensively
       const d = data as Record<string, unknown>;
-      if (typeof d['status'] === 'string') lastStatus = d['status'];
+      if (typeof d['status'] === 'string') {
+        lastStatus = d['status'];
+        if (d['status'] !== 'running') {
+          cycleCount += 1;
+        }
+      }
       if (typeof d['durationMs'] === 'number') lastDurationMs = d['durationMs'];
       pushEvent('tree:tick', data, id);
+    },
+
+    'tree:tick:skipped'(data, id) {
+      pushEvent('tree:tick:skipped', data, id);
     },
 
     'tree:reset'(data, id) {
@@ -326,6 +340,7 @@ export function _resetForTest(): void {
   treeRoot = null;
   nodeStatuses = new Map();
   tickCount = 0;
+  cycleCount = 0;
   lastStatus = null;
   lastDurationMs = null;
   events = [];

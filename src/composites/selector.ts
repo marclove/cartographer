@@ -2,13 +2,14 @@ import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
 import type { SelectorConfig, TreeContext, SelectionStrategy, BTreeNode } from '../types.js';
 import { DefaultSelectionStrategy } from '../strategies/default-selection.js';
+import { isReactiveNode } from './is-reactive-node.js';
 
 /**
  * A composite node that succeeds as soon as any child succeeds (OR logic).
  *
  * `SelectorNode` tries each child in order and returns:
  * - `SUCCESS` — the moment a child returns `SUCCESS` (remaining children are skipped).
- * - `RUNNING` — when a child returns `RUNNING` (selector pauses and remembers that child).
+ * - `RUNNING` — when a child returns `RUNNING` (selector pauses at that child).
  * - `FAILURE` — when every child has returned `FAILURE`.
  *
  * This "try the first option, fall back to the next" pattern mirrors an
@@ -36,25 +37,24 @@ import { DefaultSelectionStrategy } from '../strategies/default-selection.js';
  * });
  * ```
  *
- * ## RUNNING and resumption
+ * ## Reactive re-evaluation
  *
- * When a child returns `RUNNING`, the selector records that child's ID and
- * returns `RUNNING` itself. On the next tick the selector resumes from that
- * child — skipping siblings that already failed — until the child resolves
- * to `SUCCESS` or `FAILURE`.
+ * On every tick the selector re-evaluates children from the start. Reactive
+ * children (conditions and single-child decorators wrapping conditions) are
+ * always re-ticked. Non-reactive children that already returned a terminal
+ * status within the current cycle return their cached result.
  *
- * Resumption is ID-based, not index-based, so it works correctly even when
- * a {@link SelectionStrategy} returns a different order on a subsequent
- * execution cycle.
+ * If a higher-priority branch succeeds while a lower-priority branch is
+ * RUNNING, the lower-priority branch is aborted via its scoped
+ * AbortController and the selector returns SUCCESS immediately.
  *
  * ## Order commitment
  *
  * The strategy is consulted once per execution cycle — when the selector
- * starts fresh (no child is RUNNING). The returned order is committed for
- * the duration of that cycle. Subsequent ticks that resume a RUNNING child
- * reuse the committed order without calling the strategy again. The
- * committed order is cleared when the cycle ends (SUCCESS or FAILURE) or
- * when `reset()` is called.
+ * starts fresh (no cycle in progress). The returned order is committed for
+ * the duration of that cycle. Subsequent ticks reuse the committed order
+ * without calling the strategy again. The committed order is cleared when
+ * the cycle ends (SUCCESS or FAILURE) or when `reset()` is called.
  *
  * ## Strategy injection
  *
@@ -78,10 +78,23 @@ export class SelectorNode extends BaseNode {
   private strategy: SelectionStrategy;
 
   /**
-   * The ID of the child that returned `RUNNING` on the previous tick.
-   * `null` when no child is currently mid-execution.
+   * Caches terminal results for non-reactive children within the current
+   * execution cycle. Cleared when the cycle ends or on reset/abort.
    */
-  private runningChildId: string | null = null;
+  private completedMap: Map<BTreeNode, NodeStatus> = new Map();
+
+  /**
+   * Scoped AbortControllers per child, created once per cycle and reused
+   * across ticks. On preemption or cycle end, controllers are aborted and
+   * cleared.
+   */
+  private childControllers: Map<BTreeNode, AbortController> = new Map();
+
+  /**
+   * Cleanup functions that remove parent-signal listeners added during the
+   * current cycle. Called by {@link clearCycle} to prevent listener leaks.
+   */
+  private signalCleanups: (() => void)[] = [];
 
   /**
    * The committed child order for the current execution cycle.
@@ -102,53 +115,132 @@ export class SelectorNode extends BaseNode {
   }
 
   protected async execute(context: TreeContext): Promise<NodeStatus> {
-    // Commit the child order once per execution cycle. The strategy is only
-    // consulted when starting a new cycle (committedOrder is null). While a
-    // child is RUNNING the committed order is stable across ticks.
+    // --- Phase 1: Resolve child order for this cycle ---
+    // The strategy determines which order to try children in. It is
+    // consulted once on the first tick of a cycle and the result is
+    // committed for all subsequent ticks in that cycle. This ensures
+    // the evaluation order stays stable while children are running.
+    // Agent strategies (e.g., AgentSelectionStrategy) may call Claude
+    // here to pick the most promising branch given blackboard state.
     if (this.committedOrder === null) {
       this.committedOrder = await this.strategy.order(this._children, context);
     }
     const ordered = this.committedOrder;
 
-    // If a child was RUNNING on the previous tick, find it in the committed
-    // order by ID and resume from that position.
-    let startIndex = 0;
-    if (this.runningChildId !== null) {
-      const resumeIndex = ordered.findIndex((c) => c.id === this.runningChildId);
-      if (resumeIndex !== -1) {
-        startIndex = resumeIndex;
-      }
-    }
+    // --- Phase 2: Evaluate children sequentially (OR logic) ---
+    // Children are tried one at a time in the committed order. The
+    // selector succeeds as soon as any child succeeds (short-circuit),
+    // and fails only when every child has failed.
+    for (let i = 0; i < ordered.length; i++) {
+      const child = ordered[i];
 
-    for (let i = startIndex; i < ordered.length; i++) {
-      const status = await ordered[i].tick(context);
-      if (status === NodeStatus.RUNNING) {
-        this.runningChildId = ordered[i].id;
-        return NodeStatus.RUNNING;
+      // --- Scoped AbortController per child ---
+      // Each child gets its own controller so it can be individually
+      // cancelled (e.g., when a higher-priority sibling succeeds and
+      // preempts lower-priority running children). The controller is
+      // linked to the parent signal so tree-wide aborts cascade down.
+      let controller = this.childControllers.get(child);
+      if (!controller) {
+        controller = new AbortController();
+        if (context.signal) {
+          // If the parent was already aborted between ticks, propagate
+          // immediately so the child sees the abort on its first tick.
+          if (context.signal.aborted) {
+            controller.abort();
+          } else {
+            // Forward future parent aborts to this child. The cleanup
+            // is stored so we can remove the listener when the cycle
+            // ends, preventing memory leaks in long-running trees.
+            const handler = () => controller!.abort();
+            context.signal.addEventListener('abort', handler, { once: true });
+            const signal = context.signal;
+            this.signalCleanups.push(() => signal.removeEventListener('abort', handler));
+          }
+        }
+        this.childControllers.set(child, controller);
       }
+
+      const childContext = { ...context, signal: controller.signal };
+
+      let status: NodeStatus;
+
+      // Non-reactive children that already finished this cycle use
+      // their cached result. Reactive children (conditions, guards)
+      // are always re-ticked so they can detect predicate changes
+      // and potentially preempt a lower-priority running branch.
+      if (!isReactiveNode(child) && this.completedMap.has(child)) {
+        status = this.completedMap.get(child)!;
+      } else {
+        status = await child.tick(childContext);
+        // Cache terminal results for non-reactive children so they
+        // are not re-ticked on subsequent calls within this cycle.
+        if (!isReactiveNode(child) && status !== NodeStatus.RUNNING) {
+          this.completedMap.set(child, status);
+        }
+      }
+
+      // --- Short-circuit on SUCCESS ---
+      // A selector succeeds the moment any child succeeds. Abort all
+      // children (including any still-running siblings from earlier
+      // ticks) and clear the cycle so the next execution starts fresh.
       if (status === NodeStatus.SUCCESS) {
-        this.runningChildId = null;
-        this.committedOrder = null;
+        this.abortAllChildren();
+        this.clearCycle();
         return NodeStatus.SUCCESS;
       }
-      // FAILURE: continue to the next child
+
+      // --- Pause on RUNNING ---
+      // This child is still in progress. Return RUNNING to the parent
+      // so the tree scheduler will tick us again. The cycle state
+      // (committed order, cached results, controllers) is preserved
+      // so the next tick resumes where we left off.
+      if (status === NodeStatus.RUNNING) {
+        return NodeStatus.RUNNING;
+      }
+
+      // FAILURE: this branch didn't work — continue to the next child.
     }
 
-    this.runningChildId = null;
-    this.committedOrder = null;
+    // --- Phase 3: All children failed ---
+    // Every child returned FAILURE — no fallback succeeded. Clear the
+    // cycle so the next execution starts with a fresh strategy call.
+    this.clearCycle();
     return NodeStatus.FAILURE;
+  }
+
+  /**
+   * Abort all child controllers and call abort() on all children.
+   */
+  private abortAllChildren(): void {
+    for (const controller of this.childControllers.values()) {
+      controller.abort();
+    }
+    for (const child of this._children) {
+      child.abort();
+    }
+  }
+
+  /**
+   * Clear all cycle state — completion cache, child controllers, and
+   * committed order.
+   */
+  private clearCycle(): void {
+    for (const cleanup of this.signalCleanups) cleanup();
+    this.signalCleanups = [];
+    this.completedMap.clear();
+    this.childControllers.clear();
+    this.committedOrder = null;
   }
 
   /**
    * Reset this selector and all of its children to their initial states.
    *
-   * Clears the running-child record, calls `reset()` on the strategy
-   * (if it implements one — agent strategies use this to clear cached
-   * orderings), and cascades `reset()` to every child node.
+   * Clears cycle state, calls `reset()` on the strategy (if it implements
+   * one — agent strategies use this to clear cached orderings), and cascades
+   * `reset()` to every child node.
    */
   reset(): void {
-    this.runningChildId = null;
-    this.committedOrder = null;
+    this.clearCycle();
     this.strategy.reset?.();
     for (const child of this.children) {
       child.reset();
@@ -156,14 +248,13 @@ export class SelectorNode extends BaseNode {
   }
 
   /**
-   * Propagate an abort signal to all child nodes.
+   * Abort all in-progress children and clear cycle state.
    *
-   * Called when `BehaviorTree.abort()` is invoked. Each child is
-   * responsible for cancelling any in-progress work it owns.
+   * Called when `BehaviorTree.abort()` is invoked or when this subtree
+   * is preempted by a parent composite.
    */
   abort(): void {
-    for (const child of this.children) {
-      child.abort();
-    }
+    this.abortAllChildren();
+    this.clearCycle();
   }
 }

@@ -64,9 +64,8 @@ The factory pattern defers tree construction until the CLI has loaded environmen
 |-------|------|---------|-------------|
 | `tree` | `BehaviorTree` | (required) | The constructed behavior tree to run. |
 | `schedule` | `SchedulerConfig['schedule']` | — | Optional schedule. Omit for a single run. |
-| `maxRuns` | `number` | — | Maximum number of scheduled runs. |
+| `maxCycles` | `number` | — | Maximum number of completed cycles (terminal statuses). |
 | `stopOnStatus` | `NodeStatus` | — | Stop the scheduler when the tree returns this status. |
-| `resetBetweenTicks` | `boolean` | `true` | Whether to reset the tree between scheduled ticks. |
 | `onError` | `SchedulerConfig['onError']` | — | Error handling policy for scheduled runs. |
 
 ### Example: reading environment variables
@@ -293,14 +292,14 @@ The CLI handles `SIGINT` (Ctrl-C) and `SIGTERM` gracefully. On the first signal,
 
 ## Scheduling via CLI
 
-When the factory returns a `schedule` field, the CLI automatically wraps execution in a `TreeScheduler`. All scheduler options (`maxRuns`, `stopOnStatus`, `resetBetweenTicks`, `onError`) are set through the `TreeRunConfig` — no additional flags needed.
+When the factory returns a `schedule` field, the CLI automatically wraps execution in a `TreeScheduler`. All scheduler options (`maxCycles`, `stopOnStatus`, `onError`) are set through the `TreeRunConfig` — no additional flags needed.
 
 ```typescript
 export default function (ctx: RunContext): TreeRunConfig {
   return {
     tree,
     schedule: { type: 'cron', expression: '*/5 * * * *' },
-    maxRuns: 100,
+    maxCycles: 100,
     onError: 'continue',
   };
 }

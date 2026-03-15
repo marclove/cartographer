@@ -171,6 +171,7 @@ export interface TreeEvents {
   'tree:tick': { tree: string; status: NodeStatus; durationMs: number };
   'tree:reset': { tree: string };
   'tree:abort': { tree: string };
+  'tree:tick:skipped': { timestamp: number };
   'blackboard:write': { key: string; value: unknown; source: string };
   'strategy:decision': { composite: BTreeNode; strategy: string; decision: unknown };
   'agent:elicitation_declined': { node: BTreeNode; request: ElicitationRequest };
@@ -307,8 +308,7 @@ export interface BTreeNode {
    *
    * Clears any internal tracking such as the current child index in
    * composites, attempt counts in retry decorators, or cached results
-   * in agent nodes. Called between tree ticks when `resetBetweenTicks`
-   * is enabled on the scheduler.
+   * in agent nodes.
    */
   reset(): void;
 
@@ -346,7 +346,7 @@ export interface BTreeNode {
  */
 export interface SelectionStrategy {
   /** Return children in the order they should be evaluated by the selector. */
-  order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]>;
+  order(children: BTreeNode[], context: TreeContext): BTreeNode[] | Promise<BTreeNode[]>;
 
   /** Reset any internal state (e.g., cached ordering). */
   reset?(): void;
@@ -373,7 +373,7 @@ export interface SelectionStrategy {
  */
 export interface ExecutionStrategy {
   /** Return children in the order they should be executed by the sequence. */
-  order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]>;
+  order(children: BTreeNode[], context: TreeContext): BTreeNode[] | Promise<BTreeNode[]>;
 
   /** Reset any internal state (e.g., cached ordering). */
   reset?(): void;
@@ -434,7 +434,7 @@ export interface ParallelPolicy {
  */
 export interface ParallelStrategy {
   /** Return the policy that determines when the parallel node succeeds or fails. */
-  policy(children: BTreeNode[], context: TreeContext): Promise<ParallelPolicy>;
+  policy(children: BTreeNode[], context: TreeContext): ParallelPolicy | Promise<ParallelPolicy>;
 
   /** Reset any internal state (e.g., cached policy). */
   reset?(): void;
@@ -869,6 +869,23 @@ export interface GuardConfig extends DecoratorConfig {
   condition: (context: TreeContext) => Promise<boolean> | boolean;
 }
 
+// --- Tick Loop Handle ---
+
+/**
+ * Handle returned by `BehaviorTree.start()` for stopping the tick loop.
+ *
+ * @example
+ * ```ts
+ * const handle = tree.start({ intervalMs: 100 });
+ * // ... later
+ * await handle.stop();
+ * ```
+ */
+export interface TickLoopHandle {
+  /** Stop the tick loop and wait for any in-flight tick to complete. */
+  stop(): Promise<void>;
+}
+
 // --- Behavior Tree Config ---
 
 /**
@@ -930,7 +947,7 @@ export interface BehaviorTreeConfig {
  * const config: SchedulerConfig = {
  *   tree: myBehaviorTree,
  *   schedule: { type: 'interval', delayMs: 60_000 },
- *   maxRuns: 10,
+ *   maxCycles: 10,
  *   stopOnStatus: NodeStatus.SUCCESS,
  *   onError: (error, runCount) => {
  *     console.error(`Run ${runCount} failed:`, error);
@@ -944,7 +961,7 @@ export interface SchedulerConfig {
    * The behavior tree (or tree-like object) to schedule.
    * Must support `tick()`, `reset()`, and expose an `events` emitter.
    */
-  tree: { tick(): Promise<NodeStatus>; reset(): void; readonly events: TypedEventEmitter<TreeEvents> };
+  tree: { tick(): Promise<NodeStatus>; reset(): void; abort?(): void; readonly events: TypedEventEmitter<TreeEvents> };
 
   /** When and how often to tick the tree. */
   schedule:
@@ -952,17 +969,15 @@ export interface SchedulerConfig {
     | { type: 'interval'; delayMs: number }
     | { type: 'once' };
 
-  /** Maximum number of ticks before the scheduler stops. */
-  maxRuns?: number;
+  /**
+   * Maximum number of completed cycles before the scheduler stops.
+   * A cycle completes when the tree returns a terminal status (SUCCESS
+   * or FAILURE). RUNNING ticks do not count toward this limit.
+   */
+  maxCycles?: number;
 
   /** Stop the scheduler when the tree returns this status. */
   stopOnStatus?: NodeStatus;
-
-  /**
-   * Whether to call `tree.reset()` before each tick. Defaults to `true`.
-   * Set to `false` if the tree should retain RUNNING state between ticks.
-   */
-  resetBetweenTicks?: boolean;
 
   /**
    * How to handle errors thrown during a tick.
@@ -971,6 +986,19 @@ export interface SchedulerConfig {
    * - A function — Receives the error and run count, returns `'stop'` or `'continue'`.
    */
   onError?: 'stop' | 'continue' | ((error: Error, runCount: number) => 'stop' | 'continue');
+
+  /**
+   * When `true`, skip a tick if the previous tick is still in progress.
+   * Emits a `tree:tick:skipped` event on the tree's event emitter.
+   * Defaults to `false`.
+   */
+  skipOnOverlap?: boolean;
+
+  /**
+   * When `true`, call `tree.abort()` when the scheduler stops.
+   * Defaults to `false`.
+   */
+  abortOnStop?: boolean;
 }
 
 /**
@@ -994,5 +1022,5 @@ export interface SchedulerEvents {
   'tick:start': { runCount: number; timestamp: Date };
   'tick:complete': { runCount: number; status: NodeStatus; durationMs: number };
   'tick:error': { runCount: number; error: Error };
-  'scheduler:stop': { reason: 'manual' | 'maxRuns' | 'stopOnStatus' | 'error' };
+  'scheduler:stop': { reason: 'manual' | 'maxCycles' | 'stopOnStatus' | 'error' };
 }

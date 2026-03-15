@@ -2,6 +2,7 @@
   import {
     getTreeName,
     getTickCount,
+    getCycleCount,
     getLastStatus,
     getLastDurationMs,
     getConnectionState,
@@ -9,6 +10,7 @@
 
   let treeName = $derived(getTreeName());
   let tickCount = $derived(getTickCount());
+  let cycleCount = $derived(getCycleCount());
   let lastStatus = $derived(getLastStatus());
   let lastDurationMs = $derived(getLastDurationMs());
   let connectionState = $derived(getConnectionState());
@@ -42,7 +44,7 @@
     {/if}
   </div>
   <div class="header-right">
-    <div class="header-stat">Tick <strong>{tickCount}</strong></div>
+    <div class="header-stat">Tick <strong>{tickCount}</strong> / Cycle <strong>{cycleCount}</strong></div>
     <div class="header-stat"><strong>{durationStr}</strong></div>
     <div class="status-badge {statusClass}">
       <div class="status-dot"></div>

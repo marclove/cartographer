@@ -21,13 +21,14 @@ interface SelectorConfig {
 ### Behavior
 
 1. If no child order is committed for the current cycle, obtains it from `strategy.order()` (default: original insertion order) and commits it.
-2. If a child returned `RUNNING` on a previous tick, resumes from that child (skipping already-completed siblings).
-3. Ticks each child starting from the resume point.
-4. First child returning `SUCCESS` — selector returns `SUCCESS` and clears the committed order.
-5. First child returning `RUNNING` — selector saves the child's position and returns `RUNNING` (committed order is preserved).
-6. All children return `FAILURE` — selector returns `FAILURE` and clears the committed order.
+2. Iterates children from the beginning on every tick.
+3. Reactive children (conditions, guards) are always re-ticked. Non-reactive children that already returned a terminal status in this cycle use the cached result.
+4. First `SUCCESS` — selector returns `SUCCESS` and clears the cycle (cached results, committed order).
+5. First `RUNNING` — selector returns `RUNNING` (cycle preserved).
+6. All `FAILURE` — selector returns `FAILURE` and clears the cycle.
+7. **Preemption**: If a higher-priority reactive child succeeds while a lower-priority child is RUNNING, the lower-priority child is aborted and the selector returns `SUCCESS`.
 
-The strategy is consulted once per execution cycle. The committed order is stable across ticks within a cycle and is cleared on terminal results or `reset()`.
+The strategy is consulted once per execution cycle (committed and reused across ticks within the cycle). The committed order is cleared on terminal results or `reset()`.
 
 ### Example
 
@@ -63,19 +64,19 @@ interface SequenceConfig {
 ### Behavior
 
 1. If no child order is committed for the current cycle, obtains it from `strategy.order()` (default: original insertion order) and commits it.
-2. If a child returned `RUNNING` on a previous tick, resumes from that child (skipping already-completed siblings).
-3. Ticks each child starting from the resume point.
-4. First child returning `FAILURE` — sequence returns `FAILURE` and clears the committed order.
-5. First child returning `RUNNING` — sequence saves the child's position and returns `RUNNING` (committed order is preserved).
-6. All children return `SUCCESS` — sequence returns `SUCCESS` and clears the committed order.
+2. Re-evaluates from child 0 on every tick.
+3. Reactive children (conditions, guards) are always re-ticked. Non-reactive children that already returned a terminal status in this cycle use the cached result.
+4. First child returning `FAILURE` — sequence returns `FAILURE` and clears the cycle (cached results, committed order).
+5. First child returning `RUNNING` — sequence returns `RUNNING` (cycle preserved).
+6. All children return `SUCCESS` — sequence returns `SUCCESS` and clears the cycle.
 
-The strategy is consulted once per execution cycle. The committed order is stable across ticks within a cycle and is cleared on terminal results or `reset()`.
+The strategy is consulted once per execution cycle (committed and reused across ticks within the cycle). The committed order is cleared on terminal results or `reset()`.
 
 ---
 
 ## ParallelNode
 
-Runs all children concurrently via `Promise.all`, then applies a policy to determine the composite result.
+Ticks all children concurrently, with early policy evaluation that can short-circuit before all children complete.
 
 ### Config
 
@@ -95,13 +96,13 @@ interface ParallelPolicy {
 
 ### Behavior
 
-1. All children tick concurrently.
-2. If any child returns `RUNNING` — parallel returns `RUNNING`.
-3. Policy evaluation (checked in this order):
-   - `failureCount` — if failures >= `failureCount`, return `FAILURE`.
-   - `successPercentage` — if success percentage >= threshold, return `SUCCESS`; otherwise `FAILURE`.
-   - `successCount` — if successes >= `successCount`, return `SUCCESS`; otherwise `FAILURE`.
-4. If no policy fields are set, all children must succeed (any failure means `FAILURE`).
+1. Gets policy from `strategy.policy()` on the first tick of a cycle; commits it for the cycle.
+2. Ticks all children concurrently. Reactive children are always re-ticked; non-reactive children use cached terminal results.
+3. **Early termination** — policies are evaluated on every tick with partial results:
+   - `failureCount` — if failures >= threshold, return `FAILURE` immediately (even with RUNNING children).
+   - `successCount` — if successes >= threshold, return `SUCCESS`; if `successes + running < threshold`, return `FAILURE`. Otherwise `RUNNING`.
+   - `successPercentage` — requires all children to complete (no early exit). Returns `SUCCESS` if percentage >= threshold, otherwise `FAILURE`.
+   - Default (no policy fields): any failure returns `FAILURE`; any RUNNING returns `RUNNING`; all SUCCESS returns `SUCCESS`.
 
 The default policy produced by `DefaultParallelStrategy` is `{ successCount: children.length }`, meaning every child must succeed.
 
@@ -115,17 +116,17 @@ Three strategy interfaces correspond to the three composite types:
 
 ```typescript
 interface SelectionStrategy {
-  order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]>;
+  order(children: BTreeNode[], context: TreeContext): BTreeNode[] | Promise<BTreeNode[]>;
   reset?(): void;
 }
 
 interface ExecutionStrategy {
-  order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]>;
+  order(children: BTreeNode[], context: TreeContext): BTreeNode[] | Promise<BTreeNode[]>;
   reset?(): void;
 }
 
 interface ParallelStrategy {
-  policy(children: BTreeNode[], context: TreeContext): Promise<ParallelPolicy>;
+  policy(children: BTreeNode[], context: TreeContext): ParallelPolicy | Promise<ParallelPolicy>;
   reset?(): void;
 }
 ```

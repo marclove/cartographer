@@ -15,12 +15,12 @@ import {
 import {
   createHealthCheck,
   updateHistory,
-  incrementTickCount,
+  incrementCycleCount,
   isUnhealthy,
   wasDownNowHealthy,
   noActiveIncident,
   enoughTimeSinceLastUpdate,
-  recordIncidentTick,
+  recordIncidentCycle,
   clearIncidentState,
   logHealthy,
 } from './actions.js';
@@ -30,7 +30,6 @@ import {
  *
  * Tree structure:
  *   sequence "monitor"
- *   ├── action "increment-tick"
  *   ├── parallel "check-all-services"
  *   │   ├── action "check-api"
  *   │   ├── action "check-database"
@@ -46,20 +45,19 @@ import {
  *   │   │   │   │   └── agent "draft-incident-report" (structured)
  *   │   │   │   ├── guard(enoughTimeSinceLastUpdate) → agent "draft-status-update" (structured)
  *   │   │   │   └── action "skip-update"
- *   │   │   └── action "record-incident-tick"
+ *   │   │   └── action "record-incident-cycle"
  *   │   ├── sequence "recovery-path"
  *   │   │   ├── condition "was-down-now-healthy"
  *   │   │   ├── agent "draft-resolution" (structured)
  *   │   │   └── action "clear-incident"
  *   │   └── action "log-healthy"
+ *   └── action "increment-cycle"
  *
  * @param baseUrl Base URL of the test server (e.g. "http://localhost:3456")
  */
 export function buildHealthMonitor(baseUrl: string) {
   return new TreeBuilder('health-monitor')
     .sequence('monitor', (b) => {
-      b.action('increment-tick', incrementTickCount);
-
       // Check all services concurrently
       b.parallel('check-all-services', (b) => {
         b.action('check-api', createHealthCheck('api', baseUrl));
@@ -116,7 +114,7 @@ export function buildHealthMonitor(baseUrl: string) {
             // Fallback: no update needed this tick
             b.action('skip-update', () => NodeStatus.SUCCESS);
           });
-          b.action('record-incident-tick', recordIncidentTick);
+          b.action('record-incident-cycle', recordIncidentCycle);
         });
 
         // Recovery path
@@ -135,6 +133,10 @@ export function buildHealthMonitor(baseUrl: string) {
         // Healthy fallback
         b.action('log-healthy', logHealthy);
       });
+
+      // Increment cycle count at the end so it reflects completed cycles,
+      // matching TreeScheduler.cycleCount and dashboard semantics.
+      b.action('increment-cycle', incrementCycleCount);
     })
     .build();
 }

@@ -11,7 +11,7 @@ const LOG_FILE = 'logs/live-agent-unstructured-mode.log';
 let stopLogging: (() => void) | undefined;
 afterEach(() => { stopLogging?.(); stopLogging = undefined; });
 
-describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
+describe('Agent Unstructured Mode Integration', { timeout: 90_000 }, () => {
   it('unstructured mode with blackboard MCP tool use', async () => {
     const ctx = createContext({
       items: ['apple', 'banana', 'cherry'],
@@ -32,8 +32,15 @@ describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
       },
     });
 
-    const status = await agent.tick(ctx);
+    // First tick starts the API call and returns RUNNING
+    let status = await agent.tick(ctx);
+    expect(status).toBe(NodeStatus.RUNNING);
 
+    // Poll until the API call completes
+    while (status === NodeStatus.RUNNING) {
+      await new Promise(r => setTimeout(r, 200));
+      status = await agent.tick(ctx);
+    }
     expect(status).toBe(NodeStatus.SUCCESS);
     expect(responseEvents.length).toBeGreaterThanOrEqual(1);
     expect(toolUseEvents.length).toBeGreaterThanOrEqual(1);
@@ -70,7 +77,12 @@ describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
       .build();
     stopLogging = createTreeLogger(tree.events, { filePath: LOG_FILE, logBlackboard: true });
 
-    const { status } = await tree.run();
+    // Tick until the tree completes (RUNNING means inflight work is pending)
+    let status = await tree.tick();
+    while (status === NodeStatus.RUNNING) {
+      await new Promise(r => setTimeout(r, 1_000));
+      status = await tree.tick();
+    }
     expect(status).toBe(NodeStatus.SUCCESS);
     expect(tree.blackboard.get('total')).toBe(60);
   });
@@ -102,8 +114,15 @@ describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
       },
     });
 
-    const status = await agent.tick(ctx);
+    // First tick starts the API call and returns RUNNING
+    let status = await agent.tick(ctx);
+    expect(status).toBe(NodeStatus.RUNNING);
 
+    // Poll until the API call completes
+    while (status === NodeStatus.RUNNING) {
+      await new Promise(r => setTimeout(r, 200));
+      status = await agent.tick(ctx);
+    }
     expect(status).toBe(NodeStatus.FAILURE);
     expect(responseEvents).toHaveLength(1);
 
@@ -137,22 +156,36 @@ describe('Agent Unstructured Mode Integration', { timeout: 30_000 }, () => {
       cache: true,
     });
 
-    // First tick — makes API call
-    const status1 = await agent.tick(ctx);
-    expect(status1).toBe(NodeStatus.SUCCESS);
+    // Poll until the first API call completes
+    let status = await agent.tick(ctx);
+    expect(status).toBe(NodeStatus.RUNNING);
+    expect(responseEvents).toHaveLength(0);
+
+    while (status === NodeStatus.RUNNING) {
+      await new Promise(r => setTimeout(r, 200));
+      status = await agent.tick(ctx);
+    }
+    expect(status).toBe(NodeStatus.SUCCESS);
     expect(responseEvents).toHaveLength(1);
 
-    // Second tick — uses cache, no new API call
-    const status2 = await agent.tick(ctx);
-    expect(status2).toBe(NodeStatus.SUCCESS);
+    // Cache hit — returns SUCCESS immediately (no new API call)
+    const cachedStatus = await agent.tick(ctx);
+    expect(cachedStatus).toBe(NodeStatus.SUCCESS);
     expect(responseEvents).toHaveLength(1); // still 1
 
     // Reset clears cache
     agent.reset();
 
-    // Third tick — makes new API call
-    const status3 = await agent.tick(ctx);
-    expect(status3).toBe(NodeStatus.SUCCESS);
+    // Poll until the second API call completes
+    status = await agent.tick(ctx);
+    expect(status).toBe(NodeStatus.RUNNING);
+    expect(responseEvents).toHaveLength(1); // still 1
+
+    while (status === NodeStatus.RUNNING) {
+      await new Promise(r => setTimeout(r, 200));
+      status = await agent.tick(ctx);
+    }
+    expect(status).toBe(NodeStatus.SUCCESS);
     expect(responseEvents).toHaveLength(2); // now 2
   });
 });

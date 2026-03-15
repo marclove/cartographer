@@ -104,9 +104,8 @@ export async function runCommand(options: RunOptions): Promise<void> {
       const scheduler = new TreeScheduler({
         tree,
         schedule: config.schedule,
-        maxRuns: config.maxRuns,
+        maxCycles: config.maxCycles,
         stopOnStatus: config.stopOnStatus,
-        resetBetweenTicks: config.resetBetweenTicks,
         onError: config.onError,
       });
 

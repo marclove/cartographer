@@ -160,6 +160,7 @@ describe('Abort Signal Integration', () => {
   });
 
   it('AbortSignal in async actions — action respects ctx.signal', async () => {
+    const flush = () => new Promise<void>(r => setTimeout(r, 0));
     let loopIterations = 0;
 
     const tree = new BehaviorTree({
@@ -178,13 +179,24 @@ describe('Abort Signal Integration', () => {
       }),
     });
 
-    // Start tick in background, abort after short delay
-    const tickPromise = tree.tick();
+    // First tick: action starts inflight, returns RUNNING immediately
+    const status1 = await tree.tick();
+    expect(status1).toBe(NodeStatus.RUNNING);
+
+    // Abort after short delay — clears inflight state and aborts the signal
     await new Promise((r) => setTimeout(r, 35));
     tree.abort();
 
-    const status = await tickPromise;
-    expect(status).toBe(NodeStatus.FAILURE);
+    // Wait for the underlying action promise to settle (it checks signal on next loop)
+    await new Promise((r) => setTimeout(r, 20));
+    await flush();
+
+    // Second tick: re-invokes action with already-aborted signal, action exits immediately → RUNNING (inflight)
+    await tree.tick();
+    await flush();
+    // Third tick: inflight result (FAILURE) is now available
+    const status3 = await tree.tick();
+    expect(status3).toBe(NodeStatus.FAILURE);
     expect(loopIterations).toBeGreaterThan(0);
     expect(loopIterations).toBeLessThan(10);
   });

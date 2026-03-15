@@ -37,7 +37,7 @@ NodeStatus.FAILURE   -- "I couldn't do it."
 NodeStatus.RUNNING   -- "I'm still working on it."
 ```
 
-The `RUNNING` status is what makes behavior trees suitable for asynchronous and long-running work. A node that calls an API, waits for a user response, or delegates to an AI agent can return `RUNNING` to signal that it is not yet finished. When a child returns `RUNNING`, its parent composite (Sequence or Selector) remembers which child was running and resumes from that child on the next tick, skipping siblings that already completed. This means the tree can make incremental progress across multiple ticks without re-executing work that already succeeded.
+The `RUNNING` status is what makes behavior trees suitable for asynchronous and long-running work. A node that calls an API, waits for a user response, or delegates to an AI agent can return `RUNNING` to signal that it is not yet finished. Composites re-evaluate from the beginning on each tick, but cache terminal results for non-reactive children (actions, agents) to avoid re-executing completed work. Reactive children (conditions, guards) are always re-evaluated, enabling the tree to detect state changes and preempt running work when conditions change.
 
 ---
 
@@ -71,11 +71,11 @@ Composite nodes have one or more children and define how those children are tick
 
 Cartographer provides three composite node types:
 
-- **SelectorNode** -- Ticks children in order until one returns `SUCCESS` or `RUNNING`. If all children return `FAILURE`, the selector returns `FAILURE`. Think of it as an OR gate: "try each option until one works." When a child returns `RUNNING`, the selector remembers that child and resumes from it on the next tick.
+- **SelectorNode** -- Ticks children in order until one returns `SUCCESS` or `RUNNING`. If all children return `FAILURE`, the selector returns `FAILURE`. Think of it as an OR gate: "try each option until one works." Re-evaluates from the top on every tick, with preemption: a higher-priority reactive child succeeding can abort a lower-priority running child.
 
-- **SequenceNode** -- Ticks children in order until one returns `FAILURE` or `RUNNING`. If all children return `SUCCESS`, the sequence returns `SUCCESS`. Think of it as an AND gate: "do all steps in order; stop if any step fails." When a child returns `RUNNING`, the sequence remembers that child and resumes from it on the next tick, skipping children that already succeeded.
+- **SequenceNode** -- Ticks children in order until one returns `FAILURE` or `RUNNING`. If all children return `SUCCESS`, the sequence returns `SUCCESS`. Think of it as an AND gate: "do all steps in order; stop if any step fails." Re-evaluates from child 0 each tick, using cached results for non-reactive children that already completed.
 
-- **ParallelNode** -- Ticks all children concurrently using `Promise.all`. A configurable policy determines how many successes or failures are needed to produce the final result. Useful for running independent tasks simultaneously.
+- **ParallelNode** -- Ticks all children concurrently, with early policy evaluation that can short-circuit before all children complete. A configurable policy determines how many successes or failures are needed to produce the final result. Useful for running independent tasks simultaneously.
 
 Each composite accepts an optional **strategy** that can reorder children or adjust policy before execution. More on strategies below.
 
@@ -247,7 +247,13 @@ A shared key-value store passed to every node through the tree context. Nodes us
 The execution environment passed to every node on each tick. Contains the blackboard, event emitter, and an optional abort signal.
 
 **Execution Cycle**
-A single run of a composite node from start to terminal result. A cycle begins when the composite has no RUNNING child (fresh start) and ends when it returns SUCCESS or FAILURE. Within a cycle, the child order is committed on the first tick and remains stable across subsequent ticks that resume a RUNNING child. Calling `reset()` also ends the current cycle.
+A single run of a composite node from start to terminal result. A cycle begins when the composite starts fresh (no cached results) and ends when it returns SUCCESS or FAILURE. Within a cycle, the child order (or parallel policy) is committed on the first tick and remains stable across subsequent ticks. Non-reactive child results are cached within the cycle to avoid redundant work. Calling `reset()` also ends the current cycle.
+
+**Reactive Node**
+A node whose result can change between ticks without external state change. Conditions and Guards are always reactive; decorators wrapping reactive children inherit reactivity. Non-reactive nodes (actions, agents, composites) have their terminal results cached within a cycle to avoid re-execution.
+
+**Inflight State**
+The pattern used by leaf nodes (ActionNode, AgentNode) to launch async work on the first tick, return RUNNING immediately, and poll for results on subsequent ticks without re-invoking the work. This keeps ticks non-blocking so the reactive model can re-evaluate other branches while async operations are pending.
 
 **Strategy**
 A pluggable component that controls how a composite node orders its children or evaluates its policy. Strategies can be static (fixed rules) or agent-backed (AI-driven decisions).

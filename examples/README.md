@@ -78,7 +78,7 @@ Includes a local HTTP server that simulates three services with different failur
 
 **Framework features exercised:**
 
-- `TreeScheduler` with interval scheduling and `resetBetweenTicks: false`
+- `TreeScheduler` with interval scheduling and `maxCycles`
 - Parallel node for concurrent service health checks
 - Stateful blackboard accumulating health history across ticks
 - Timeout decorator around the assessment agent

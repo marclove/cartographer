@@ -58,14 +58,11 @@ export interface TreeRunConfig {
   /** Optional schedule — omit for a single run. */
   schedule?: SchedulerConfig['schedule'];
 
-  /** Maximum number of runs (only meaningful with a schedule). */
-  maxRuns?: number;
+  /** Maximum number of completed cycles (only meaningful with a schedule). */
+  maxCycles?: number;
 
   /** Stop scheduler when tree returns this status. */
   stopOnStatus?: NodeStatus;
-
-  /** Whether to reset the tree between scheduled ticks. Defaults to `true`. */
-  resetBetweenTicks?: boolean;
 
   /** Error handling policy for scheduled runs. */
   onError?: SchedulerConfig['onError'];

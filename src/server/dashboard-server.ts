@@ -4,6 +4,7 @@ import { join, extname } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { BehaviorTree } from '../core/behavior-tree.js';
+import { NodeStatus } from '../types.js';
 import type { TreeEvents } from '../types.js';
 import { EventBuffer } from './event-buffer.js';
 import { serializeEvent } from './serializers.js';
@@ -55,6 +56,7 @@ export class DashboardServer {
     this.eventBuffer = new EventBuffer(options.eventBufferCapacity ?? 500);
     this.state = {
       tickCount: 0,
+      cycleCount: 0,
       lastStatus: null,
       lastDurationMs: null,
       startedAt: Date.now(),
@@ -102,6 +104,9 @@ export class DashboardServer {
     const onTick = (data: TreeEvents['tree:tick']) => {
       this.state.tickCount++;
       this.state.lastStatus = data.status;
+      if (data.status !== NodeStatus.RUNNING) {
+        this.state.cycleCount++;
+      }
       this.state.lastDurationMs = data.durationMs;
     };
     this.tree.events.on('tree:tick', onTick);
@@ -113,7 +118,7 @@ export class DashboardServer {
       'agent:prompt', 'agent:thinking', 'agent:text', 'agent:tool_use',
       'agent:response', 'agent:error', 'agent:message', 'agent:tool_progress',
       'agent:init', 'agent:status', 'agent:rate_limit', 'agent:elicitation_declined',
-      'tree:init', 'tree:tick', 'tree:reset', 'tree:abort',
+      'tree:init', 'tree:tick', 'tree:tick:skipped', 'tree:reset', 'tree:abort',
       'blackboard:write', 'strategy:decision',
     ];
 

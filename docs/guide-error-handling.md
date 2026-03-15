@@ -108,7 +108,7 @@ The delay is inserted after each `FAILURE` except the last attempt. If all attem
 
 ### RetryNode and RUNNING Children
 
-When a child returns `RUNNING`, `RetryNode` returns `RUNNING` immediately — it does not count that as a failed attempt. The attempt counter is local to a single `execute()` call, so on the next tick the retry restarts from attempt zero.
+When a child returns `RUNNING`, `RetryNode` returns `RUNNING` immediately — it does not count that as a failed attempt. The attempt counter persists across ticks as an instance field, so on the next tick the retry resumes at the same attempt rather than restarting from zero.
 
 ---
 
@@ -229,7 +229,7 @@ parallel.abort();
 
 ### TimeoutNode Abort Semantics
 
-`TimeoutNode` uses `Promise.race` to enforce a per-tick deadline. If the timer fires before the child completes, the timeout calls `child.abort()` and returns `FAILURE`. The deadline resets on every tick — a child that returns `RUNNING` gets a full `timeoutMs` window on each subsequent tick.
+`TimeoutNode` tracks wall-clock time across ticks. The timer starts when the child first returns `RUNNING` and tracks cumulative elapsed time. A background `setTimeout` fires when the deadline passes, proactively aborting the child via `child.abort()`. On the next tick after timeout, `FAILURE` is returned without re-ticking the child. A fresh timeout window begins on each new activation cycle (after the child completes or is reset).
 
 ```typescript
 const timeout = new TimeoutNode({
@@ -238,9 +238,9 @@ const timeout = new TimeoutNode({
   timeoutMs: 5000,
 });
 
-// Tick 1: child has 5000ms to complete
-// If child returns RUNNING at 3000ms, tick returns RUNNING
-// Tick 2: child gets a fresh 5000ms deadline
+// Tick 1: child returns RUNNING → timer starts (5000ms deadline)
+// Tick 2: child returns RUNNING → wall-clock check, still within deadline
+// Tick 3: deadline exceeded → child.abort(), returns FAILURE
 ```
 
 ---
@@ -265,7 +265,7 @@ await tree.tick();
 
 If you skip `reset()`, the tree's abort signal will still be in the aborted state, and any action checking `ctx.signal?.aborted` will see `true` immediately.
 
-`reset()` also clears all node state: composite child-resumption indices, retry/repeat attempt counters, and agent node cached results.
+`reset()` also clears all node state: composite cycle caches, retry/repeat attempt counters, and agent node cached results.
 
 ---
 
@@ -296,7 +296,7 @@ const scheduler = new TreeScheduler({
   tree,
   schedule: { type: 'interval', delayMs: 1000 },
   onError: 'continue',
-  maxRuns: 10,
+  maxCycles: 10,
 });
 
 scheduler.events.on('tick:error', ({ error, runCount }) => {
@@ -304,7 +304,7 @@ scheduler.events.on('tick:error', ({ error, runCount }) => {
 });
 
 await scheduler.start();
-// Continues ticking even after errors, up to maxRuns
+// Continues ticking even after errors, up to maxCycles
 ```
 
 ### Error Callback
@@ -325,20 +325,20 @@ const scheduler = new TreeScheduler({
 
 When the callback returns `'stop'`, the scheduler emits a `scheduler:stop` event with `reason: 'error'`.
 
-### Combining with stopOnStatus and maxRuns
+### Combining with stopOnStatus and maxCycles
 
-`stopOnStatus` takes precedence over `maxRuns` when the target status is reached first:
+`stopOnStatus` takes precedence over `maxCycles` when the target status is reached first:
 
 ```typescript
 const scheduler = new TreeScheduler({
   tree,
   schedule: { type: 'interval', delayMs: 100 },
-  maxRuns: 10,
+  maxCycles: 10,
   stopOnStatus: NodeStatus.SUCCESS,
 });
 
 await scheduler.start();
-// Stops at the first SUCCESS, even if maxRuns hasn't been reached.
+// Stops at the first SUCCESS, even if maxCycles hasn't been reached.
 // scheduler.events 'scheduler:stop' reason will be 'stopOnStatus'.
 ```
 
@@ -392,7 +392,7 @@ const scheduler = new TreeScheduler({
   tree,
   schedule: { type: 'interval', delayMs: 30_000 },
   onError: 'continue',
-  resetBetweenTicks: true,
+  abortOnStop: true,
 });
 
 tree.events.on('node:error', ({ node, error }) => {

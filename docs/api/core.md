@@ -53,12 +53,41 @@ import { BehaviorTree } from "cartographer";
 | `run`   | `(): Promise<{ status: NodeStatus; blackboard: Record<string, unknown> }>` | Tick the tree and return the status together with a blackboard snapshot.                                |
 | `reset` | `(): void`                                                                 | Reset the root node and create a new `AbortController`.                                                 |
 | `abort` | `(): void`                                                                 | Abort the root node and signal abort via the internal controller.                                       |
+| `start` | `(options: { intervalMs: number; signal?: AbortSignal }): TickLoopHandle`  | Start a reactive tick loop. Returns a handle to stop it.                                                |
 
 ### Example
 
 ```typescript
 const tree = new BehaviorTree({ name: "my-tree", root: myRootNode });
 const { status, blackboard } = await tree.run();
+```
+
+---
+
+## TickLoopHandle
+
+```typescript
+import type { TickLoopHandle } from "cartographer";
+```
+
+Handle returned by `BehaviorTree.start()` for stopping the tick loop.
+
+```typescript
+interface TickLoopHandle {
+  stop(): Promise<void>;
+}
+```
+
+| Method | Signature | Description |
+| ------ | --------- | ----------- |
+| `stop` | `(): Promise<void>` | Stop the tick loop and wait for any in-flight tick to complete. |
+
+### Example
+
+```typescript
+const handle = tree.start({ intervalMs: 100 });
+// ... later
+await handle.stop();
 ```
 
 ---
@@ -195,6 +224,7 @@ Event map defining every event a tree can emit.
 | `agent:init`                 | `{ node: BTreeNode; sessionId: string; model?: string; tools?: unknown; mcpServers?: unknown }`       |
 | `agent:status`               | `{ node: BTreeNode; status: string }`                                                                 |
 | `agent:rate_limit`           | `{ node: BTreeNode; info: unknown }`                                                                  |
+| `tree:tick:skipped`          | `{ timestamp: number }`                                                                               |
 | `blackboard:write`           | `{ key: string; value: unknown; source: string }`                                                     |
 | `agent:elicitation_declined` | `{ node: BTreeNode; request: ElicitationRequest }`                                                    |
 | `strategy:decision`          | `{ composite: BTreeNode; strategy: string; decision: unknown }`                                       |

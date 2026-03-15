@@ -10,7 +10,7 @@ Strategy interfaces control how composite nodes select, order, and execute their
 import type { SelectionStrategy } from "cartographer";
 
 interface SelectionStrategy {
-  order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]>;
+  order(children: BTreeNode[], context: TreeContext): BTreeNode[] | Promise<BTreeNode[]>;
   reset?(): void;
 }
 ```
@@ -23,7 +23,7 @@ Used by `SelectorNode`. Returns children in the order they should be tried. The 
 import type { ExecutionStrategy } from "cartographer";
 
 interface ExecutionStrategy {
-  order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]>;
+  order(children: BTreeNode[], context: TreeContext): BTreeNode[] | Promise<BTreeNode[]>;
   reset?(): void;
 }
 ```
@@ -36,7 +36,7 @@ Used by `SequenceNode`. Returns children in execution order. The optional `reset
 import type { ParallelStrategy } from "cartographer";
 
 interface ParallelStrategy {
-  policy(children: BTreeNode[], context: TreeContext): Promise<ParallelPolicy>;
+  policy(children: BTreeNode[], context: TreeContext): ParallelPolicy | Promise<ParallelPolicy>;
   reset?(): void;
 }
 ```

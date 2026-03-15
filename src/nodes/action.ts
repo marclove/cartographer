@@ -1,6 +1,6 @@
 import { BaseNode } from './base.js';
 import type { ActionNodeConfig, TreeContext } from '../types.js';
-import type { NodeStatus } from '../types.js';
+import { NodeStatus } from '../types.js';
 
 /**
  * A leaf node that executes an arbitrary function when ticked.
@@ -77,6 +77,11 @@ import type { NodeStatus } from '../types.js';
  */
 export class ActionNode extends BaseNode {
   private action: ActionNodeConfig['action'];
+  private _inflightState: {
+    promise: Promise<NodeStatus>;
+    result?: NodeStatus;
+    error?: Error;
+  } | null = null;
 
   constructor(config: ActionNodeConfig) {
     super(config.name, config.id);
@@ -84,6 +89,44 @@ export class ActionNode extends BaseNode {
   }
 
   protected async execute(context: TreeContext): Promise<NodeStatus> {
-    return await this.action(context);
+    // Poll: inflight work has completed with a result
+    if (this._inflightState?.result !== undefined) {
+      const result = this._inflightState.result;
+      this._inflightState = null;
+      return result;
+    }
+
+    // Poll: inflight work has completed with an error
+    if (this._inflightState?.error !== undefined) {
+      const error = this._inflightState.error;
+      this._inflightState = null;
+      throw error;
+    }
+
+    // Poll: inflight work is still pending
+    if (this._inflightState) {
+      return NodeStatus.RUNNING;
+    }
+
+    // Start: launch the action and capture result/error asynchronously
+    const promise = Promise.resolve(this.action(context));
+    const state: { promise: Promise<NodeStatus>; result?: NodeStatus; error?: Error } = { promise };
+    this._inflightState = state;
+
+    promise.then(
+      (result) => { state.result = result; },
+      (error) => { state.error = error instanceof Error ? error : new Error(String(error)); },
+    );
+
+    return NodeStatus.RUNNING;
+  }
+
+  override abort(): void {
+    this._inflightState = null;
+  }
+
+  override reset(): void {
+    super.reset();
+    this._inflightState = null;
   }
 }

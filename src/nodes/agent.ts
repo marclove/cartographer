@@ -115,6 +115,17 @@ export class AgentNode extends BaseNode {
    */
   private activeAbortController: AbortController | null = null;
 
+  /**
+   * Tracks the in-flight SDK call so that `execute()` can return RUNNING
+   * immediately on the first tick and poll for completion on subsequent ticks.
+   * `null` when no work is in progress.
+   */
+  private _inflightState: {
+    promise: Promise<NodeStatus>;
+    result?: NodeStatus;
+    error?: Error;
+  } | null = null;
+
   constructor(config: AgentNodeConfig) {
     super(config.name, config.id);
     this.config = config;
@@ -129,6 +140,7 @@ export class AgentNode extends BaseNode {
   reset(): void {
     this.cachedStatus = null;
     this.activeAbortController = null;
+    this._inflightState = null;
   }
 
   /**
@@ -140,6 +152,7 @@ export class AgentNode extends BaseNode {
    */
   abort(): void {
     this.activeAbortController?.abort();
+    this._inflightState = null;
   }
 
   protected async execute(context: TreeContext): Promise<NodeStatus> {
@@ -148,6 +161,39 @@ export class AgentNode extends BaseNode {
       return this.cachedStatus;
     }
 
+    // Poll path: check for completed inflight work
+    if (this._inflightState) {
+      if (this._inflightState.error) {
+        const error = this._inflightState.error;
+        this._inflightState = null;
+        throw error;
+      }
+      if (this._inflightState.result !== undefined) {
+        const result = this._inflightState.result;
+        this._inflightState = null;
+        return result;
+      }
+      // Still in progress
+      return NodeStatus.RUNNING;
+    }
+
+    // Start path: kick off the SDK call in the background
+    const state: { promise: Promise<NodeStatus>; result?: NodeStatus; error?: Error } = {
+      promise: this._executeSDKCall(context),
+    };
+    state.promise.then(
+      (status) => { state.result = status; },
+      (error) => { state.error = error instanceof Error ? error : new Error(String(error)); },
+    );
+    this._inflightState = state;
+    return NodeStatus.RUNNING;
+  }
+
+  /**
+   * The actual SDK call logic, extracted from execute() so it can run
+   * in the background while execute() returns RUNNING immediately.
+   */
+  private async _executeSDKCall(context: TreeContext): Promise<NodeStatus> {
     // Resolve the prompt — it may be a static string or a function that
     // builds the prompt dynamically from the current context.
     const prompt = typeof this.config.prompt === 'function'

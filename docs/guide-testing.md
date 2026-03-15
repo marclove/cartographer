@@ -159,9 +159,9 @@ await seq.tick(ctx);
 expect(a.getTicks()).toBe(1);
 expect(b.getTicks()).toBe(1);
 
-// Tick 2: sequence resumes at B (skips A), B succeeds
+// Tick 2: sequence re-evaluates from child 0, A uses cached result, B re-ticked
 await seq.tick(ctx);
-expect(a.getTicks()).toBe(1); // A was NOT re-ticked
+expect(a.getTicks()).toBe(1); // A cached (non-reactive), not re-ticked
 expect(b.getTicks()).toBe(2);
 ```
 
@@ -345,12 +345,12 @@ expect(a.getTicks()).toBe(1);
 expect(b.getTicks()).toBe(1);
 expect(c.getTicks()).toBe(0); // not reached yet
 
-// Tick 2: resumes at B (A skipped), B=RUNNING → sequence RUNNING
+// Tick 2: re-evaluates from child 0, A cached, B=RUNNING → sequence RUNNING
 expect(await sequence.tick(ctx)).toBe(NodeStatus.RUNNING);
-expect(a.getTicks()).toBe(1); // still not re-ticked
+expect(a.getTicks()).toBe(1); // cached (non-reactive), not re-ticked
 expect(b.getTicks()).toBe(2);
 
-// Tick 3: resumes at B, B=SUCCESS, C=SUCCESS → sequence SUCCESS
+// Tick 3: A cached, B=SUCCESS, C=SUCCESS → sequence SUCCESS
 expect(await sequence.tick(ctx)).toBe(NodeStatus.SUCCESS);
 expect(b.getTicks()).toBe(3);
 expect(c.getTicks()).toBe(1);
@@ -362,7 +362,7 @@ expect(c.getTicks()).toBe(1);
 
 `TreeScheduler` provides two options that make tests deterministic:
 
-- **`maxRuns`** — Stop after a fixed number of ticks.
+- **`maxCycles`** — Stop after a fixed number of completed cycles (terminal statuses, not RUNNING ticks).
 - **`stopOnStatus`** — Stop when the tree returns a specific status.
 
 ```typescript
@@ -382,7 +382,6 @@ const tree = new TreeBuilder("scheduler-test")
 const scheduler = new TreeScheduler({
   tree,
   schedule: { type: "interval", delayMs: 10 },
-  resetBetweenTicks: false, // preserve RUNNING state across ticks
   stopOnStatus: NodeStatus.SUCCESS,
 });
 
@@ -393,12 +392,9 @@ expect(tickCount).toBe(3);
 expect(tree.blackboard.get("done")).toBe(true);
 ```
 
-### `resetBetweenTicks`
+### `maxCycles` vs tick count
 
-Controls whether the tree is reset between scheduler ticks:
-
-- **`true` (default)** — Each tick starts fresh. Use for independent periodic runs (monitoring, polling).
-- **`false`** — RUNNING state is preserved. Use for multi-tick workflows that need to resume where they left off.
+`maxCycles` counts only completed cycles — ticks that return a terminal status (SUCCESS or FAILURE). RUNNING ticks do not increment the counter. This means `maxCycles: 3` may require more than 3 scheduler ticks if some ticks return RUNNING.
 
 ### Scheduler Event Assertions
 

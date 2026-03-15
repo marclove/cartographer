@@ -10,7 +10,7 @@ const LOG_FILE = 'logs/scheduled-monitor.log';
 let stopLogging: (() => void) | undefined;
 afterEach(() => { stopLogging?.(); stopLogging = undefined; });
 
-describe('scheduled-monitor example', { timeout: 120_000 }, () => {
+describe('scheduled-monitor example', { timeout: 300_000 }, () => {
   let server: TestServer;
 
   afterAll(async () => {
@@ -31,22 +31,39 @@ describe('scheduled-monitor example', { timeout: 120_000 }, () => {
       }
     });
 
-    // Tick 5 times manually (no scheduler, avoids timing dependencies).
+    // With the inflight pattern, each ActionNode and AgentNode returns RUNNING
+    // on first tick, then SUCCESS/FAILURE on the next tick after the work
+    // completes. A single logical monitoring cycle therefore requires many more
+    // raw ticks than before.
+    //
+    // We count completed cycles by tracking terminal tree statuses (SUCCESS)
+    // rather than the blackboard counter (monitor:cycleCount), because in the
+    // reactive tick model the counter only increments once per completed cycle
+    // and intermediate ticks return RUNNING.
+    //
     // Server failure profile for 'api':
     //   Request 1:   200 (healthy)
     //   Requests 2–4: 503 (hard outage)
     //   Requests 5+:  200 (recovered)
     // This exercises the full incident lifecycle: healthy baseline → outage
-    // detection → ongoing incident → potential recovery.
-    const TICK_COUNT = 5;
-    const statuses: NodeStatus[] = [];
-    for (let i = 0; i < TICK_COUNT; i++) {
+    // detection → ongoing incident → recovery.
+    const TARGET_CYCLES = 5;
+    const MAX_TICKS = 5000;
+    let totalTicks = 0;
+    let completedCycles = 0;
+
+    while (completedCycles < TARGET_CYCLES && totalTicks < MAX_TICKS) {
       const status = await tree.tick();
-      statuses.push(status);
+      totalTicks++;
+      if (status !== NodeStatus.RUNNING) {
+        completedCycles++;
+      }
+      // Short pause: lets microtask-resolved promises (sync actions) settle
+      // and gives the agent API calls time to make progress between polls.
+      await new Promise(r => setTimeout(r, 50));
     }
 
-    // All ticks should complete without throwing
-    expect(statuses).toHaveLength(TICK_COUNT);
+    expect(completedCycles).toBeGreaterThanOrEqual(TARGET_CYCLES);
 
     // Health data should be recorded for all services
     for (const service of ['api', 'database', 'queue']) {
@@ -55,12 +72,12 @@ describe('scheduled-monitor example', { timeout: 120_000 }, () => {
       expect(health!.statusCode).toBeTypeOf('number');
     }
 
-    // History should accumulate across ticks
+    // History should accumulate across completed cycles
     const apiHistory = tree.blackboard.get<HealthRecord[]>('history:api');
     expect(apiHistory).toBeDefined();
-    expect(apiHistory!.length).toBe(TICK_COUNT);
+    expect(apiHistory!.length).toBeGreaterThanOrEqual(TARGET_CYCLES);
 
-    // Requests 4+ to the api service return 503.
+    // Requests 2–4 to the api service return 503.
     const unhealthyCount = apiHistory!.filter((r) => !r.healthy).length;
     expect(unhealthyCount).toBeGreaterThanOrEqual(1);
 
@@ -73,8 +90,5 @@ describe('scheduled-monitor example', { timeout: 120_000 }, () => {
     // and cause the incident report agent to run.
     expect(incidentReport).toBeDefined();
     expect(['critical', 'major', 'minor']).toContain(incidentReport!.severity);
-
-    // Tick count should be tracked
-    expect(tree.blackboard.get<number>('monitor:tickCount')).toBe(TICK_COUNT);
   });
 });

@@ -44,6 +44,7 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `BehaviorTreeConfig`  | Top-level tree configuration                         |
 | `SchedulerConfig`     | Configuration for `TreeScheduler`                    |
 | `SchedulerEvents`     | Event map for scheduler lifecycle events             |
+| `TickLoopHandle`      | Handle returned by `BehaviorTree.start()`            |
 | `TreeLoggerOptions`   | Configuration for `createTreeLogger`                 |
 | `RunContext`          | Context provided to CLI tree factory functions       |
 | `TreeRunConfig`       | Configuration returned by CLI tree factory functions |
@@ -59,12 +60,13 @@ Re-exported from the internal type definitions. See individual reference pages f
 
 ## [Leaf Nodes](nodes.md)
 
-| Export          | Description                                         |
-| --------------- | --------------------------------------------------- |
-| `BaseNode`      | Abstract base class for authoring custom nodes      |
-| `ActionNode`    | Execute arbitrary synchronous or asynchronous logic |
-| `ConditionNode` | Boolean check that returns `SUCCESS` or `FAILURE`   |
-| `AgentNode`     | Claude Agent SDK integration node                   |
+| Export           | Description                                                             |
+| ---------------- | ----------------------------------------------------------------------- |
+| `BaseNode`       | Abstract base class for authoring custom nodes                          |
+| `ActionNode`     | Execute arbitrary synchronous or asynchronous logic                     |
+| `ConditionNode`  | Boolean check that returns `SUCCESS` or `FAILURE`                       |
+| `AgentNode`      | Claude Agent SDK integration node                                       |
+| `isReactiveNode` | Helper that determines if a node is reactive (re-ticked vs cached)      |
 
 ## [Composites](composites.md)
 
