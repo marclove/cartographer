@@ -123,6 +123,7 @@ export interface Blackboard {
  * - `tree:abort` — Fired when `BehaviorTree.abort()` is called.
  *
  * **Data events:**
+ * - `blackboard:read` — Fired when a value is read from the blackboard.
  * - `blackboard:write` — Fired when a value is written to the blackboard.
  * - `strategy:decision` — Fired when an agent strategy makes an ordering or policy decision.
  *
@@ -172,6 +173,7 @@ export interface TreeEvents {
   'tree:reset': { tree: string };
   'tree:abort': { tree: string };
   'tree:tick:skipped': { timestamp: number };
+  'blackboard:read': { key: string; value: unknown; hit: boolean; source: string };
   'blackboard:write': { key: string; value: unknown; source: string };
   'strategy:decision': { composite: BTreeNode; strategy: string; decision: unknown };
   'agent:elicitation_declined': { node: BTreeNode; request: ElicitationRequest };

@@ -107,6 +107,7 @@ export function connectSSE(handlers: SseHandlers): () => void {
     'tree:tick:skipped',
     'tree:reset',
     'tree:abort',
+    'blackboard:read',
     'blackboard:write',
     'strategy:decision',
   ];

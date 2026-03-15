@@ -23,6 +23,42 @@ describe('ObservableBlackboard', () => {
     expect(handler).toHaveBeenCalledWith({ key: 'foo', value: 42, source: 'blackboard' });
   });
 
+  it('emits blackboard:read on get()', () => {
+    const { events, bb } = setup();
+    const handler = vi.fn();
+    events.on('blackboard:read', handler);
+
+    bb.set('foo', 42);
+    bb.get('foo');
+
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler).toHaveBeenCalledWith({ key: 'foo', value: 42, hit: true, source: 'blackboard' });
+  });
+
+  it('emits blackboard:read with hit=false for missing keys', () => {
+    const { events, bb } = setup();
+    const handler = vi.fn();
+    events.on('blackboard:read', handler);
+
+    bb.get('missing');
+
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler).toHaveBeenCalledWith({ key: 'missing', value: undefined, hit: false, source: 'blackboard' });
+  });
+
+  it('scoped() emits blackboard:read with prefixed key', () => {
+    const { events, bb } = setup();
+    const handler = vi.fn();
+    events.on('blackboard:read', handler);
+
+    const scoped = bb.scoped('ns');
+    scoped.set('result', 'done');
+    scoped.get('result');
+
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler).toHaveBeenCalledWith({ key: 'ns:result', value: 'done', hit: true, source: 'blackboard' });
+  });
+
   it('delegates get() to inner blackboard', () => {
     const { bb } = setup();
     bb.set('key', 'value');

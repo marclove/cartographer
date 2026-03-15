@@ -184,6 +184,16 @@ describe('formatEventSummary — tree events', () => {
 // ---------------------------------------------------------------------------
 
 describe('formatEventSummary — other events', () => {
+  it('blackboard:read shows key and value on hit', () => {
+    const e = event('blackboard:read', { key: 'counter', value: 42, hit: true });
+    expect(formatEventSummary(e)).toBe('counter = 42');
+  });
+
+  it('blackboard:read shows (miss) when hit is false', () => {
+    const e = event('blackboard:read', { key: 'missing', value: undefined, hit: false });
+    expect(formatEventSummary(e)).toBe('missing (miss)');
+  });
+
   it('blackboard:write shows key = value', () => {
     const e = event('blackboard:write', { key: 'counter', value: 42 });
     expect(formatEventSummary(e)).toBe('counter = 42');

@@ -53,6 +53,8 @@ export function formatEventSummary(e: TimelineEvent): string {
       return JSON.stringify(d['info'] ?? '');
     case 'agent:error':
       return `${d['subtype'] ?? ''}: ${(d['errors'] as string[])?.join(', ') ?? ''}`;
+    case 'blackboard:read':
+      return d['hit'] ? `${d['key']} = ${JSON.stringify(d['value'])}` : `${d['key']} (miss)`;
     case 'blackboard:write':
       return `${d['key']} = ${JSON.stringify(d['value'])}`;
     case 'tree:tick': {

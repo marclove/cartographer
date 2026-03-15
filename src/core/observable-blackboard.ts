@@ -20,7 +20,10 @@ export class ObservableBlackboard implements Blackboard {
   ) {}
 
   get<T>(key: string): T | undefined {
-    return this.inner.get<T>(key);
+    const value = this.inner.get<T>(key);
+    const fullKey = this.prefix ? `${this.prefix}:${key}` : key;
+    this.events.emit('blackboard:read', { key: fullKey, value, hit: value !== undefined, source: 'blackboard' });
+    return value;
   }
 
   set<T>(key: string, value: T): void {

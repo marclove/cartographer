@@ -290,6 +290,10 @@ describe('stores — getEventCategory', () => {
     expect(getEventCategory('agent:elicitation_declined')).toBe('agent');
   });
 
+  it('maps blackboard:read to "blackboard"', () => {
+    expect(getEventCategory('blackboard:read')).toBe('blackboard');
+  });
+
   it('maps blackboard:write to "blackboard"', () => {
     expect(getEventCategory('blackboard:write')).toBe('blackboard');
   });
@@ -473,6 +477,15 @@ describe('stores — recentlyUpdatedKeys', () => {
     h['blackboard:write']!({ key: 'b', value: 2 }, 3);
     expect(getRecentlyUpdatedKeys().has('a')).toBe(true);
     expect(getRecentlyUpdatedKeys().has('b')).toBe(true);
+  });
+
+  it('blackboard:read pushes event to timeline without mutating blackboard', () => {
+    h['blackboard:read']!({ key: 'counter', value: 0, hit: true }, 2);
+    expect(getBlackboard()).toEqual({});
+    const evts = getEvents();
+    const readEvt = evts.find((e) => e.event === 'blackboard:read');
+    expect(readEvt).toBeDefined();
+    expect(readEvt!.category).toBe('blackboard');
   });
 
   it('blackboard:write with missing key does not update blackboard', () => {

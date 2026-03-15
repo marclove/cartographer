@@ -46,6 +46,7 @@ const EVENT_CATEGORIES: Partial<Record<SseEventName, string>> = {
   'agent:status': 'agent',
   'agent:rate_limit': 'agent',
   'agent:elicitation_declined': 'agent',
+  'blackboard:read': 'blackboard',
   'blackboard:write': 'blackboard',
   'strategy:decision': 'strategy',
 };
@@ -271,6 +272,10 @@ export function connect(): void {
 
     'tree:abort'(data, id) {
       pushEvent('tree:abort', data, id);
+    },
+
+    'blackboard:read'(data, id) {
+      pushEvent('blackboard:read', data, id);
     },
 
     'blackboard:write'(data, id) {

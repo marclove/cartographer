@@ -119,7 +119,7 @@ export class DashboardServer {
       'agent:response', 'agent:error', 'agent:message', 'agent:tool_progress',
       'agent:init', 'agent:status', 'agent:rate_limit', 'agent:elicitation_declined',
       'tree:init', 'tree:tick', 'tree:tick:skipped', 'tree:reset', 'tree:abort',
-      'blackboard:write', 'strategy:decision',
+      'blackboard:read', 'blackboard:write', 'strategy:decision',
     ];
 
     for (const eventName of eventNames) {
