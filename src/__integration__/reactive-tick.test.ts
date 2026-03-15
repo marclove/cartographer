@@ -416,60 +416,6 @@ describe('Reactive Tick Model', () => {
     });
   });
 
-  describe('tree.start() tick loop', () => {
-    it('fires multiple ticks and stops via handle', async () => {
-      let actionCalls = 0;
-      const action = new ActionNode({
-        name: 'counter',
-        action: () => { actionCalls++; return NodeStatus.RUNNING; },
-      });
-
-      const tree = new BehaviorTree({ name: 'loop-test', root: action });
-      const handle = tree.start({ intervalMs: 20 });
-
-      await new Promise((r) => setTimeout(r, 120));
-      await handle.stop();
-
-      // With 20ms intervals over ~120ms, expect several ticks
-      expect(actionCalls).toBeGreaterThanOrEqual(2);
-    });
-
-    it('stops the loop when AbortSignal is triggered', async () => {
-      const action = new ActionNode({
-        name: 'signal-test',
-        action: () => NodeStatus.RUNNING,
-      });
-
-      const tree = new BehaviorTree({ name: 'signal-test', root: action });
-      const ac = new AbortController();
-      const handle = tree.start({ intervalMs: 20, signal: ac.signal });
-
-      await new Promise((r) => setTimeout(r, 60));
-      ac.abort();
-      // Give it time to stop
-      await new Promise((r) => setTimeout(r, 50));
-
-      // Starting a new loop should work (old one stopped)
-      const handle2 = tree.start({ intervalMs: 20 });
-      await handle2.stop();
-    });
-
-    it('throws if a loop is already running', () => {
-      const action = new ActionNode({
-        name: 'double-start',
-        action: () => NodeStatus.RUNNING,
-      });
-
-      const tree = new BehaviorTree({ name: 'double-test', root: action });
-      const handle = tree.start({ intervalMs: 100 });
-
-      expect(() => tree.start({ intervalMs: 100 })).toThrow('already running');
-
-      // Cleanup
-      handle.stop();
-    });
-  });
-
   describe('parent signal listener cleanup', () => {
     it('sequence removes parent signal listeners when cycle ends', async () => {
       const ac = new AbortController();

@@ -590,14 +590,13 @@ describe('SelectorNode (reactive)', () => {
   it('does not re-tick RUNNING child from scratch (polls inflight)', async () => {
     const ctx = createContext();
     let actionStartCount = 0;
+    let resolveAction: (status: NodeStatus) => void;
 
     const action = new ActionNode({
       name: 'slow',
       action: async () => {
         actionStartCount++;
-        return new Promise<NodeStatus>((resolve) => {
-          setTimeout(() => resolve(NodeStatus.SUCCESS), 50);
-        });
+        return new Promise<NodeStatus>(r => { resolveAction = r; });
       },
     });
 
@@ -615,8 +614,9 @@ describe('SelectorNode (reactive)', () => {
     // The action function was only called once (start), not on subsequent polls
     expect(actionStartCount).toBe(1);
 
-    // Wait for action to complete
-    await new Promise(r => setTimeout(r, 60));
+    // Resolve the deferred action and flush the microtask
+    resolveAction!(NodeStatus.SUCCESS);
+    await flush();
 
     // Tick 3: action returns SUCCESS
     expect(await sel.tick(ctx)).toBe(NodeStatus.SUCCESS);

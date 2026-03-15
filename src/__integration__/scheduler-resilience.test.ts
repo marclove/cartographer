@@ -53,6 +53,7 @@ describe('Scheduler Resilience', () => {
     expect(completeEvents).toHaveLength(2);
     expect(scheduler.runCount).toBe(3);
     expect(scheduler.cycleCount).toBe(2);
+    expect(scheduler.lastStatus).toBe(NodeStatus.SUCCESS);
     expect(stopEvents).toHaveLength(1);
     expect((stopEvents[0] as any).reason).toBe('maxCycles');
   });
