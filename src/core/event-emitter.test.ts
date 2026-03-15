@@ -79,4 +79,72 @@ describe('EventEmitter', () => {
     const listener = vi.fn();
     expect(() => emitter.off('test:foo', listener)).not.toThrow();
   });
+
+  describe('onAny / offAny', () => {
+    it('onAny listener receives all emitted events', () => {
+      interface Events { a: { x: number }; b: { y: string } }
+      const emitter = new EventEmitter<Events>();
+      const calls: Array<{ event: string; data: unknown }> = [];
+      emitter.onAny((event, data) => calls.push({ event, data }));
+
+      emitter.emit('a', { x: 1 });
+      emitter.emit('b', { y: 'hello' });
+
+      expect(calls).toEqual([
+        { event: 'a', data: { x: 1 } },
+        { event: 'b', data: { y: 'hello' } },
+      ]);
+    });
+
+    it('onAny listener is called after per-event listeners', () => {
+      interface Events { a: { x: number } }
+      const emitter = new EventEmitter<Events>();
+      const order: string[] = [];
+      emitter.on('a', () => order.push('per-event'));
+      emitter.onAny(() => order.push('any'));
+
+      emitter.emit('a', { x: 1 });
+      expect(order).toEqual(['per-event', 'any']);
+    });
+
+    it('offAny removes the listener', () => {
+      interface Events { a: { x: number } }
+      const emitter = new EventEmitter<Events>();
+      const calls: string[] = [];
+      const listener = (event: string) => calls.push(event);
+
+      emitter.onAny(listener);
+      emitter.emit('a', { x: 1 });
+      emitter.offAny(listener);
+      emitter.emit('a', { x: 2 });
+
+      expect(calls).toEqual(['a']);
+    });
+
+    it('duplicate onAny registrations are ignored', () => {
+      interface Events { a: { x: number } }
+      const emitter = new EventEmitter<Events>();
+      const calls: string[] = [];
+      const listener = (event: string) => calls.push(event);
+
+      emitter.onAny(listener);
+      emitter.onAny(listener);
+      emitter.emit('a', { x: 1 });
+
+      expect(calls).toEqual(['a']);
+    });
+
+    it('removeAllListeners also clears onAny listeners', () => {
+      interface Events { a: { x: number } }
+      const emitter = new EventEmitter<Events>();
+      const calls: string[] = [];
+      emitter.onAny((event) => calls.push(event));
+
+      emitter.emit('a', { x: 1 });
+      emitter.removeAllListeners();
+      emitter.emit('a', { x: 2 });
+
+      expect(calls).toEqual(['a']);
+    });
+  });
 });

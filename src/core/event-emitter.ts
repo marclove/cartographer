@@ -47,6 +47,7 @@ export class EventEmitter<TEvents extends { [K in keyof TEvents]: unknown }>
   implements TypedEventEmitter<TEvents>
 {
   private listeners = new Map<string, Set<(data: unknown) => void>>();
+  private anyListeners = new Set<(event: string, data: unknown) => void>();
 
   /**
    * Subscribe to an event.
@@ -85,6 +86,29 @@ export class EventEmitter<TEvents extends { [K in keyof TEvents]: unknown }>
         listener(data);
       }
     }
+    for (const listener of this.anyListeners) {
+      listener(event, data);
+    }
+  }
+
+  /**
+   * Subscribe to all events.
+   *
+   * The listener is called for every emitted event, receiving the event name
+   * and payload. Wildcard listeners are invoked after per-event listeners.
+   * Adding the same listener reference more than once has no effect.
+   */
+  onAny(listener: (event: string, data: unknown) => void): void {
+    this.anyListeners.add(listener);
+  }
+
+  /**
+   * Unsubscribe a previously registered wildcard listener.
+   *
+   * If the listener was not registered, this is a silent no-op.
+   */
+  offAny(listener: (event: string, data: unknown) => void): void {
+    this.anyListeners.delete(listener);
   }
 
   /**
@@ -95,5 +119,6 @@ export class EventEmitter<TEvents extends { [K in keyof TEvents]: unknown }>
    */
   removeAllListeners(): void {
     this.listeners.clear();
+    this.anyListeners.clear();
   }
 }

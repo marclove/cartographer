@@ -209,6 +209,12 @@ export interface TypedEventEmitter<TEvents extends { [K in keyof TEvents]: unkno
   /** Emit an event, invoking all registered listeners with the provided data. */
   emit<K extends keyof TEvents & string>(event: K, data: TEvents[K]): void;
 
+  /** Subscribe to all events. The listener is called for every emitted event. */
+  onAny(listener: (event: string, data: unknown) => void): void;
+
+  /** Unsubscribe a previously registered wildcard listener. */
+  offAny(listener: (event: string, data: unknown) => void): void;
+
   /** Remove all listeners for all events. */
   removeAllListeners(): void;
 }
