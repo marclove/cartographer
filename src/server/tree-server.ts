@@ -1,8 +1,5 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse, Server } from 'node:http';
-import { join, extname } from 'node:path';
-import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import type { BehaviorTree } from '../core/behavior-tree.js';
 import { NodeStatus } from '../types.js';
 import type { TreeEvents } from '../types.js';
@@ -12,25 +9,12 @@ import { handleApiTree, handleApiStatus, handleApiBlackboard, handleApiNode } fr
 import type { StatusState } from './api-handlers.js';
 import { handleSseStream, broadcastSseEvent } from './sse-handler.js';
 import type { SseClient } from './sse-handler.js';
-import { jsonResponse, jsonError } from './http-utils.js';
+import { jsonError } from './http-utils.js';
 
 export interface TreeServerOptions {
   port?: number;
   eventBufferCapacity?: number;
 }
-
-const CONTENT_TYPES: Record<string, string> = {
-  '.html': 'text/html',
-  '.js': 'application/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.ico': 'image/x-icon',
-};
-
-/** Events that are too noisy or too large to broadcast to clients. */
-const EXCLUDED_EVENTS: ReadonlySet<keyof TreeEvents> = new Set(['agent:stream']);
 
 export class TreeServer {
   private server: Server | null = null;
@@ -104,26 +88,14 @@ export class TreeServer {
     this.tree.events.on('tree:tick', onTick);
     this.unsubscribers.push(() => this.tree.events.off('tree:tick', onTick));
 
-    // Subscribe to all events except excluded ones → serialize → buffer → broadcast
-    const eventNames: Array<keyof TreeEvents> = [
-      'node:enter', 'node:exit', 'node:error',
-      'agent:prompt', 'agent:thinking', 'agent:text', 'agent:tool_use',
-      'agent:response', 'agent:error', 'agent:message', 'agent:tool_progress',
-      'agent:init', 'agent:status', 'agent:rate_limit', 'agent:elicitation_declined',
-      'tree:init', 'tree:tick', 'tree:tick:skipped', 'tree:reset', 'tree:abort',
-      'blackboard:keys', 'blackboard:read', 'blackboard:write', 'strategy:decision',
-    ];
-
-    for (const eventName of eventNames) {
-      if (EXCLUDED_EVENTS.has(eventName)) continue;
-      const listener = (data: any) => {
-        const serialized = serializeEvent(eventName, data);
-        const entry = this.eventBuffer.push(eventName, serialized);
-        broadcastSseEvent(this.sseClients, entry);
-      };
-      this.tree.events.on(eventName, listener);
-      this.unsubscribers.push(() => this.tree.events.off(eventName, listener));
-    }
+    // Forward all events to SSE clients
+    const onAnyEvent = (event: string, data: unknown) => {
+      const serialized = serializeEvent(event as any, data);
+      const entry = this.eventBuffer.push(event, serialized);
+      broadcastSseEvent(this.sseClients, entry);
+    };
+    this.tree.events.onAny(onAnyEvent);
+    this.unsubscribers.push(() => this.tree.events.offAny(onAnyEvent));
   }
 
   private handleRequest(req: IncomingMessage, res: ServerResponse): void {
@@ -159,35 +131,6 @@ export class TreeServer {
       return;
     }
 
-    // Static file serving
-    this.serveStaticFile(pathname, res);
-  }
-
-  private async serveStaticFile(pathname: string, res: ServerResponse): Promise<void> {
-    // Determine the static files directory relative to this module
-    const thisDir = typeof __dirname !== 'undefined'
-      ? __dirname
-      : fileURLToPath(new URL('.', import.meta.url));
-    const staticDir = join(thisDir, '..', '..', 'dist', 'dashboard');
-
-    // Resolve to index.html for root
-    let filePath = pathname === '/' ? '/index.html' : pathname;
-
-    // Path traversal prevention
-    const resolved = join(staticDir, filePath);
-    if (!resolved.startsWith(staticDir)) {
-      jsonError(res, 403, 'Forbidden');
-      return;
-    }
-
-    try {
-      const content = await readFile(resolved);
-      const ext = extname(resolved);
-      const contentType = CONTENT_TYPES[ext] ?? 'application/octet-stream';
-      res.writeHead(200, { 'Content-Type': contentType });
-      res.end(content);
-    } catch {
-      jsonError(res, 404, 'Not found');
-    }
+    jsonError(res, 404, 'Not found');
   }
 }

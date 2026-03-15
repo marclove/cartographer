@@ -51,6 +51,17 @@ describe('TreeServer', () => {
     expect(body).toEqual({ error: 'Not found', status: 404 });
   });
 
+  it('returns 404 for non-API, non-SSE routes', async () => {
+    const tree = createTestTree();
+    server = new TreeServer(tree, { port: 0 });
+    const { port } = await server.start();
+
+    const res = await fetch(`http://localhost:${port}/index.html`);
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body).toEqual({ error: 'Not found', status: 404 });
+  });
+
   it('close() shuts down the server', async () => {
     const tree = createTestTree();
     server = new TreeServer(tree, { port: 0 });
