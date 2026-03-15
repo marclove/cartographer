@@ -112,6 +112,13 @@ export class TreeScheduler {
   private _inflightTick?: Promise<boolean>;
 
   /**
+   * The promise returned by the current `start()` invocation's run loop.
+   * Stored so `stop()` can await full completion of `start()`'s `finally`
+   * block, preventing `_isRunning` from being clobbered on restart.
+   */
+  private _startPromise?: Promise<void>;
+
+  /**
    * The active `setTimeout` handle for the current wait period.
    * Held so `stop()` can cancel it immediately.
    */
@@ -181,20 +188,25 @@ export class TreeScheduler {
     this.stopRequested = false;
     this._stopEmitted = false;
 
-    try {
-      if (this.config.schedule.type === 'once') {
-        await this.executeTick();
-        // 'once' uses 'maxCycles' as the stop reason since it is semantically
-        // equivalent to maxCycles: 1.
-        this.emitStop('maxCycles');
-      } else if (this.config.schedule.type === 'interval') {
-        await this.runInterval(this.config.schedule.delayMs);
-      } else if (this.config.schedule.type === 'cron') {
-        await this.runCron(this.config.schedule.expression);
+    const runLoop = async (): Promise<void> => {
+      try {
+        if (this.config.schedule.type === 'once') {
+          await this.executeTick();
+          // 'once' uses 'maxCycles' as the stop reason since it is semantically
+          // equivalent to maxCycles: 1.
+          this.emitStop('maxCycles');
+        } else if (this.config.schedule.type === 'interval') {
+          await this.runInterval(this.config.schedule.delayMs);
+        } else if (this.config.schedule.type === 'cron') {
+          await this.runCron(this.config.schedule.expression);
+        }
+      } finally {
+        this._isRunning = false;
       }
-    } finally {
-      this._isRunning = false;
-    }
+    };
+
+    this._startPromise = runLoop();
+    await this._startPromise;
   }
 
   /**
@@ -229,7 +241,14 @@ export class TreeScheduler {
       this.config.tree.abort?.();
     }
     this.emitStop('manual');
-    this._isRunning = false;
+    // Await the full completion of start()'s run loop (including its finally
+    // block) so that _isRunning is set to false by start() itself. This
+    // prevents a race where a subsequent start() sets _isRunning = true and
+    // then the old start()'s finally block clobbers it back to false.
+    if (this._startPromise) {
+      await this._startPromise;
+      this._startPromise = undefined;
+    }
   }
 
   /**

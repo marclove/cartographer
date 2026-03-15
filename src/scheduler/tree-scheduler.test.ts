@@ -537,4 +537,42 @@ describe('TreeScheduler skipOnOverlap and abortOnStop', () => {
 
     expect(tree.abort).not.toHaveBeenCalled();
   });
+
+  it('stop() then start() on same instance does not race on _isRunning', async () => {
+    const tree = createTree(NodeStatus.RUNNING);
+
+    const scheduler = new TreeScheduler({
+      tree,
+      schedule: { type: 'interval', delayMs: 50 },
+    });
+
+    // First run
+    const startPromise1 = scheduler.start();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(scheduler.isRunning).toBe(true);
+
+    // Stop fully — stop() awaits _startPromise so the old start()'s
+    // finally block has completed before stop() returns.
+    await scheduler.stop();
+    expect(scheduler.isRunning).toBe(false);
+
+    // Restart on the same instance — _isRunning must stay true and not
+    // get clobbered by the old start()'s finally block.
+    const startPromise2 = scheduler.start();
+    expect(scheduler.isRunning).toBe(true);
+
+    // Let the new scheduler tick
+    await vi.advanceTimersByTimeAsync(50);
+    expect(scheduler.isRunning).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(50);
+    expect(scheduler.isRunning).toBe(true);
+
+    // Stop the second run
+    await scheduler.stop();
+    expect(scheduler.isRunning).toBe(false);
+
+    await startPromise1;
+    await startPromise2;
+  });
 });
