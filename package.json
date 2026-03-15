@@ -18,7 +18,7 @@
 		}
 	},
 	"scripts": {
-		"build": "tsc && npm run dashboard:build",
+		"build": "tsc && npm run dashboard:build && tsc -p dashboard/tsconfig.server.json",
 		"dashboard:build": "vite build --config dashboard/vite.config.ts",
 		"dashboard:dev": "vite dev --config dashboard/vite.config.ts",
 		"test": "vitest run --project unit",
@@ -28,7 +28,7 @@
 		"test:examples": "vitest run --project examples --passWithNoTests",
 		"test:all": "vitest run",
 		"test:watch": "vitest --project unit",
-		"typecheck": "tsc --noEmit && tsc --noEmit -p examples/tsconfig.json"
+		"typecheck": "tsc --noEmit && tsc --noEmit -p examples/tsconfig.json && tsc --noEmit -p dashboard/tsconfig.server.json"
 	},
 	"license": "Apache-2.0",
 	"engines": {
