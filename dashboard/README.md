@@ -8,17 +8,27 @@ The dashboard starts automatically when you run a tree:
 
 ```bash
 cartographer run my-tree.ts
-# Dashboard: http://localhost:3147
+# API: http://localhost:3147
+# Dashboard: http://localhost:3148
 ```
 
-Open the printed URL in your browser. The dashboard connects via Server-Sent Events and updates live as the tree ticks.
+Open the Dashboard URL in your browser. The dashboard connects to the TreeServer API via a built-in reverse proxy and updates live as the tree ticks.
+
+### Architecture
+
+Two servers run independently:
+
+- **TreeServer** (port 3147) — REST API and SSE event stream. This is the general-purpose API that any frontend can consume.
+- **Dashboard server** (port 3148) — Serves the built Svelte app and proxies `/api/*` and `/events` requests to the TreeServer. The browser only talks to this origin.
 
 ### CLI Flags
 
 | Flag | Description |
 |------|-------------|
-| `--port <number>` | Set the dashboard port (default: 3147) |
-| `--no-serve` | Disable the dashboard server entirely |
+| `--port <number>` | Set the TreeServer API port (default: 3147) |
+| `--dashboard-port <number>` | Set the dashboard port (default: 3148) |
+| `--no-serve` | Disable the TreeServer (and implicitly the dashboard) |
+| `--no-dashboard` | Disable only the dashboard server |
 
 ## Panels
 
@@ -49,7 +59,7 @@ The dev server proxies API requests to a running Cartographer instance, so start
 
 ## HTTP API
 
-The dashboard server exposes a REST + SSE API that the frontend consumes. You can also use it directly for custom tooling.
+The TreeServer exposes a REST + SSE API that the dashboard consumes via its reverse proxy. You can also use these endpoints directly for custom tooling by connecting to the TreeServer port.
 
 ### REST Endpoints
 
@@ -69,9 +79,9 @@ Supports `Last-Event-ID` for reconnection. If the requested ID has been evicted 
 ## Programmatic Usage
 
 ```ts
-import { DashboardServer } from 'cartographer';
+import { TreeServer } from 'cartographer';
 
-const server = new DashboardServer(tree, { port: 3147 });
+const server = new TreeServer(tree, { port: 3147 });
 const { port } = await server.start();
 
 // ... run your tree ...
