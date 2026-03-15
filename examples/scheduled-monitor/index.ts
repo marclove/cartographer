@@ -16,8 +16,8 @@ export default function (ctx: RunContext): TreeRunConfig {
 
   return {
     tree,
-    schedule: { type: 'interval', delayMs: 10_000 },
-    maxCycles: 8,
+    schedule: { type: 'interval', delayMs: 1_000 },
+    maxCycles: 5,
     onError: 'continue',
   };
 }
