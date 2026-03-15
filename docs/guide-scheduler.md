@@ -21,15 +21,17 @@ interface SchedulerConfig {
   tree: {
     tick(): Promise<NodeStatus>;
     reset(): void;
+    abort?(): void;
     readonly events: TypedEventEmitter<TreeEvents>;
   };
   schedule:
     | { type: 'cron'; expression: string }
     | { type: 'interval'; delayMs: number }
     | { type: 'once' };
-  maxRuns?: number;
+  maxCycles?: number;
   stopOnStatus?: NodeStatus;
-  resetBetweenTicks?: boolean; // default: true
+  skipOnOverlap?: boolean;
+  abortOnStop?: boolean;
   onError?: 'stop' | 'continue' | ((error: Error, runCount: number) => 'stop' | 'continue');
 }
 ```
@@ -48,14 +50,14 @@ const scheduler = new TreeScheduler({
   schedule: { type: 'once' },
 });
 await scheduler.start();
-// Tree ticks once, then scheduler stops with reason 'maxRuns'
+// Tree ticks once, then scheduler stops with reason 'maxCycles'
 ```
 
 ### Interval
 
 Waits `delayMs` milliseconds, ticks the tree, waits again, and repeats. The first tick happens after the initial delay, not immediately.
 
-The loop is sequential: the scheduler awaits each tick to completion before starting the next wait period. Ticks never run concurrently. If a tick takes longer than `delayMs`, the effective period between tick *starts* is `delayMs + tickDuration` rather than a fixed `delayMs`. For example, with `delayMs: 10_000` and a tick that takes 25 seconds, ticks start 35 seconds apart:
+By default, the loop is sequential: the scheduler awaits each tick to completion before starting the next wait period. If a tick takes longer than `delayMs`, the effective period between tick *starts* is `delayMs + tickDuration` rather than a fixed `delayMs`. When `skipOnOverlap: true`, ticks fire on schedule but are skipped if the previous tick is still in progress, emitting a `tree:tick:skipped` event instead. For example, with `delayMs: 10_000` and a tick that takes 25 seconds, ticks start 35 seconds apart (without overlap skipping):
 
 ```
 t=0s    wait starts (10s)
@@ -72,7 +74,7 @@ const scheduler = new TreeScheduler({
   tree,
   schedule: { type: 'interval', delayMs: 30000 }, // 30s pause between ticks
 });
-await scheduler.start(); // Runs until stopped or maxRuns/stopOnStatus
+await scheduler.start(); // Runs until stopped or maxCycles/stopOnStatus
 ```
 
 ### Cron
@@ -91,12 +93,12 @@ await scheduler.start();
 
 ## Configuration Options
 
-### maxRuns
+### maxCycles
 
-Stops after N ticks.
+Stops after N completed cycles. A cycle completes when the tree returns a terminal status (SUCCESS or FAILURE). RUNNING ticks do not increment the counter.
 
 ```typescript
-{ maxRuns: 10 } // Stop after 10 ticks
+{ maxCycles: 10 } // Stop after 10 completed cycles
 ```
 
 ### stopOnStatus
@@ -107,11 +109,21 @@ Stops when the tree returns a specific status.
 { stopOnStatus: NodeStatus.SUCCESS } // Stop on first success
 ```
 
-### resetBetweenTicks
+### skipOnOverlap
 
-Default: `true`. When enabled, calls `tree.reset()` before each tick (except the first). Set to `false` for stateful trees that should maintain state across ticks.
+When `true`, if a tick is still in progress when the next interval/cron fires, the tick is skipped and a `tree:tick:skipped` event is emitted on the tree's event emitter. Defaults to `false`.
 
-This setting is important for multi-tick workflows where nodes return `RUNNING`. When `resetBetweenTicks` is `false`, Sequence and Selector nodes remember which child was running and resume from that child on the next tick, skipping already-completed siblings. When `true`, the running child position is cleared and the composite starts from the beginning each tick.
+```typescript
+{ skipOnOverlap: true } // Skip ticks that overlap with a running tick
+```
+
+### abortOnStop
+
+When `true`, calls `tree.abort()` after in-flight ticks complete when the scheduler stops. Defaults to `false`.
+
+```typescript
+{ abortOnStop: true } // Abort tree state when stopping
+```
 
 ### onError
 
@@ -121,7 +133,7 @@ Controls behavior when `tree.tick()` throws. Default: `'stop'`.
 |-------|----------|
 | `'stop'` | Emit `scheduler:stop` with reason `'error'`. |
 | `'continue'` | Ignore the error and continue to the next tick. |
-| Function | `(error, runCount) => 'stop' \| 'continue'` -- custom logic. |
+| Function | `(error, cycleCount) => 'stop' \| 'continue'` -- custom logic. |
 
 ```typescript
 {
@@ -143,7 +155,7 @@ interface SchedulerEvents {
   'tick:start': { runCount: number; timestamp: Date };
   'tick:complete': { runCount: number; status: NodeStatus; durationMs: number };
   'tick:error': { runCount: number; error: Error };
-  'scheduler:stop': { reason: 'manual' | 'maxRuns' | 'stopOnStatus' | 'error' };
+  'scheduler:stop': { reason: 'manual' | 'maxCycles' | 'stopOnStatus' | 'error' };
 }
 ```
 
@@ -152,7 +164,7 @@ interface SchedulerEvents {
 ## Lifecycle
 
 - `scheduler.start()` -- begins the schedule loop. Returns a promise that resolves when the scheduler stops. No-op if already running.
-- `scheduler.stop()` -- stops the scheduler. Clears timers and emits `scheduler:stop` with reason `'manual'`. No-op if not running.
+- `scheduler.stop()` -- stops the scheduler. Awaits any in-flight tick before resolving, then calls `tree.abort()` if `abortOnStop` is set. Emits `scheduler:stop` with reason `'manual'`. No-op if not running.
 
 ### Read-only properties
 
@@ -160,6 +172,7 @@ interface SchedulerEvents {
 |----------|------|-------------|
 | `isRunning` | `boolean` | Whether the scheduler is currently active. |
 | `runCount` | `number` | Number of ticks completed so far. |
+| `cycleCount` | `number` | Number of completed cycles (terminal statuses). |
 | `lastStatus` | `NodeStatus \| undefined` | Status returned by the most recent tick. |
 
 ---
@@ -216,7 +229,7 @@ await scheduler.stop();
 
 ## Example: Multi-Tick Deploy Pipeline
 
-This example demonstrates a long-running workflow that spans multiple scheduler ticks. The health check node returns `RUNNING` while waiting for the service to become healthy. Because `resetBetweenTicks` is `false`, the Sequence remembers that `start-deploy` already succeeded and resumes directly at `wait-for-healthy` on each subsequent tick.
+This example demonstrates a long-running workflow that spans multiple scheduler ticks. The deploy action uses the inflight pattern to launch work on the first tick and poll on subsequent ticks. The sequence re-evaluates from child 0 on every tick but uses cached results for non-reactive children that already completed.
 
 ```typescript
 import { TreeBuilder, TreeScheduler, NodeStatus } from 'cartographer';
@@ -243,7 +256,6 @@ const tree = new TreeBuilder('deploy-pipeline')
 const scheduler = new TreeScheduler({
   tree,
   schedule: { type: 'interval', delayMs: 10_000 },
-  resetBetweenTicks: false,           // preserve running child position
   stopOnStatus: NodeStatus.SUCCESS,   // stop when pipeline completes
 });
 
@@ -257,13 +269,38 @@ await scheduler.start();
 Execution trace:
 
 ```
-Tick 1: start-deploy → SUCCESS, wait-for-healthy → RUNNING (saved)
-Tick 2: resume at wait-for-healthy → RUNNING
-Tick 3: resume at wait-for-healthy → SUCCESS, notify-slack → SUCCESS
+Tick 1: start-deploy → RUNNING (inflight, action launched)
+Tick 2: start-deploy → SUCCESS (cached), wait-for-healthy → RUNNING
+Tick 3: start-deploy → SUCCESS (cached), wait-for-healthy → RUNNING
+Tick 4: start-deploy → SUCCESS (cached), wait-for-healthy → SUCCESS, notify-slack → RUNNING
+Tick 5: start-deploy → SUCCESS (cached), wait-for-healthy → SUCCESS (cached), notify-slack → SUCCESS
 Tree returns SUCCESS, scheduler stops.
 ```
 
-`start-deploy` runs exactly once. No idempotency guards are needed because the Sequence skips completed children when resuming.
+`start-deploy` runs exactly once because the sequence caches its non-reactive terminal result. Conditions placed before actions would be re-evaluated on every tick, enabling preemption if circumstances change.
+
+---
+
+## BehaviorTree.start()
+
+For convenience, `BehaviorTree` provides a `start()` method that creates a scheduler internally with reactive-friendly defaults (`skipOnOverlap: true`, `abortOnStop: true`).
+
+```typescript
+import { BehaviorTree } from 'cartographer';
+
+const handle = tree.start({ intervalMs: 100 });
+
+// Optionally pass an AbortSignal
+const controller = new AbortController();
+const handle = tree.start({ intervalMs: 100, signal: controller.signal });
+
+// Stop the tick loop
+await handle.stop();
+```
+
+**Signature:** `start(options: { intervalMs: number; signal?: AbortSignal }): TickLoopHandle`
+
+The returned `TickLoopHandle` has a single method: `stop(): Promise<void>`, which stops the loop and waits for any in-flight tick to complete.
 
 ---
 
@@ -271,5 +308,5 @@ Tree returns SUCCESS, scheduler stops.
 
 - [API Reference: TreeScheduler](api/scheduler.md) -- full type signatures and method details for TreeScheduler and related types.
 - [API Reference Overview](api/index.md) -- all exports at a glance.
-- [Scheduled Monitor Example](../examples/README.md#scheduled-monitor) -- a complete runnable program that uses `TreeScheduler` with `resetBetweenTicks: false` to monitor services, detect outages, and manage incidents across ticks.
+- [Scheduled Monitor Example](../examples/README.md#scheduled-monitor) -- a complete runnable program that uses `TreeScheduler` to monitor services, detect outages, and manage incidents across ticks.
 - [CLI Runner](guide-cli.md) -- run scheduled trees from the command line with `cartographer run`.

@@ -92,7 +92,7 @@ Controls which order children are tried in a selector:
 ```typescript
 interface SelectionStrategy {
   /** Return children in the order they should be evaluated. */
-  order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]>;
+  order(children: BTreeNode[], context: TreeContext): BTreeNode[] | Promise<BTreeNode[]>;
 
   /** Reset any internal state (e.g., cached ordering). */
   reset?(): void;
@@ -106,7 +106,7 @@ Controls which order children are executed in a sequence:
 ```typescript
 interface ExecutionStrategy {
   /** Return children in the order they should be executed. */
-  order(children: BTreeNode[], context: TreeContext): Promise<BTreeNode[]>;
+  order(children: BTreeNode[], context: TreeContext): BTreeNode[] | Promise<BTreeNode[]>;
 
   /** Reset any internal state (e.g., cached ordering). */
   reset?(): void;
@@ -126,7 +126,7 @@ interface ParallelPolicy {
 
 interface ParallelStrategy {
   /** Return the policy that determines when the parallel succeeds or fails. */
-  policy(children: BTreeNode[], context: TreeContext): Promise<ParallelPolicy>;
+  policy(children: BTreeNode[], context: TreeContext): ParallelPolicy | Promise<ParallelPolicy>;
 
   /** Reset any internal state (e.g., cached policy). */
   reset?(): void;
@@ -159,7 +159,7 @@ const selector = new SelectorNode({
 
 ### Strategy Lifecycle
 
-- `order()` / `policy()` is called on every tick. If your strategy is expensive (e.g., it calls an API), implement caching.
+- `order()` / `policy()` is called once per execution cycle (committed and reused across ticks within the cycle).
 - `reset()` is called when the tree is reset. Use it to clear cached decisions.
 - Agent strategies (`AgentSelectionStrategy`, `AgentExecutionStrategy`, `AgentParallelStrategy`) support `cache: true` to call Claude once and reuse the result until `reset()`.
 - Agent strategies emit `agent:*` observability events (including `agent:prompt`, `agent:response`, `agent:error`) during SDK calls, so `createTreeLogger` and custom event listeners automatically capture strategy interactions.
@@ -193,114 +193,106 @@ See the dedicated [TreeContext and Context Layering guide](guide-context.md) for
 
 ## Multi-Tick Stateful Workflows
 
-When a child returns `RUNNING`, composites remember which child was in progress and resume from it on the next tick. Understanding the internals helps you build correct multi-tick workflows.
+Composites use a reactive re-evaluation model: on every tick, they re-evaluate from child 0, using `isReactiveNode()` to decide which children to re-tick vs cache. Understanding this model helps you build correct multi-tick workflows.
 
-### ID-Based Resumption
+### Reactive Re-Evaluation with Caching
 
-`SequenceNode` and `SelectorNode` track the running child by its UUID, not its array index. This matters because:
+`SequenceNode` and `SelectorNode` re-evaluate from the beginning on every tick. Two kinds of children are handled differently:
 
-1. Strategy reordering between ticks cannot cause the wrong child to be resumed.
-2. The sequence finds the running child in the newly ordered list by ID and resumes from that position.
+- **Reactive children** (conditions, guards, decorators wrapping reactive children): Always re-ticked on every call to `execute()`. This enables preemption — a condition that was true on tick 1 may now be false, causing the composite to short-circuit before reaching a running action.
+- **Non-reactive children** (actions, agents, composites): Their terminal results (SUCCESS or FAILURE) are cached within the current cycle. Cached children are not re-ticked, avoiding redundant work like repeated API calls.
 
-```typescript
-// Internally in SequenceNode:
-if (this.runningChildId !== null) {
-  const resumeIndex = ordered.findIndex((c) => c.id === this.runningChildId);
-  if (resumeIndex !== -1) {
-    startIndex = resumeIndex;
-  }
-}
-```
+The `isReactiveNode()` helper determines reactivity: `ConditionNode` and `GuardNode` are always reactive. Single-child decorators inherit reactivity from their child. Everything else is non-reactive.
 
-### Sequence Resumption
-
-When a sequence child returns `RUNNING`:
-
-1. The sequence stores that child's ID and returns `RUNNING`.
-2. On the next tick, the sequence skips all children before the running child.
-3. When the running child finally returns `SUCCESS`, the sequence continues with the next child.
-4. If the running child returns `FAILURE`, the sequence returns `FAILURE` (remaining children are skipped).
+### Sequence Re-Evaluation
 
 ```
-Tick 1: [A=SUCCESS] [B=RUNNING] [C=skipped] → RUNNING
-Tick 2:             [B=RUNNING] [C=skipped] → RUNNING  (A not re-ticked)
-Tick 3:             [B=SUCCESS] [C=SUCCESS] → SUCCESS
+Tick 1: [A=RUNNING]                                      → RUNNING
+Tick 2: [A=cached SUCCESS]     [B=RUNNING]               → RUNNING  (A cached, not re-ticked)
+Tick 3: [A=cached SUCCESS]     [B=cached SUCCESS] [C=SUCCESS] → SUCCESS
 ```
 
-### Selector Resumption
-
-When a selector child returns `RUNNING`:
-
-1. The selector stores that child's ID and returns `RUNNING`.
-2. On the next tick, the selector resumes at that child.
-3. If the running child returns `FAILURE`, the selector continues to the next sibling (fallback behavior).
+If A is a condition (reactive), it would be re-ticked on every tick instead of cached:
 
 ```
-Tick 1: [A=RUNNING]              → RUNNING
-Tick 2: [A=FAILURE] [B=SUCCESS]  → SUCCESS  (fallback after A resolved)
+Tick 1: [A(cond)=SUCCESS] [B=RUNNING]               → RUNNING
+Tick 2: [A(cond)=SUCCESS] [B=RUNNING]               → RUNNING  (A re-ticked, still passes)
+Tick 3: [A(cond)=FAILURE]                            → FAILURE  (A re-ticked, fails — B is aborted)
 ```
 
-### Nested Composite Resumption
-
-Resumption works through any depth of nesting. If a sequence contains a selector that contains a RUNNING action, each layer remembers its running child:
+### Selector Re-Evaluation with Preemption
 
 ```
-Tick 1: outer-seq → [A=SUCCESS] → inner-sel → [B=RUNNING]  → RUNNING
-Tick 2: outer-seq resumes at inner-sel → inner-sel resumes at B → [B=RUNNING] → RUNNING
-Tick 3: outer-seq resumes at inner-sel → [B=FAILURE] → [C=SUCCESS] → SUCCESS
+Tick 1: [A(cond)=FAILURE] [B=RUNNING]        → RUNNING
+Tick 2: [A(cond)=SUCCESS]                    → SUCCESS  (B aborted — higher-priority A preempts)
 ```
 
-A is never re-ticked because the outer sequence remembers it already completed.
+When a higher-priority reactive child succeeds while a lower-priority child is RUNNING, the lower-priority child is aborted and the selector returns SUCCESS immediately.
 
-### Decorator Restart Semantics
+### Nested Composite Caching
 
-`RepeatNode` does not track its iteration counter across ticks. When a child returns `RUNNING`:
+Caching works through any depth of nesting. If a sequence contains a selector that returns SUCCESS, the sequence caches that result:
+
+```
+Tick 1: outer-seq → [A=cached SUCCESS] → inner-sel → [B=RUNNING]  → RUNNING
+Tick 2: outer-seq → [A=cached SUCCESS] → inner-sel → [B=FAILURE] → [C=SUCCESS] → SUCCESS
+```
+
+A uses its cached result (non-reactive). The inner selector re-evaluates from its own child 0 on each tick.
+
+### Decorator Counter Persistence
+
+`RepeatNode` preserves its iteration counter across ticks. When a child returns `RUNNING`:
 
 1. The repeat returns `RUNNING` immediately.
-2. On the next tick, the repeat restarts from iteration zero.
+2. On the next tick, the repeat resumes at the same iteration.
 
 This means a `RepeatNode(count=2)` with a child that returns `[RUNNING, SUCCESS, SUCCESS]` will:
 
 - Tick 1: iteration 0 → child RUNNING → repeat RUNNING
-- Tick 2: restart → iteration 0 → child SUCCESS → iteration 1 → child SUCCESS → repeat SUCCESS
+- Tick 2: iteration 0 → child SUCCESS → iteration 1 → child SUCCESS → repeat SUCCESS
 
-The child was ticked 3 times total across 2 tree ticks.
+The child was ticked 3 times total across 2 tree ticks. Similarly, `RetryNode` preserves its attempt counter across ticks.
 
 ---
 
 ## Parallel Node Policies Deep Dive
 
-`ParallelNode` ticks all children concurrently on every tick using `Promise.all`. After collecting results, it applies the policy — but only if no children are still `RUNNING`.
+`ParallelNode` ticks all children concurrently on every tick using `Promise.all`. Policies are evaluated on every tick with partial results, enabling early termination for some policy types.
 
-### Evaluation Order
+### Early Termination
 
-1. All children are ticked concurrently.
-2. If any child returned `RUNNING`, the parallel returns `RUNNING`. Policy evaluation is deferred.
-3. `failureCount` is checked first. If failures meet the threshold, return `FAILURE`.
-4. `successPercentage` is checked next. If the ratio meets the threshold, return `SUCCESS`; otherwise `FAILURE`.
-5. `successCount` is checked last. If successes meet the threshold, return `SUCCESS`; otherwise `FAILURE`.
-6. Default (no policy fields): return `SUCCESS` only if zero failures.
+Unlike the old model where RUNNING blocked all policy evaluation, the reactive model evaluates policies with partial results:
 
-The key implication: `failureCount` can veto a `successCount` that would otherwise pass. If you set both `failureCount: 2` and `successCount: 2`, and 2 children succeed while 2 fail, the result is `FAILURE` because `failureCount` is evaluated first.
-
-### RUNNING Blocks Policy Evaluation
-
-This is important for correctness: a parallel node does not evaluate any policy while any child is still `RUNNING`. All children must resolve to `SUCCESS` or `FAILURE` before thresholds are checked.
+- **`failureCount`** — if failures >= threshold, return `FAILURE` immediately, even with RUNNING children still in progress. Those children are aborted.
+- **`successCount`** — if successes >= threshold, return `SUCCESS` immediately. If `successes + running < threshold`, return `FAILURE` (threshold impossible to reach). Otherwise `RUNNING`.
+- **`successPercentage`** — requires all children to complete (no early exit). The denominator isn't meaningful with RUNNING children.
+- **Default (no policy fields)** — any failure returns `FAILURE`; any RUNNING returns `RUNNING`; all SUCCESS returns `SUCCESS`.
 
 ```typescript
 const parallel = new ParallelNode({
   name: "par",
-  children: [fastChild, slowChild],
+  children: [fastChild, slowChild, anotherChild],
   strategy: new DefaultParallelStrategy({ failureCount: 2 }),
 });
 
-// Tick 1: fast=SUCCESS, slow=RUNNING → RUNNING (policy NOT checked)
-// Tick 2: fast=SUCCESS, slow=FAILURE → policy checked → 1 failure < 2 → SUCCESS
+// Tick 1: fast=FAILURE, slow=RUNNING, another=FAILURE → 2 failures >= threshold → FAILURE (slow aborted)
 ```
 
-### All Children Re-Ticked Every Tick
+The key implication: `failureCount` is always evaluated first and can veto a `successCount` that would otherwise pass.
 
-Unlike sequences and selectors, parallel nodes do not skip children. Every child is re-ticked on every call to `execute()`, even if it previously returned `SUCCESS` or `FAILURE`. Stateful children must manage their own multi-tick behavior.
+### Reactive/Non-Reactive Caching in Parallel
+
+Like sequences and selectors, parallel nodes distinguish between reactive and non-reactive children:
+
+- **Reactive children** (conditions, guards) are re-ticked on every call to `execute()`.
+- **Non-reactive children** (actions, agents) that already returned a terminal status are cached within the cycle and not re-ticked.
+
+```typescript
+// Tick 1: condition=SUCCESS, action=RUNNING → RUNNING
+// Tick 2: condition re-ticked=SUCCESS, action cached=SUCCESS → SUCCESS (both resolved)
+// Tick 2 alt: condition re-ticked=FAILURE, action cached=SUCCESS → depends on policy
+```
 
 ---
 

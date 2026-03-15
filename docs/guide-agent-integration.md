@@ -195,7 +195,7 @@ Agent strategies also handle elicitation consistently with `AgentNode`. They inh
 
 Both `AgentNode` and the agent strategies accept a `cache: true` option.
 
-**AgentNode caching:** When enabled, the first Claude API call is made normally, but the result is stored and returned directly on subsequent ticks without calling Claude again. The cache is cleared when `reset()` is called. This is useful in multi-tick workflows where the tree is ticked repeatedly by a scheduler with `resetBetweenTicks: false`.
+**AgentNode caching:** When enabled, the first Claude API call is made normally, but the result is stored and returned directly on subsequent ticks without calling Claude again. The cache is cleared when `reset()` is called. This is useful in multi-tick workflows where the tree is ticked repeatedly by a scheduler.
 
 ```typescript
 // Agent node: call Claude once, return cached status on subsequent ticks
@@ -217,10 +217,7 @@ const strategy = new AgentSelectionStrategy({
 });
 ```
 
-Caches are cleared when the tree resets. With the scheduler, this means:
-
-- `resetBetweenTicks: true` (default) — caches are cleared before each tick, so caching has no effect.
-- `resetBetweenTicks: false` — caches persist across ticks, avoiding redundant Claude calls until the tree is explicitly reset.
+Caches persist across ticks within an execution cycle, avoiding redundant Claude calls. They are cleared when `reset()` is called on the tree or when a composite's cycle ends.
 
 ---
 

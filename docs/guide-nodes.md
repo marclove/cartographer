@@ -22,6 +22,7 @@ interface ActionNodeConfig {
 - The `action` function can be synchronous or asynchronous. Return `NodeStatus` directly or wrap it in a `Promise`.
 - Access the shared blackboard via `context.blackboard`.
 - Valid return values: `SUCCESS`, `FAILURE`, or `RUNNING`.
+- Actions use the **inflight pattern**: on the first tick the action function is invoked and the node returns `RUNNING` immediately. On subsequent ticks the node polls for the result without re-invoking the function. This keeps ticks non-blocking so composites can re-evaluate reactive children while the action runs in the background.
 
 ### Example
 
@@ -90,6 +91,7 @@ Every AgentNode automatically:
 
 - Attaches a blackboard MCP server so the agent can read and write shared state.
 - Writes the agent's result to `{name}:output` on the blackboard.
+- Uses the **inflight pattern**: the SDK call launches on the first tick, the node returns `RUNNING`, and subsequent ticks poll for completion without re-invoking the SDK. When `cache: true`, the cached result is returned immediately without any inflight overhead.
 
 ### Example
 
@@ -163,10 +165,10 @@ class LogNode extends BaseNode {
 
 ### Optional overrides
 
-- `reset()` -- override if your node maintains state between ticks that should be cleared when the tree resets.
-- `abort()` -- override if your node starts work that should be cancelled when the tree is interrupted (e.g., pending network requests, timers).
+- `reset()` -- override if your node maintains state between ticks that should be cleared when the tree resets. `ActionNode` and `AgentNode` override `reset()` to clear inflight state, making the next tick start fresh.
+- `abort()` -- override if your node starts work that should be cancelled when the tree is interrupted (e.g., pending network requests, timers). `ActionNode` and `AgentNode` override `abort()` to clear inflight state and (for AgentNode) cancel the in-flight SDK request.
 
-Both methods are no-ops by default.
+Both methods are no-ops by default on `BaseNode`.
 
 ---
 

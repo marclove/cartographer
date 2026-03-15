@@ -51,9 +51,10 @@ interface RepeatConfig extends DecoratorConfig {
 **Behavior:**
 
 - Runs the child up to `count` times (infinite if omitted).
-- If the child returns `RUNNING`, immediately returns `RUNNING`.
+- If the child returns `RUNNING`, immediately returns `RUNNING`. The iteration counter persists across ticks — when the child completes on a subsequent tick, the repeat resumes at the same iteration rather than restarting from zero.
 - If `untilStatus` is set and the child returns that status, returns that status immediately.
 - Otherwise returns the last child status after all iterations complete.
+- Counter resets on completion, `untilStatus` match, `reset()`, or `abort()`.
 
 **Builder:**
 
@@ -87,6 +88,7 @@ interface RetryConfig extends DecoratorConfig {
 
 - Runs the child up to `maxAttempts` times.
 - If the child returns anything other than `FAILURE`, returns that status immediately.
+- If the child returns `RUNNING`, the retry returns `RUNNING` without counting it as a failed attempt. The attempt counter persists across ticks, so the retry resumes at the same attempt on the next tick.
 - Waits `delayMs` milliseconds between attempts when set (no delay after the last attempt).
 - Returns `FAILURE` if all attempts fail.
 
@@ -158,9 +160,11 @@ interface TimeoutConfig extends DecoratorConfig {
 
 **Behavior:**
 
-- Races `child.tick()` against a timeout timer.
-- If the child finishes first, returns the child's status and clears the timer.
-- If the timeout fires first, calls `child.abort()` and returns `FAILURE`.
+- Tracks wall-clock time across ticks rather than racing per-tick. The timer starts when the child first returns `RUNNING`.
+- A background `setTimeout` fires when the deadline passes, proactively aborting the child via `child.abort()`.
+- On the next tick after timeout, returns `FAILURE` without re-ticking the child.
+- If the child completes before the deadline, returns its status and clears the timer.
+- A fresh timeout window begins on each new activation cycle (after the child completes, or on `reset()`/`abort()`).
 
 **Builder:**
 
@@ -187,8 +191,9 @@ interface GuardConfig extends DecoratorConfig {
 **Behavior:**
 
 - Evaluates the condition first.
-- If the condition returns `false` (or throws), returns `FAILURE` without running the child.
+- If the condition returns `false` (or throws), calls `child.abort()` (to clear any in-flight state) and returns `FAILURE` without ticking the child.
 - If the condition returns `true`, ticks the child and returns its status.
+- Async conditions use the inflight pattern: the promise starts on the first tick and `RUNNING` is returned immediately. Subsequent ticks poll for the result.
 
 **Builder:**
 

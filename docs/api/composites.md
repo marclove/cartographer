@@ -22,15 +22,16 @@ import { SelectorNode } from 'cartographer';
 
 ### Behavior
 
-1. Gets ordered children from `strategy.order(children, context)`.
-2. If a child returned `RUNNING` on a previous tick, resumes from that child (identified by `id`).
-3. First `SUCCESS` — returns `SUCCESS`.
-4. First `RUNNING` — saves child position and returns `RUNNING`.
-5. All `FAILURE` — returns `FAILURE`.
+1. If no child order is committed for the current cycle, obtains it from `strategy.order(children, context)` and commits it.
+2. Re-evaluates from child 0 on every tick. Reactive children are always re-ticked; non-reactive children use cached terminal results.
+3. First `SUCCESS` — returns `SUCCESS` and clears the cycle.
+4. First `RUNNING` — returns `RUNNING` (cycle preserved).
+5. All `FAILURE` — returns `FAILURE` and clears the cycle.
+6. **Preemption**: A higher-priority reactive child succeeding aborts lower-priority running children.
 
 ### Inherited Methods
 
-Methods inherited from `BaseNode`: `tick()`, `reset()` (clears running child state, calls `strategy.reset?.()`, resets all children), `abort()` (aborts all children).
+Methods inherited from `BaseNode`: `tick()`, `reset()` (clears cycle caches, calls `strategy.reset?.()`, resets all children), `abort()` (aborts all children, clears cycle).
 
 ### Example
 
@@ -61,15 +62,15 @@ import { SequenceNode } from 'cartographer';
 
 ### Behavior
 
-1. Gets ordered children from `strategy.order(children, context)`.
-2. If a child returned `RUNNING` on a previous tick, resumes from that child (identified by `id`).
-3. First `FAILURE` — returns `FAILURE`.
-4. First `RUNNING` — saves child position and returns `RUNNING`.
-5. All `SUCCESS` — returns `SUCCESS`.
+1. If no child order is committed for the current cycle, obtains it from `strategy.order(children, context)` and commits it.
+2. Re-evaluates from child 0 on every tick. Reactive children are always re-ticked; non-reactive children use cached terminal results.
+3. First `FAILURE` — returns `FAILURE` and clears the cycle.
+4. First `RUNNING` — returns `RUNNING` (cycle preserved).
+5. All `SUCCESS` — returns `SUCCESS` and clears the cycle.
 
 ### Inherited Methods
 
-Methods inherited from `BaseNode`: `tick()`, `reset()` (clears running child state, calls `strategy.reset?.()`, resets all children), `abort()` (aborts all children).
+Methods inherited from `BaseNode`: `tick()`, `reset()` (clears cycle caches, calls `strategy.reset?.()`, resets all children), `abort()` (aborts all children, clears cycle).
 
 ### Example
 
@@ -108,13 +109,13 @@ import { ParallelNode } from 'cartographer';
 
 ### Behavior
 
-1. Gets policy from `strategy.policy(children, context)`.
-2. Ticks all children concurrently via `Promise.all`.
-3. If any `RUNNING` — returns `RUNNING`.
-4. If `failureCount` is set and failures >= `failureCount` — returns `FAILURE`.
-5. If `successPercentage` is set and success% >= threshold — returns `SUCCESS`, else `FAILURE`.
-6. If `successCount` is set and successes >= count — returns `SUCCESS`, else `FAILURE`.
-7. Default (no fields set): all must succeed (any failure returns `FAILURE`).
+1. Gets policy from `strategy.policy(children, context)` on the first tick of a cycle; commits it for the cycle.
+2. Ticks all children concurrently. Reactive children are always re-ticked; non-reactive children use cached terminal results.
+3. **Early termination** with partial results:
+   - `failureCount` — if failures >= threshold, returns `FAILURE` immediately (even with RUNNING children).
+   - `successCount` — if successes >= threshold, returns `SUCCESS`; if `successes + running < threshold`, returns `FAILURE`.
+   - `successPercentage` — requires all children to complete (no early exit). Returns `SUCCESS` if percentage >= threshold, else `FAILURE`.
+   - Default (no fields set): any failure returns `FAILURE`; any RUNNING returns `RUNNING`; all SUCCESS returns `SUCCESS`.
 
 ### Inherited Methods
 

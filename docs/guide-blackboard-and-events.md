@@ -262,6 +262,14 @@ Fired when an `AgentNode` receives an elicitation request but no handler is conf
 
 See [Elicitation](guide-agent-integration.md#elicitation) for how to provide handlers.
 
+### `tree:tick:skipped`
+
+Fired when a scheduled tick is skipped because the previous tick is still in progress (requires `skipOnOverlap: true` on the scheduler).
+
+```typescript
+{ timestamp: number }
+```
+
 ### `blackboard:write`
 
 Fired when a blackboard write occurs (if emitted by the source).

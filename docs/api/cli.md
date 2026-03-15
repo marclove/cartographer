@@ -35,9 +35,8 @@ Configuration returned by the user's tree factory function.
 interface TreeRunConfig {
   tree: BehaviorTree;
   schedule?: SchedulerConfig['schedule'];
-  maxRuns?: number;
+  maxCycles?: number;
   stopOnStatus?: NodeStatus;
-  resetBetweenTicks?: boolean;
   onError?: SchedulerConfig['onError'];
 }
 ```
@@ -46,9 +45,8 @@ interface TreeRunConfig {
 |-------|------|---------|-------------|
 | `tree` | `BehaviorTree` | (required) | The constructed behavior tree to run. |
 | `schedule` | `{ type: 'cron'; expression: string } \| { type: 'interval'; delayMs: number } \| { type: 'once' }` | — | Optional schedule. Omit for a single run. |
-| `maxRuns` | `number` | — | Maximum number of runs (only meaningful with a schedule). |
+| `maxCycles` | `number` | — | Maximum number of completed cycles (terminal statuses; only meaningful with a schedule). |
 | `stopOnStatus` | `NodeStatus` | — | Stop scheduler when tree returns this status. |
-| `resetBetweenTicks` | `boolean` | `true` | Whether to reset the tree between scheduled ticks. |
 | `onError` | `'stop' \| 'continue' \| ((error: Error, runCount: number) => 'stop' \| 'continue')` | — | Error handling policy for scheduled runs. |
 
 ---
