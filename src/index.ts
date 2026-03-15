@@ -90,6 +90,6 @@ export type { RunContext, TreeRunConfig } from './cli/types.js';
 export type { OnElicitation, ElicitationRequest } from '@anthropic-ai/claude-agent-sdk';
 
 // Server
-export { DashboardServer } from './server/dashboard-server.js';
-export type { DashboardServerOptions } from './server/dashboard-server.js';
+export { TreeServer } from './server/tree-server.js';
+export type { TreeServerOptions } from './server/tree-server.js';
 export type { SerializedNodeRef, SerializedTreeNode } from './server/serializers.js';

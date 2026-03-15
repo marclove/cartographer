@@ -13,7 +13,7 @@ import type { StatusState } from './api-handlers.js';
 import { handleSseStream, broadcastSseEvent } from './sse-handler.js';
 import type { SseClient } from './sse-handler.js';
 
-export interface DashboardServerOptions {
+export interface TreeServerOptions {
   port?: number;
   eventBufferCapacity?: number;
 }
@@ -28,7 +28,7 @@ const CONTENT_TYPES: Record<string, string> = {
   '.ico': 'image/x-icon',
 };
 
-/** Events that are too noisy or too large to broadcast to the dashboard. */
+/** Events that are too noisy or too large to broadcast to clients. */
 const EXCLUDED_EVENTS: ReadonlySet<keyof TreeEvents> = new Set(['agent:stream']);
 
 export function jsonResponse(res: ServerResponse, status: number, body: unknown): void {
@@ -40,7 +40,7 @@ export function jsonError(res: ServerResponse, status: number, message: string):
   jsonResponse(res, status, { error: message, status });
 }
 
-export class DashboardServer {
+export class TreeServer {
   private server: Server | null = null;
   private readonly eventBuffer: EventBuffer;
   private readonly sseClients: Set<SseClient> = new Set();
@@ -50,7 +50,7 @@ export class DashboardServer {
 
   constructor(
     private readonly tree: BehaviorTree,
-    options: DashboardServerOptions = {},
+    options: TreeServerOptions = {},
   ) {
     this.port = options.port ?? 3147;
     this.eventBuffer = new EventBuffer(options.eventBufferCapacity ?? 500);
@@ -167,7 +167,7 @@ export class DashboardServer {
       return;
     }
 
-    // Static file serving from dist/dashboard/
+    // Static file serving
     this.serveStaticFile(pathname, res);
   }
 

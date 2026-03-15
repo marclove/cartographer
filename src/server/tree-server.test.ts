@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { DashboardServer } from './dashboard-server.js';
+import { TreeServer } from './tree-server.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
 import { ActionNode } from '../nodes/action.js';
@@ -10,8 +10,8 @@ function createTestTree() {
   return new BehaviorTree({ name: 'TestTree', root, blackboard: new InMemoryBlackboard() });
 }
 
-describe('DashboardServer', () => {
-  let server: DashboardServer;
+describe('TreeServer', () => {
+  let server: TreeServer;
 
   afterEach(async () => {
     if (server) await server.close();
@@ -19,7 +19,7 @@ describe('DashboardServer', () => {
 
   it('starts on specified port and responds to /api/status', async () => {
     const tree = createTestTree();
-    server = new DashboardServer(tree, { port: 0 });
+    server = new TreeServer(tree, { port: 0 });
     const { port } = await server.start();
 
     const res = await fetch(`http://localhost:${port}/api/status`);
@@ -31,7 +31,7 @@ describe('DashboardServer', () => {
 
   it('returns 404 for unknown routes', async () => {
     const tree = createTestTree();
-    server = new DashboardServer(tree, { port: 0 });
+    server = new TreeServer(tree, { port: 0 });
     const { port } = await server.start();
 
     const res = await fetch(`http://localhost:${port}/api/nonexistent`);
@@ -42,7 +42,7 @@ describe('DashboardServer', () => {
 
   it('returns JSON error format', async () => {
     const tree = createTestTree();
-    server = new DashboardServer(tree, { port: 0 });
+    server = new TreeServer(tree, { port: 0 });
     const { port } = await server.start();
 
     const res = await fetch(`http://localhost:${port}/api/nodes/nonexistent`);
@@ -53,7 +53,7 @@ describe('DashboardServer', () => {
 
   it('close() shuts down the server', async () => {
     const tree = createTestTree();
-    server = new DashboardServer(tree, { port: 0 });
+    server = new TreeServer(tree, { port: 0 });
     const { port } = await server.start();
     await server.close();
 

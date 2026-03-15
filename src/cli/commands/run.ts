@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { NodeStatus } from '../../types.js';
 import { TreeScheduler } from '../../scheduler/tree-scheduler.js';
 import { createFormatter } from '../formatter.js';
-import { DashboardServer } from '../../server/dashboard-server.js';
+import { TreeServer } from '../../server/tree-server.js';
 import type { RunContext, TreeRunConfig } from '../types.js';
 
 export interface RunOptions {
@@ -69,18 +69,18 @@ export async function runCommand(options: RunOptions): Promise<void> {
   // Set up formatter
   const stopFormatter = createFormatter(tree.events, { json, verbose, quiet });
 
-  // Start dashboard server
-  let dashboardServer: DashboardServer | undefined;
+  // Start tree server
+  let treeServer: TreeServer | undefined;
   if (!noServe) {
-    dashboardServer = new DashboardServer(tree, { port });
-    const { port: dashPort } = await dashboardServer.start();
+    treeServer = new TreeServer(tree, { port });
+    const { port: serverPort } = await treeServer.start();
     if (!quiet) {
-      process.stderr.write(`Dashboard: http://localhost:${dashPort}\n`);
+      process.stderr.write(`Server: http://localhost:${serverPort}\n`);
     }
   }
 
   async function exit(code: number): Promise<void> {
-    if (dashboardServer) await dashboardServer.close();
+    if (treeServer) await treeServer.close();
     stopFormatter();
     process.exit(code);
   }

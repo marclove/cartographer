@@ -87,6 +87,6 @@ Run options:
   --verbose                Include agent:thinking and agent:tool_use events
   --quiet                  Suppress all output except errors and final status
   --env-file <path>        Load environment variables from a file
-  --port <number>          Port for the dashboard server (default: 3147)
-  --no-serve               Disable the dashboard server
+  --port <number>          Port for the tree server (default: 3147)
+  --no-serve               Disable the tree server
 `;
