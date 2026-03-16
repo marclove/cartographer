@@ -66,6 +66,12 @@ export abstract class BaseNode implements BTreeNode {
    * store (per-subtree scoping is a future feature requiring a different
    * mechanism).
    */
+  protected _inflightState: {
+    promise: Promise<NodeStatus>;
+    result?: NodeStatus;
+    error?: Error;
+  } | null = null;
+
   protected contextOverrides?: Partial<TreeContext>;
 
   /**
@@ -177,6 +183,16 @@ export abstract class BaseNode implements BTreeNode {
    */
   abort(): void {
     // Subclasses override if they have in-progress work to cancel
+  }
+
+  hasInflightWork(): boolean {
+    if (!this._inflightState) return false;
+    return this._inflightState.result === undefined && this._inflightState.error === undefined;
+  }
+
+  inflightPromise(): Promise<void> | null {
+    if (!this.hasInflightWork()) return null;
+    return this._inflightState!.promise.then(() => {});
   }
 
   /**

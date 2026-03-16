@@ -328,6 +328,12 @@ export interface BTreeNode {
    * Propagates down through composites and decorators to all descendants.
    */
   abort(): void;
+
+  /** Returns true if this node has unsettled in-flight async work. */
+  hasInflightWork(): boolean;
+
+  /** Returns the in-flight promise if unsettled work exists, null otherwise. */
+  inflightPromise(): Promise<void> | null;
 }
 
 // --- Strategy Interfaces ---

@@ -115,17 +115,6 @@ export class AgentNode extends BaseNode {
    */
   private activeAbortController: AbortController | null = null;
 
-  /**
-   * Tracks the in-flight SDK call so that `execute()` can return RUNNING
-   * immediately on the first tick and poll for completion on subsequent ticks.
-   * `null` when no work is in progress.
-   */
-  private _inflightState: {
-    promise: Promise<NodeStatus>;
-    result?: NodeStatus;
-    error?: Error;
-  } | null = null;
-
   constructor(config: AgentNodeConfig) {
     super(config.name, config.id);
     this.config = config;

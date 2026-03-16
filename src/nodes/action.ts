@@ -77,11 +77,6 @@ import { NodeStatus } from '../types.js';
  */
 export class ActionNode extends BaseNode {
   private action: ActionNodeConfig['action'];
-  private _inflightState: {
-    promise: Promise<NodeStatus>;
-    result?: NodeStatus;
-    error?: Error;
-  } | null = null;
 
   constructor(config: ActionNodeConfig) {
     super(config.name, config.id);
