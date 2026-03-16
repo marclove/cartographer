@@ -1,6 +1,7 @@
 import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
 import type { SequenceConfig, TreeContext, ExecutionStrategy, BTreeNode } from '../types.js';
+import type { NodeState } from '../core/serialization.js';
 import { DefaultExecutionStrategy } from '../strategies/default-execution.js';
 import { isReactiveNode } from './is-reactive-node.js';
 import { computeContentHash } from '../core/content-hash.js';
@@ -82,6 +83,37 @@ export class SequenceNode extends BaseNode {
 
   protected override computeHash(): string {
     return computeContentHash('SequenceNode', this._children.map(c => c.contentHash()));
+  }
+
+  override serialize(): NodeState {
+    const state: NodeState = {};
+    if (this.committedOrder) {
+      state.committedOrder = this.committedOrder.map(child => child.contentHash());
+    }
+    if (this.completedMap.size > 0) {
+      state.completedMap = {};
+      for (const [node, status] of this.completedMap) {
+        state.completedMap[node.contentHash()] = status;
+      }
+    }
+    return state;
+  }
+
+  override restore(state: NodeState, hashToNode: Map<string, BTreeNode>): void {
+    if (state.committedOrder) {
+      this.committedOrder = state.committedOrder
+        .map(hash => hashToNode.get(hash))
+        .filter((n): n is BTreeNode => n !== undefined);
+    }
+    if (state.completedMap) {
+      this.completedMap.clear();
+      for (const [hash, status] of Object.entries(state.completedMap)) {
+        const node = hashToNode.get(hash);
+        if (node) {
+          this.completedMap.set(node, status);
+        }
+      }
+    }
   }
 
   constructor(config: SequenceConfig) {
