@@ -97,7 +97,7 @@ export type { SerializedNodeRef, SerializedTreeNode } from './server/serializers
 // Actor
 export { TreeActor } from './actor/tree-actor.js';
 export type { TreeActorOptions, ProcessResult } from './actor/tree-actor.js';
-export type { ActorMessage, TickMessage, ActionMessage, WriteMessage, SignalMessage } from './actor/types.js';
+export type { ActorMessage, TickMessage, ActionMessage, WriteMessage, SignalMessage, MessageInterruptedEvent, MessageProcessedEvent, MessageFailedEvent } from './actor/types.js';
 export { generateMessageId } from './actor/types.js';
 
 // State
