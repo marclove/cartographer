@@ -1,6 +1,8 @@
 import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, RetryConfig, TreeContext } from '../types.js';
+import type { NodeState } from '../core/serialization.js';
+import { computeContentHash } from '../core/content-hash.js';
 
 /**
  * A decorator that re-ticks its child up to `maxAttempts` times until it stops
@@ -28,6 +30,20 @@ export class RetryNode extends BaseNode {
 
   override get children(): readonly BTreeNode[] {
     return [this.child];
+  }
+
+  protected override computeHash(): string {
+    return computeContentHash('RetryNode', String(this.maxAttempts), this.child.contentHash());
+  }
+
+  override serialize(): NodeState {
+    return { count: this._attempt };
+  }
+
+  override restore(state: NodeState, _hashToNode: Map<string, BTreeNode>): void {
+    if (state.count !== undefined) {
+      this._attempt = state.count;
+    }
   }
 
   constructor(config: RetryConfig) {

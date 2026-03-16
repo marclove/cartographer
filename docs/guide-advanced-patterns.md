@@ -523,8 +523,69 @@ root:
 
 ---
 
+## In-Flight Detection
+
+Every node exposes two methods for introspecting async work:
+
+- `hasInflightWork()` — Returns `true` if this node (or any descendant) has an unsettled promise (started but not yet resolved or rejected). Composites and decorators check their children recursively.
+- `inflightPromise()` — Returns a `Promise<void>` that resolves when all unsettled work in the subtree has settled, or `null` if nothing is in flight.
+
+At the tree level:
+
+```typescript
+const tree = new BehaviorTree({ name: 'test', root: myRoot });
+await tree.tick();
+
+if (tree.hasInflightWork()) {
+  await tree.settled(); // waits for all in-flight work to resolve
+}
+```
+
+These are primarily used by `TreeActor.runToCompletion()` to distinguish between a tree that is waiting for async work to finish (keep waiting) and a tree that has genuinely suspended (save state, exit).
+
+---
+
+## Content Hashing and Serialization
+
+The [actor framework](guide-actor-framework.md) serializes tree execution state between messages using content-based Merkle hashing.
+
+### Content Hashing
+
+Every node computes a deterministic hash from its type, name, configuration, and children's hashes:
+
+```typescript
+import { computeContentHash } from 'cartographer';
+
+// Leaf nodes hash from type + name
+const hash = computeContentHash('ActionNode', 'fetch-data');
+
+// Composites include ordered children hashes
+const seqHash = computeContentHash('SequenceNode', [child1.contentHash(), child2.contentHash()]);
+```
+
+The root hash (`tree.rootHash`) fingerprints the entire tree topology. Same factory output produces the same root hash.
+
+### Tree Serialization
+
+```typescript
+import { serializeTree, restoreTree, buildHashIndex } from 'cartographer';
+
+// Serialize: walks the tree, collects each node's state keyed by content hash
+const state = serializeTree(tree.root, tree.rootHash);
+// state.nodes is { [contentHash]: NodeState }
+
+// Restore: rebuilds node state from the serialized map
+const hashToNode = buildHashIndex(tree.root);
+restoreTree(tree.root, tree.rootHash, state);
+```
+
+Duplicate content hashes (e.g., two `ActionNode` instances with the same name) are disambiguated automatically with index suffixes (`abc123:0`, `abc123:1`).
+
+---
+
 ## Next Steps
 
+- [Actor Framework](guide-actor-framework.md) — TreeActor, ActorServer, StateStore, and client SDK.
 - [TreeContext and Context Layering](guide-context.md) — How context overrides propagate through the tree.
 - [Elicitation](guide-elicitation.md) — Handling MCP server input requests.
 - [Building Trees](guide-building-trees.md) — Builder API, YAML config, and manual wiring compared side-by-side.

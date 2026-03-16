@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type { Options, OnElicitation, ElicitationRequest, ModelUsage } from '@anthropic-ai/claude-agent-sdk';
+import type { NodeState } from './core/serialization.js';
 
 // --- Node Status ---
 
@@ -179,6 +180,9 @@ export interface TreeEvents {
   'blackboard:write': { key: string; value: unknown; source: string };
   'strategy:decision': { composite: BTreeNode; strategy: string; decision: unknown };
   'agent:elicitation_declined': { node: BTreeNode; request: ElicitationRequest };
+  'client:event': { name: string; data: unknown };
+  'message:processed': { messageId: string; treeStatus: string };
+  'message:failed': { messageId: string; error: string };
 }
 
 /**
@@ -328,6 +332,21 @@ export interface BTreeNode {
    * Propagates down through composites and decorators to all descendants.
    */
   abort(): void;
+
+  /** Returns true if this node has unsettled in-flight async work. */
+  hasInflightWork(): boolean;
+
+  /** Returns the in-flight promise if unsettled work exists, null otherwise. */
+  inflightPromise(): Promise<void> | null;
+
+  /** Content-based Merkle hash for serialization identity. Deterministic across factory invocations. */
+  contentHash(): string;
+
+  /** Serialize this node's execution state. */
+  serialize(): NodeState;
+
+  /** Restore this node's execution state from serialized data. */
+  restore(state: NodeState, hashToNode: Map<string, BTreeNode>): void;
 }
 
 // --- Strategy Interfaces ---

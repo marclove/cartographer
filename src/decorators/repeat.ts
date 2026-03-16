@@ -1,6 +1,8 @@
 import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, RepeatConfig, TreeContext } from '../types.js';
+import type { NodeState } from '../core/serialization.js';
+import { computeContentHash } from '../core/content-hash.js';
 
 /**
  * A decorator that ticks its child repeatedly within a single execution.
@@ -26,6 +28,20 @@ export class RepeatNode extends BaseNode {
 
   override get children(): readonly BTreeNode[] {
     return [this.child];
+  }
+
+  protected override computeHash(): string {
+    return computeContentHash('RepeatNode', String(this.count ?? ''), String(this.untilStatus ?? ''), this.child.contentHash());
+  }
+
+  override serialize(): NodeState {
+    return { count: this._iteration };
+  }
+
+  override restore(state: NodeState, _hashToNode: Map<string, BTreeNode>): void {
+    if (state.count !== undefined) {
+      this._iteration = state.count;
+    }
   }
 
   constructor(config: RepeatConfig) {

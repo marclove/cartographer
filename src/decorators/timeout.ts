@@ -1,6 +1,7 @@
 import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, TimeoutConfig, TreeContext } from '../types.js';
+import { computeContentHash } from '../core/content-hash.js';
 
 /**
  * A decorator that enforces a wall-clock deadline on its child across ticks.
@@ -33,6 +34,10 @@ export class TimeoutNode extends BaseNode {
 
   override get children(): readonly BTreeNode[] {
     return [this.child];
+  }
+
+  protected override computeHash(): string {
+    return computeContentHash('TimeoutNode', String(this.timeoutMs), this.child.contentHash());
   }
 
   constructor(config: TimeoutConfig) {

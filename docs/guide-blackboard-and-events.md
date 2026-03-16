@@ -74,12 +74,14 @@ import type { TypedEventEmitter, TreeEvents } from "cartographer";
 
 ### Emitter interface
 
-| Method                    | Description                      |
-| ------------------------- | -------------------------------- |
-| `on<K>(event, listener)`  | Subscribe to an event.           |
-| `off<K>(event, listener)` | Unsubscribe a listener.          |
-| `emit<K>(event, data)`    | Emit an event (used internally). |
-| `removeAllListeners()`    | Clear all subscriptions.         |
+| Method                    | Description                                    |
+| ------------------------- | ---------------------------------------------- |
+| `on<K>(event, listener)`  | Subscribe to an event.                         |
+| `off<K>(event, listener)` | Unsubscribe a listener.                        |
+| `emit<K>(event, data)`    | Emit an event (used internally).               |
+| `onAny(listener)`         | Subscribe to all events (wildcard listener).   |
+| `offAny(listener)`        | Unsubscribe a wildcard listener.               |
+| `removeAllListeners()`    | Clear all subscriptions.                       |
 
 ---
 
@@ -173,7 +175,7 @@ Fired for each tool call made by the agent.
 Fired when an `AgentNode` receives a successful result from Claude.
 
 ```typescript
-{ node: BTreeNode; result: unknown; cost?: number }
+{ node: BTreeNode; result: unknown; cost?: number; modelUsage?: Record<string, ModelUsage> }
 ```
 
 ### `agent:error`
@@ -181,7 +183,7 @@ Fired when an `AgentNode` receives a successful result from Claude.
 Fired when the SDK returns an error result (e.g., max turns exceeded, budget exhausted, execution error).
 
 ```typescript
-{ node: BTreeNode; subtype: string; errors?: string[]; permissionDenials?: unknown; cost?: number }
+{ node: BTreeNode; subtype: string; errors?: string[]; permissionDenials?: unknown; cost?: number; modelUsage?: Record<string, ModelUsage> }
 ```
 
 ### `agent:stream`
@@ -262,6 +264,38 @@ Fired when an `AgentNode` receives an elicitation request but no handler is conf
 
 See [Elicitation](guide-agent-integration.md#elicitation) for how to provide handlers.
 
+### `tree:init`
+
+Fired when a `BehaviorTree` is constructed, after ID uniqueness validation passes.
+
+```typescript
+{ tree: string; root: string }
+```
+
+### `tree:tick`
+
+Fired after each `BehaviorTree.tick()` completes, with the final status and duration.
+
+```typescript
+{ tree: string; status: NodeStatus; durationMs: number }
+```
+
+### `tree:reset`
+
+Fired when `BehaviorTree.reset()` is called.
+
+```typescript
+{ tree: string }
+```
+
+### `tree:abort`
+
+Fired when `BehaviorTree.abort()` is called.
+
+```typescript
+{ tree: string }
+```
+
 ### `tree:tick:skipped`
 
 Fired when a scheduled tick is skipped because the previous tick is still in progress (requires `skipOnOverlap: true` on the scheduler).
@@ -270,9 +304,25 @@ Fired when a scheduled tick is skipped because the previous tick is still in pro
 { timestamp: number }
 ```
 
+### `blackboard:keys`
+
+Fired when blackboard keys are enumerated.
+
+```typescript
+{ keys: string[]; source: string }
+```
+
+### `blackboard:read`
+
+Fired when a value is read from the blackboard.
+
+```typescript
+{ key: string; value: unknown; hit: boolean; source: string }
+```
+
 ### `blackboard:write`
 
-Fired when a blackboard write occurs (if emitted by the source).
+Fired when a blackboard write occurs.
 
 ```typescript
 {
@@ -292,6 +342,30 @@ Fired when an agent strategy makes a decision.
   strategy: string;
   decision: unknown;
 }
+```
+
+### `client:event`
+
+Fired by `emitToClient` nodes when they push data to the client. Used by the [actor framework](guide-actor-framework.md) SSE endpoint to deliver real-time updates.
+
+```typescript
+{ name: string; data: unknown }
+```
+
+### `message:processed`
+
+Fired by `ActorServer` when a message completes processing successfully. Subscribers (including the client SDK's `actionAndWait`) use this to detect completion.
+
+```typescript
+{ messageId: string; treeStatus: string }
+```
+
+### `message:failed`
+
+Fired by `ActorServer` when processing a message throws an error.
+
+```typescript
+{ messageId: string; error: string }
 ```
 
 ---

@@ -1,0 +1,259 @@
+import { createServer } from 'node:http';
+import type { IncomingMessage, ServerResponse, Server } from 'node:http';
+import type { BehaviorTree } from '../core/behavior-tree.js';
+import { serializeTree } from '../core/serialization.js';
+import { InMemoryStateStore } from '../state/in-memory-state-store.js';
+import type { StateStore } from '../state/state-store.js';
+import { TreeActor } from '../actor/tree-actor.js';
+import { generateMessageId } from '../actor/types.js';
+import type { ActorMessage } from '../actor/types.js';
+import { jsonResponse, jsonError } from './http-utils.js';
+
+export interface ActorServerOptions {
+  createTree: () => BehaviorTree;
+  stateStore?: StateStore;
+  port?: number;
+  context?: Record<string, unknown>;
+  topologyPolicy?: 'fail' | 'reset';
+}
+
+export class ActorServer {
+  private readonly createTree: () => BehaviorTree;
+  readonly stateStore: StateStore;
+  private readonly configPort: number;
+  private readonly context: Record<string, unknown>;
+  readonly topologyPolicy: 'fail' | 'reset';
+  private server: Server | null = null;
+  private startTime = 0;
+
+  constructor(options: ActorServerOptions) {
+    this.createTree = options.createTree;
+    this.stateStore = options.stateStore ?? new InMemoryStateStore();
+    this.configPort = options.port ?? parseInt(process.env.PORT ?? '3148', 10);
+    this.context = options.context ?? {};
+    this.topologyPolicy = options.topologyPolicy ?? 'fail';
+  }
+
+  async start(): Promise<{ port: number }> {
+    this.startTime = Date.now();
+
+    const existing = await this.stateStore.getState('default');
+    if (!existing) {
+      await this.initializeDefaultState();
+    }
+
+    this.server = createServer((req, res) => {
+      this.handleRequest(req, res).catch((err) => {
+        if (!res.headersSent) {
+          jsonError(res, 500, err instanceof Error ? err.message : 'Internal error');
+        }
+      });
+    });
+
+    return new Promise((resolve) => {
+      this.server!.listen(this.configPort, () => {
+        const addr = this.server!.address();
+        const actualPort = typeof addr === 'object' && addr ? addr.port : this.configPort;
+        resolve({ port: actualPort });
+      });
+    });
+  }
+
+  async stop(): Promise<void> {
+    return new Promise((resolve) => {
+      if (!this.server) return resolve();
+      this.server.close(() => resolve());
+    });
+  }
+
+  private async initializeDefaultState(): Promise<void> {
+    const tree = this.createTree();
+    for (const [key, value] of Object.entries(this.context)) {
+      tree.blackboard.set(`context:${key}`, value);
+    }
+    const blackboard = this.serializeBlackboard(tree);
+    const treeState = serializeTree(tree.root, tree.rootHash);
+    await this.stateStore.saveState('default', {
+      blackboard,
+      treeState,
+      createdAt: Date.now(),
+      lastMessageAt: Date.now(),
+    });
+  }
+
+  private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
+    const method = req.method ?? 'GET';
+
+    // Platform health
+    if (method === 'GET' && url.pathname === '/_platform/health') {
+      return jsonResponse(res, 200, {
+        status: 'ok',
+        uptime: Math.floor((Date.now() - this.startTime) / 1000),
+      });
+    }
+
+    // Read endpoints
+    if (method === 'GET' && url.pathname === '/api/blackboard') {
+      const state = await this.stateStore.getState('default');
+      return jsonResponse(res, 200, state?.blackboard ?? {});
+    }
+
+    if (method === 'GET' && url.pathname === '/api/status') {
+      const state = await this.stateStore.getState('default');
+      return jsonResponse(res, 200, {
+        lastMessageAt: state?.lastMessageAt ?? null,
+        treeRootHash: state?.treeState.rootHash ?? null,
+      });
+    }
+
+    if (method === 'GET' && url.pathname === '/api/tree') {
+      const tree = this.createTree();
+      return jsonResponse(res, 200, { name: tree.name, rootHash: tree.rootHash });
+    }
+
+    if (method === 'GET' && url.pathname === '/api/events') {
+      return this.handleSSE(req, res);
+    }
+
+    // Write endpoints
+    if (method === 'POST' && url.pathname === '/api/messages') {
+      return this.handleMessage(req, res);
+    }
+
+    const actionMatch = url.pathname.match(/^\/api\/actions\/(.+)$/);
+    if (method === 'POST' && actionMatch) {
+      return this.handleAction(req, res, decodeURIComponent(actionMatch[1]));
+    }
+
+    const bbMatch = url.pathname.match(/^\/api\/blackboard\/(.+)$/);
+    if (method === 'POST' && bbMatch) {
+      return this.handleBlackboardWrite(req, res, decodeURIComponent(bbMatch[1]));
+    }
+
+    jsonError(res, 404, 'Not found');
+  }
+
+  private async handleMessage(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await this.readBody(req);
+    if (!body || !body.type) {
+      return jsonError(res, 400, 'Missing message type');
+    }
+    if (body.type === 'action' && !body.name) {
+      return jsonError(res, 400, 'Action message requires name');
+    }
+    const messageId = body.id ?? generateMessageId();
+    const msg: ActorMessage = { ...body, id: messageId };
+    await this.processAsync(msg, messageId, res);
+  }
+
+  private async handleAction(req: IncomingMessage, res: ServerResponse, name: string): Promise<void> {
+    const payload = await this.readBody(req);
+    const messageId = generateMessageId();
+    await this.processAsync({ type: 'action', name, payload, id: messageId }, messageId, res);
+  }
+
+  private async handleBlackboardWrite(req: IncomingMessage, res: ServerResponse, key: string): Promise<void> {
+    const body = await this.readBody(req);
+    const value = body?.value;
+    const messageId = generateMessageId();
+    await this.processAsync({ type: 'write', key, value, id: messageId }, messageId, res);
+  }
+
+  private async processAsync(msg: ActorMessage, messageId: string, res: ServerResponse): Promise<void> {
+    const requestId = generateMessageId();
+
+    const acquired = await this.stateStore.acquireLock('default', requestId, 30000);
+    if (!acquired) {
+      return jsonError(res, 409, 'Processing in progress');
+    }
+
+    jsonResponse(res, 202, { id: messageId, status: 'processing' });
+
+    const heartbeat = setInterval(async () => {
+      // Renew lock TTL (no-op for InMemoryStateStore)
+      try { await this.stateStore.acquireLock('default', requestId, 30000); } catch {}
+    }, 10000);
+
+    try {
+      const actor = new TreeActor({
+        createTree: this.createTree,
+        stateStore: this.stateStore,
+        stateKey: 'default',
+        topologyPolicy: this.topologyPolicy,
+      });
+      const result = await actor.process(msg);
+
+      await this.stateStore.appendEvents('default', [{
+        id: generateMessageId(),
+        type: 'message:processed',
+        data: { messageId, treeStatus: String(result.treeStatus) },
+        timestamp: Date.now(),
+      }]);
+    } catch (error) {
+      await this.stateStore.appendEvents('default', [{
+        id: generateMessageId(),
+        type: 'message:failed',
+        data: { messageId, error: error instanceof Error ? error.message : String(error) },
+        timestamp: Date.now(),
+      }]);
+    } finally {
+      clearInterval(heartbeat);
+      await this.stateStore.releaseLock('default', requestId);
+    }
+  }
+
+  private async handleSSE(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
+
+    const state = await this.stateStore.getState('default');
+    const snapshot = {
+      blackboard: state?.blackboard ?? {},
+      treeRootHash: state?.treeState.rootHash ?? null,
+      lastMessageAt: state?.lastMessageAt ?? null,
+    };
+    res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
+
+    const lastEventId = req.headers['last-event-id'] as string | undefined;
+
+    let closed = false;
+    req.on('close', () => { closed = true; });
+
+    try {
+      for await (const event of this.stateStore.readEvents('default', lastEventId)) {
+        if (closed) break;
+        res.write(`id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`);
+      }
+    } catch {
+      // Connection closed or error — clean exit
+    } finally {
+      if (!closed) res.end();
+    }
+  }
+
+  private readBody(req: IncomingMessage): Promise<any> {
+    return new Promise((resolve) => {
+      let data = '';
+      req.on('data', (chunk: Buffer) => data += chunk);
+      req.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch { resolve(null); }
+      });
+    });
+  }
+
+  private serializeBlackboard(tree: BehaviorTree): Record<string, unknown> {
+    if ('toRecord' in tree.blackboard && typeof tree.blackboard.toRecord === 'function') {
+      return tree.blackboard.toRecord();
+    }
+    const result: Record<string, unknown> = {};
+    for (const key of tree.blackboard.keys()) {
+      result[key] = tree.blackboard.get(key);
+    }
+    return result;
+  }
+}

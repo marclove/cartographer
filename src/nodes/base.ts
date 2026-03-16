@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, TreeContext } from '../types.js';
+import type { NodeState } from '../core/serialization.js';
+import { computeContentHash } from '../core/content-hash.js';
 
 /**
  * Abstract base class that all behavior tree nodes extend.
@@ -66,6 +68,14 @@ export abstract class BaseNode implements BTreeNode {
    * store (per-subtree scoping is a future feature requiring a different
    * mechanism).
    */
+  private _contentHash: string | null = null;
+
+  protected _inflightState: {
+    promise: Promise<NodeStatus>;
+    result?: NodeStatus;
+    error?: Error;
+  } | null = null;
+
   protected contextOverrides?: Partial<TreeContext>;
 
   /**
@@ -179,6 +189,36 @@ export abstract class BaseNode implements BTreeNode {
     // Subclasses override if they have in-progress work to cancel
   }
 
+  hasInflightWork(): boolean {
+    if (this._inflightState && this._inflightState.result === undefined && this._inflightState.error === undefined) {
+      return true;
+    }
+    return this.children.some(child => child.hasInflightWork());
+  }
+
+  contentHash(): string {
+    if (this._contentHash === null) {
+      this._contentHash = this.computeHash();
+    }
+    return this._contentHash;
+  }
+
+  protected computeHash(): string {
+    return computeContentHash(this.constructor.name, this.name);
+  }
+
+  inflightPromise(): Promise<void> | null {
+    const promises: Promise<void>[] = [];
+    if (this._inflightState && this._inflightState.result === undefined && this._inflightState.error === undefined) {
+      promises.push(this._inflightState.promise.then(() => {}));
+    }
+    for (const child of this.children) {
+      const p = child.inflightPromise();
+      if (p) promises.push(p);
+    }
+    return promises.length > 0 ? Promise.all(promises).then(() => {}) : null;
+  }
+
   /**
    * The node-specific logic to run on each tick.
    *
@@ -197,5 +237,13 @@ export abstract class BaseNode implements BTreeNode {
    * @param context - The execution context carrying the blackboard, event
    *   emitter, and optional abort signal.
    */
+  serialize(): NodeState {
+    return {};
+  }
+
+  restore(_state: NodeState, _hashToNode: Map<string, BTreeNode>): void {
+    // Default: no state to restore
+  }
+
   protected abstract execute(context: TreeContext): Promise<NodeStatus>;
 }

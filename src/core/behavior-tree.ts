@@ -62,6 +62,11 @@ export class BehaviorTree {
   readonly events: EventEmitter<TreeEvents>;
 
   readonly root: BTreeNode;
+
+  /** Content hash of the root node — fingerprint of the entire tree topology. */
+  get rootHash(): string {
+    return this.root.contentHash();
+  }
   private abortController: AbortController;
   private _scheduler: TreeScheduler | null = null;
 
@@ -222,6 +227,20 @@ export class BehaviorTree {
     this.root.abort();
     this.abortController.abort();
     this.events.emit('tree:abort', { tree: this.name });
+  }
+
+  /** Returns true if any node in the tree has unsettled in-flight work. */
+  hasInflightWork(): boolean {
+    return this.root.hasInflightWork();
+  }
+
+  /**
+   * Returns a promise that resolves when all in-flight work across the tree has settled.
+   * Uses Promise.all (not allSettled) — nodes handle their own errors internally.
+   */
+  async settled(): Promise<void> {
+    const promise = this.root.inflightPromise();
+    if (promise) await promise;
   }
 
   /**

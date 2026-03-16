@@ -1,6 +1,7 @@
 import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, DecoratorConfig, TreeContext } from '../types.js';
+import { computeContentHash } from '../core/content-hash.js';
 
 /**
  * A decorator that forces its child to always return FAILURE.
@@ -28,6 +29,10 @@ export class AlwaysFailNode extends BaseNode {
     const status = await this.child.tick(context);
     if (status === NodeStatus.RUNNING) return NodeStatus.RUNNING;
     return NodeStatus.FAILURE;
+  }
+
+  protected override computeHash(): string {
+    return computeContentHash('AlwaysFailNode', this.child.contentHash());
   }
 
   reset(): void { this.child.reset(); }

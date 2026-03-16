@@ -1,9 +1,11 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { BaseNode } from './base.js';
 import { NodeStatus } from '../types.js';
-import type { AgentNodeConfig, TreeContext } from '../types.js';
+import type { AgentNodeConfig, BTreeNode, TreeContext } from '../types.js';
+import type { NodeState } from '../core/serialization.js';
 import { createBlackboardMcpServer } from '../agent/blackboard-mcp.js';
 import { emitMessageEvents, wrapElicitation } from '../agent/sdk-helpers.js';
+import { computeContentHash } from '../core/content-hash.js';
 
 /**
  * A leaf node that calls the Claude SDK when ticked.
@@ -107,6 +109,7 @@ export class AgentNode extends BaseNode {
    * or `reset()` has been called since the last execution).
    */
   private cachedStatus: NodeStatus | null = null;
+  private _lastTerminalStatus: NodeStatus | null = null;
 
   /**
    * The `AbortController` for the currently in-flight SDK `query()` call.
@@ -115,20 +118,14 @@ export class AgentNode extends BaseNode {
    */
   private activeAbortController: AbortController | null = null;
 
-  /**
-   * Tracks the in-flight SDK call so that `execute()` can return RUNNING
-   * immediately on the first tick and poll for completion on subsequent ticks.
-   * `null` when no work is in progress.
-   */
-  private _inflightState: {
-    promise: Promise<NodeStatus>;
-    result?: NodeStatus;
-    error?: Error;
-  } | null = null;
-
   constructor(config: AgentNodeConfig) {
     super(config.name, config.id);
     this.config = config;
+  }
+
+  protected override computeHash(): string {
+    const prompt = typeof this.config.prompt === 'string' ? this.config.prompt : '';
+    return computeContentHash('AgentNode', this.config.name, prompt);
   }
 
   /**
@@ -155,6 +152,18 @@ export class AgentNode extends BaseNode {
     this._inflightState = null;
   }
 
+  override serialize(): NodeState {
+    return this._lastTerminalStatus !== null
+      ? { lastStatus: this._lastTerminalStatus }
+      : {};
+  }
+
+  override restore(state: NodeState, _hashToNode: Map<string, BTreeNode>): void {
+    if (state.lastStatus !== undefined) {
+      this._lastTerminalStatus = state.lastStatus;
+    }
+  }
+
   protected async execute(context: TreeContext): Promise<NodeStatus> {
     // Return the cached result from a previous tick without calling the SDK.
     if (this.config.cache && this.cachedStatus !== null) {
@@ -171,6 +180,9 @@ export class AgentNode extends BaseNode {
       if (this._inflightState.result !== undefined) {
         const result = this._inflightState.result;
         this._inflightState = null;
+        if (result !== NodeStatus.RUNNING) {
+          this._lastTerminalStatus = result;
+        }
         return result;
       }
       // Still in progress

@@ -15,17 +15,17 @@ Abstract class implementing `BTreeNode`. Base for all built-in nodes.
 ### Constructor
 
 ```typescript
-new BaseNode(name: string)
+new BaseNode(name: string, id?: string)
 ```
 
-Called via `super(name)` in subclasses.
+Called via `super(name)` or `super(name, id)` in subclasses. When `id` is omitted, a UUID v4 is generated automatically. All built-in node configs (`ActionNodeConfig`, `ConditionNodeConfig`, `AgentNodeConfig`, composite configs, decorator configs) expose an optional `id` field that flows through to this parameter.
 
 ### Properties
 
-| Property | Type                | Description                              |
-| -------- | ------------------- | ---------------------------------------- |
-| `id`     | `string` (readonly) | Auto-generated UUID                      |
-| `name`   | `string` (readonly) | Human-readable name, set via constructor |
+| Property | Type                | Description                                                                 |
+| -------- | ------------------- | --------------------------------------------------------------------------- |
+| `id`     | `string` (readonly) | Unique identifier — auto-generated UUID unless a custom `id` was provided. |
+| `name`   | `string` (readonly) | Human-readable name, set via constructor.                                   |
 
 ### Public Methods
 
@@ -100,6 +100,7 @@ new ActionNode(config: ActionNodeConfig)
 
 | Field    | Type                                                          | Required | Description                                                          |
 | -------- | ------------------------------------------------------------- | -------- | -------------------------------------------------------------------- |
+| `id`     | `string`                                                      | No       | Custom node identifier. Auto-generated UUID when omitted.            |
 | `name`   | `string`                                                      | Yes      | Node name                                                            |
 | `action` | `(context: TreeContext) => Promise<NodeStatus> \| NodeStatus` | Yes      | Function invoked on each tick. Return value becomes the node status. |
 
@@ -137,6 +138,7 @@ new ConditionNode(config: ConditionNodeConfig)
 
 | Field       | Type                                                    | Required | Description                                                              |
 | ----------- | ------------------------------------------------------- | -------- | ------------------------------------------------------------------------ |
+| `id`        | `string`                                                | No       | Custom node identifier. Auto-generated UUID when omitted.                |
 | `name`      | `string`                                                | Yes      | Node name                                                                |
 | `condition` | `(context: TreeContext) => Promise<boolean> \| boolean` | Yes      | Predicate function. `true` maps to `SUCCESS`, `false` maps to `FAILURE`. |
 
@@ -171,6 +173,7 @@ new AgentNode(config: AgentNodeConfig)
 
 | Field                 | Type                                                    | Required | Default | Description                                                                                                                                                                                                                                                              |
 | --------------------- | ------------------------------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                  | `string`                                                | No       | --      | Custom node identifier. Auto-generated UUID when omitted.                                                                                                                                                                                                                |
 | `name`                | `string`                                                | Yes      | --      | Node name                                                                                                                                                                                                                                                                |
 | `prompt`              | `string \| ((context: TreeContext) => string)`          | Yes      | --      | Prompt sent to Claude. Can be a static string or a function that builds the prompt from context.                                                                                                                                                                         |
 | `mapResult`           | `(output: unknown, context: TreeContext) => NodeStatus` | No       | --      | Maps the agent output to a `NodeStatus`. When omitted, any successful response returns `SUCCESS`.                                                                                                                                                                        |
@@ -227,6 +230,56 @@ const coder = new AgentNode({
   },
 });
 ```
+
+---
+
+## ActionReceivedNode
+
+```typescript
+import { actionReceived, ActionReceivedNode } from "cartographer";
+```
+
+Synchronous, non-reactive leaf node for consuming action messages from the blackboard in the [actor framework](../guide-actor-framework.md).
+
+### Factory
+
+```typescript
+const node = actionReceived(name: string, options?: ActionReceivedOptions);
+```
+
+### ActionReceivedOptions
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `mapPayload` | `(payload: unknown, blackboard: Blackboard) => void` | No | Callback to extract data from the consumed action payload. |
+
+### Behavior
+
+- Checks `actions:<name>` on the blackboard. If present, deletes the key and returns `SUCCESS`. If absent, returns `FAILURE`.
+- Never returns `RUNNING` (synchronous, no inflight state).
+- Non-reactive: cached in composite `completedMap`, preventing consume-on-read double-execution.
+
+---
+
+## EmitToClientNode
+
+```typescript
+import { emitToClient, EmitToClientNode } from "cartographer";
+```
+
+Action node that sends structured data to connected clients via dual write (blackboard + event).
+
+### Factory
+
+```typescript
+const node = emitToClient(name: string, dataFn: (ctx: TreeContext) => unknown);
+```
+
+### Behavior
+
+- Writes result of `dataFn(ctx)` to `clientEvents:<name>` on the blackboard.
+- Emits a `client:event` event with `{ name, data }`.
+- Returns `SUCCESS` (uses the standard inflight pattern since it extends `ActionNode`).
 
 ---
 

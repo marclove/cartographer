@@ -1,6 +1,7 @@
 import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, GuardConfig, TreeContext } from '../types.js';
+import { computeContentHash } from '../core/content-hash.js';
 
 /**
  * A decorator that gates its child behind a condition function.
@@ -40,6 +41,10 @@ export class GuardNode extends BaseNode {
 
   override get children(): readonly BTreeNode[] {
     return [this.child];
+  }
+
+  protected override computeHash(): string {
+    return computeContentHash('GuardNode', this.child.contentHash());
   }
 
   constructor(config: GuardConfig) {

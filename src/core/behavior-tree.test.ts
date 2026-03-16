@@ -301,6 +301,66 @@ describe('BehaviorTree', () => {
   });
 });
 
+describe('BehaviorTree hasInflightWork / settled', () => {
+  it('returns false when tree has no inflight work', () => {
+    const tree = new BehaviorTree({
+      name: 'test',
+      root: new ActionNode({ name: 'fast', action: async () => NodeStatus.SUCCESS }),
+    });
+    expect(tree.hasInflightWork()).toBe(false);
+  });
+
+  it('returns true when a node has inflight work', async () => {
+    let resolve: (s: NodeStatus) => void;
+    const tree = new BehaviorTree({
+      name: 'test',
+      root: new ActionNode({
+        name: 'slow',
+        action: () => new Promise<NodeStatus>(r => { resolve = r; }),
+      }),
+    });
+
+    await tree.tick();
+    expect(tree.hasInflightWork()).toBe(true);
+
+    resolve!(NodeStatus.SUCCESS);
+    await tree.settled();
+    expect(tree.hasInflightWork()).toBe(false);
+  });
+
+  it('settled() resolves immediately when no inflight work', async () => {
+    const tree = new BehaviorTree({
+      name: 'test',
+      root: new ActionNode({ name: 'fast', action: async () => NodeStatus.SUCCESS }),
+    });
+    await tree.settled();
+  });
+
+  it('settled() waits for deeply nested inflight work', async () => {
+    let resolve: (s: NodeStatus) => void;
+    const tree = new BehaviorTree({
+      name: 'test',
+      root: new SequenceNode({
+        name: 'seq',
+        children: [
+          new ActionNode({
+            name: 'slow',
+            action: () => new Promise<NodeStatus>(r => { resolve = r; }),
+          }),
+        ],
+      }),
+    });
+
+    await tree.tick();
+    expect(tree.hasInflightWork()).toBe(true);
+
+    const settledPromise = tree.settled();
+    resolve!(NodeStatus.SUCCESS);
+    await settledPromise;
+    expect(tree.hasInflightWork()).toBe(false);
+  });
+});
+
 describe('BehaviorTree.start()', () => {
   beforeEach(() => {
     vi.useFakeTimers();

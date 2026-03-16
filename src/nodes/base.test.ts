@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { BaseNode } from './base.js';
+import { ActionNode } from './action.js';
 import { NodeStatus } from '../types.js';
 import type { TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
@@ -123,6 +124,56 @@ describe('BaseNode', () => {
   it('returns empty children array by default', () => {
     const node = new TestNode('leaf');
     expect(node.children).toEqual([]);
+  });
+
+  describe('hasInflightWork / inflightPromise', () => {
+    it('returns false/null when no inflight state', () => {
+      const node = new ActionNode({ name: 'test', action: async () => NodeStatus.SUCCESS });
+      expect(node.hasInflightWork()).toBe(false);
+      expect(node.inflightPromise()).toBeNull();
+    });
+
+    it('returns true after first tick starts async work', async () => {
+      let resolve: (status: NodeStatus) => void;
+      const node = new ActionNode({
+        name: 'test',
+        action: () => new Promise<NodeStatus>(r => { resolve = r; }),
+      });
+      const ctx = createContext();
+      await node.tick(ctx);
+      expect(node.hasInflightWork()).toBe(true);
+      expect(node.inflightPromise()).toBeInstanceOf(Promise);
+      resolve!(NodeStatus.SUCCESS);
+    });
+
+    it('returns false after promise settles but before collection tick', async () => {
+      let resolve: (status: NodeStatus) => void;
+      const node = new ActionNode({
+        name: 'test',
+        action: () => new Promise<NodeStatus>(r => { resolve = r; }),
+      });
+      const ctx = createContext();
+      await node.tick(ctx);
+      resolve!(NodeStatus.SUCCESS);
+      await new Promise(r => setTimeout(r, 0));
+      expect(node.hasInflightWork()).toBe(false);
+      expect(node.inflightPromise()).toBeNull();
+    });
+
+    it('returns false after collection tick returns result', async () => {
+      let resolve: (status: NodeStatus) => void;
+      const node = new ActionNode({
+        name: 'test',
+        action: () => new Promise<NodeStatus>(r => { resolve = r; }),
+      });
+      const ctx = createContext();
+      await node.tick(ctx);
+      resolve!(NodeStatus.SUCCESS);
+      await new Promise(r => setTimeout(r, 0));
+      const status = await node.tick(ctx);
+      expect(status).toBe(NodeStatus.SUCCESS);
+      expect(node.hasInflightWork()).toBe(false);
+    });
   });
 
   describe('contextOverrides', () => {
