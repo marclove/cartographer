@@ -224,6 +224,20 @@ export class BehaviorTree {
     this.events.emit('tree:abort', { tree: this.name });
   }
 
+  /** Returns true if any node in the tree has unsettled in-flight work. */
+  hasInflightWork(): boolean {
+    return this.root.hasInflightWork();
+  }
+
+  /**
+   * Returns a promise that resolves when all in-flight work across the tree has settled.
+   * Uses Promise.all (not allSettled) — nodes handle their own errors internally.
+   */
+  async settled(): Promise<void> {
+    const promise = this.root.inflightPromise();
+    if (promise) await promise;
+  }
+
   /**
    * Start a reactive tick loop that ticks the tree on a fixed interval.
    *
