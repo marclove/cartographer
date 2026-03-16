@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { ActionNode } from '../nodes/action.js';
 import { ConditionNode } from '../nodes/condition.js';
 import { SequenceNode } from '../composites/sequence.js';
+import { RetryNode } from '../decorators/retry.js';
+import { RepeatNode } from '../decorators/repeat.js';
+import { InverterNode } from '../decorators/inverter.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, TreeContext } from '../types.js';
 import { EventEmitter } from './event-emitter.js';
@@ -123,5 +126,61 @@ describe('composite serialization', () => {
     expect(restoredState.completedMap?.[a2.contentHash()]).toBe(NodeStatus.SUCCESS);
 
     resolveB!(NodeStatus.SUCCESS);
+  });
+});
+
+describe('decorator serialization', () => {
+  it('RetryNode serializes current attempt count', async () => {
+    let callCount = 0;
+    const child = new ActionNode({
+      name: 'fail',
+      action: async () => { callCount++; return NodeStatus.FAILURE; },
+    });
+    const retry = new RetryNode({ name: 'retry', child, maxAttempts: 5 });
+    const ctx = createContext();
+
+    // Tick: child starts → RUNNING
+    await retry.tick(ctx);
+    await flush();
+    // Tick: child fails → retry increments attempt, child starts again → RUNNING
+    await retry.tick(ctx);
+    await flush();
+    // Tick: child fails again → retry increments
+    await retry.tick(ctx);
+
+    const state = retry.serialize();
+    expect(state.count).toBeGreaterThan(0);
+
+    // Restore into fresh node
+    const child2 = new ActionNode({ name: 'fail', action: async () => NodeStatus.FAILURE });
+    const retry2 = new RetryNode({ name: 'retry', child: child2, maxAttempts: 5 });
+    retry2.restore(state, new Map());
+    expect(retry2.serialize().count).toBe(state.count);
+  });
+
+  it('RepeatNode serializes current iteration count', async () => {
+    const child = new ActionNode({ name: 'ok', action: async () => NodeStatus.SUCCESS });
+    const repeat = new RepeatNode({ name: 'repeat', child, count: 5 });
+    const ctx = createContext();
+
+    // Tick: child starts → RUNNING
+    await repeat.tick(ctx);
+    await flush();
+    // Tick: child completes (iteration 1), starts again → RUNNING
+    await repeat.tick(ctx);
+
+    const state = repeat.serialize();
+    expect(state.count).toBeGreaterThan(0);
+
+    const child2 = new ActionNode({ name: 'ok', action: async () => NodeStatus.SUCCESS });
+    const repeat2 = new RepeatNode({ name: 'repeat', child: child2, count: 5 });
+    repeat2.restore(state, new Map());
+    expect(repeat2.serialize().count).toBe(state.count);
+  });
+
+  it('InverterNode serializes empty state', () => {
+    const child = new ActionNode({ name: 'a', action: async () => NodeStatus.SUCCESS });
+    const inv = new InverterNode({ name: 'inv', child });
+    expect(inv.serialize()).toEqual({});
   });
 });

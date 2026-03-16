@@ -1,6 +1,7 @@
 import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, RetryConfig, TreeContext } from '../types.js';
+import type { NodeState } from '../core/serialization.js';
 import { computeContentHash } from '../core/content-hash.js';
 
 /**
@@ -33,6 +34,16 @@ export class RetryNode extends BaseNode {
 
   protected override computeHash(): string {
     return computeContentHash('RetryNode', String(this.maxAttempts), this.child.contentHash());
+  }
+
+  override serialize(): NodeState {
+    return { count: this._attempt };
+  }
+
+  override restore(state: NodeState, _hashToNode: Map<string, BTreeNode>): void {
+    if (state.count !== undefined) {
+      this._attempt = state.count;
+    }
   }
 
   constructor(config: RetryConfig) {
