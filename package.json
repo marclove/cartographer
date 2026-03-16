@@ -22,7 +22,7 @@
 		"dashboard:build": "vite build --config dashboard/vite.config.ts",
 		"dashboard:dev": "vite dev --config dashboard/vite.config.ts",
 		"test": "NODE_OPTIONS=--experimental-eventsource vitest run --project unit",
-		"test:integration": "vitest run --project integration",
+		"test:integration": "NODE_OPTIONS=--experimental-eventsource vitest run --project integration",
 		"test:live": "vitest run --project live",
 		"test:dashboard": "vitest run --project dashboard",
 		"test:examples": "vitest run --project examples --passWithNoTests",
