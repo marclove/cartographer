@@ -229,6 +229,22 @@ export class BehaviorTree {
     this.events.emit('tree:abort', { tree: this.name });
   }
 
+  /**
+   * Cancel in-flight work without destroying tree state.
+   *
+   * Unlike {@link abort}, interrupt preserves composite cycle state
+   * (completedMap, committedOrder) so that previously completed children
+   * are not re-executed. The tree remains tickable immediately — no
+   * {@link reset} call needed.
+   *
+   * Does NOT trigger the tree's AbortController (that would permanently
+   * prevent further ticks).
+   */
+  interrupt(): void {
+    this.root.interrupt();
+    this.events.emit('tree:interrupt', { tree: this.name });
+  }
+
   /** Returns true if any node in the tree has unsettled in-flight work. */
   hasInflightWork(): boolean {
     return this.root.hasInflightWork();
