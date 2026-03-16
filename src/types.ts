@@ -180,6 +180,9 @@ export interface TreeEvents {
   'blackboard:write': { key: string; value: unknown; source: string };
   'strategy:decision': { composite: BTreeNode; strategy: string; decision: unknown };
   'agent:elicitation_declined': { node: BTreeNode; request: ElicitationRequest };
+  'client:event': { name: string; data: unknown };
+  'message:processed': { messageId: string; treeStatus: string };
+  'message:failed': { messageId: string; error: string };
 }
 
 /**
