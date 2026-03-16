@@ -23,12 +23,14 @@ The design is structured in two phases that share the same architecture. Phase 1
 The actor ticks the tree until it reaches a terminal state (SUCCESS/FAILURE) or is *suspended* — RUNNING with no in-flight work, meaning it's waiting for external input.
 
 Two additions to the node interface support this. Each node in the BTreeNode interface gains:
-- `hasInflightWork(): boolean` — returns true if this node has a non-null `_inflightState`. Composites/decorators delegate to their children.
-- `inflightPromise(): Promise<void> | null` — returns the in-flight promise if one exists, null otherwise. Composites/decorators aggregate children.
+- `hasInflightWork(): boolean` — returns true if this node has unsettled in-flight work: `_inflightState` is non-null *and* neither `result` nor `error` has been populated yet. A node whose promise has resolved but hasn't been collected by a subsequent tick is *not* considered in-flight — it's waiting for a tick, not for external work. Composites/decorators delegate to their children.
+- `inflightPromise(): Promise<void> | null` — returns the in-flight promise if the node has unsettled work (same check as `hasInflightWork`), null otherwise. Composites/decorators aggregate children.
+
+Note: `_inflightState` is currently `private` on `ActionNode` and `AgentNode`. These methods require either making the field `protected` or adding an accessor on the base class. The implementation should add an `_inflightState` field to `BaseNode` (defaulting to null) with the `hasInflightWork()` and `inflightPromise()` implementations, so leaf nodes that don't use in-flight work inherit the no-op behavior.
 
 BehaviorTree exposes these as tree-level methods:
 - `hasInflightWork()` — delegates to the root node's recursive check
-- `settled()` — collects all `inflightPromise()` values from the tree and returns `Promise.allSettled()`. Resolves when all in-flight work has completed.
+- `settled()` — collects all `inflightPromise()` values from the tree and returns `Promise.all()`. Resolves when all in-flight work has completed. `Promise.all()` is used rather than `Promise.allSettled()` because individual nodes already handle their own errors internally (catching exceptions and storing them on `_inflightState.error`). An unhandled rejection here indicates a bug that should surface, not be silently absorbed.
 
 ```
 process(msg):
@@ -104,11 +106,17 @@ Write endpoints return immediately (202 Accepted). Processing runs asynchronousl
 2. **Background task**: load tree state from KV, create tree from factory, restore execution state, apply message, run `runToCompletion()`.
 3. **During processing**: events (blackboard writes, agent responses, `emitToClient`) flow to the client via SSE in real time. Lock heartbeat keeps the lock alive.
 4. **On completion**: serialize tree state, save to KV, publish a `message:processed` event (with message ID and final tree status), release lock, discard tree.
-5. **On crash**: heartbeat stops, lock TTL expires (max 30s), tree state is unchanged (save never happened). The client sees the SSE connection drop and can reconnect.
+5. **On error**: if the background task fails (factory throws, restore fails due to topology mismatch with "fail" policy, state deserialization error), publish a `message:failed` event, release the lock immediately, discard the tree. Tree state in the store is unchanged (save never happened).
+6. **On crash**: heartbeat stops, lock TTL expires (max 30s), tree state is unchanged (save never happened). The client sees the SSE connection drop and can reconnect.
 
 The `message:processed` event tells the client that processing is complete:
 ```json
 { "type": "message:processed", "messageId": "msg-1", "treeStatus": "running" }
+```
+
+The `message:failed` event tells the client that processing failed:
+```json
+{ "type": "message:failed", "messageId": "msg-1", "error": "Tree topology changed: stored rootHash abc123 does not match factory rootHash def456" }
 ```
 
 The client SDK provides a convenience for callers who want to await completion:
@@ -239,8 +247,11 @@ Migration between tree versions is not in scope for this design.
 
 Per node type:
 - **Composites** (Sequence, Selector): `committedOrder` (resolved child evaluation order as content hashes), `completedMap` (content hash → terminal status for non-reactive children that have finished)
+- **Composites** (Parallel): `completedMap` (content hash → terminal status for children that have finished within the current parallel cycle)
 - **Decorators** (Retry, Repeat): current count
 - **Leaf nodes** (ActionNode, AgentNode): last terminal status only
+
+Note: the existing `completedMap` on all three composite types is `Map<BTreeNode, NodeStatus>` — keyed by live node reference. Similarly, `committedOrder` is `BTreeNode[] | null`. Serialization requires re-keying these structures by content hash. This is new implementation work on `SequenceNode`, `SelectorNode`, and `ParallelNode` — not a description of existing behavior.
 
 #### Restore Process
 
@@ -270,7 +281,7 @@ The blackboard is a flat key-value map, serialized as JSON alongside the tree st
 
 ### Transport by StateStore
 
-**`InMemoryStateStore`** (local dev): events are delivered directly — processing and SSE always happen on the same machine. An in-memory buffer provides replay on reconnect within the buffer window.
+**`InMemoryStateStore`** (local dev): events are delivered directly — processing and SSE always happen on the same machine. An in-memory circular buffer (default capacity: 1000, matching the Redis Stream `MAXLEN ~1000`) provides replay on reconnect within the buffer window. If the client's `Last-Event-ID` predates the oldest buffered event, the server falls back to a fresh snapshot plus all buffered events. The existing `EventBuffer` from `src/server/event-buffer.ts` should be reused for this — it already implements circular buffering with `getEventsSince(lastId)` and capacity-based eviction.
 
 **`RedisStateStore`** (production): uses Redis Streams (not pub/sub) for durable, replayable event delivery. The processing machine appends events to a Redis Stream (`XADD`). The machine holding the SSE connection reads from the stream (`XREAD BLOCK`). On reconnect, events since the client's last-seen ID are replayed. Redis Streams retain events until explicitly trimmed (configurable, e.g., `XTRIM MAXLEN ~1000`).
 
@@ -280,6 +291,8 @@ Redis pub/sub is not used because it is fire-and-forget — if the subscribing m
 
 Regardless of transport, the SSE endpoint sends a full state snapshot on connect and reconnect (current blackboard, tree status, pending client events). This is the universal safety net: even if the event stream has gaps (network issues, buffer overflow, stream trimming), the client can always reconstruct current state from the snapshot.
 
+The snapshot includes `processingMessageId: string | null` — the ID of the message currently being processed, or null if the tree is idle. This resolves a race condition: if a client connects (or reconnects) between the final state writes and the `message:processed` event, the snapshot reflects the final state but the client never sees the completion event. `processingMessageId` lets the client determine whether a message is still in flight without relying on having received every event.
+
 ### Durable Client Events
 
 `emitToClient` writes its payload to the blackboard (under `clientEvents:<name>`) in addition to emitting an event. The event provides real-time reactivity; the blackboard entry is the durable record. This means a snapshot alone is sufficient for the client to rebuild its UI — the client doesn't depend on having received every event in order. When the client processes the event or reconnects and reads the snapshot, it clears the blackboard entry by sending a `write` message.
@@ -288,7 +301,7 @@ Regardless of transport, the SSE endpoint sends a full state snapshot on connect
 
 ## 4. ActorServer (Phase 1)
 
-The HTTP layer over the single tree. Replaces TreeServer.
+The HTTP layer over the single tree. Replaces TreeServer. The existing read-endpoint handlers (`handleApiTree`, `handleApiStatus`, `handleApiBlackboard`, `handleApiNode` from `src/server/api-handlers.ts`), SSE handler (`handleSseStream` from `src/server/sse-handler.ts`), and event serializers (`src/server/serializers.ts`) should be reused rather than reimplemented.
 
 ### Configuration
 
@@ -349,6 +362,17 @@ const server = new ActorServer({
   { "value": "approved" }
   ```
 
+### Write Endpoint Error Responses
+
+| Status | Condition |
+|--------|-----------|
+| `202 Accepted` | Lock acquired, processing started |
+| `400 Bad Request` | Invalid message type, missing required fields (e.g., `action` with no `name`) |
+| `409 Conflict` | Lock held — another message is being processed |
+| `503 Service Unavailable` | Server is shutting down (post-SIGTERM) |
+
+Errors that occur *after* 202 is returned (factory throws, restore fails, unhandled exception in processing) are reported via `message:failed` on the SSE stream — the HTTP response has already been sent.
+
 ### Transport
 
 REST for sends + SSE for events. Pragmatic, works with existing dashboard architecture, easy to debug with curl. WebSocket can be added later for latency-sensitive use cases.
@@ -399,6 +423,14 @@ client.disconnect()  // closes SSE
 
 The client mirrors the TypedEventEmitter interface for subscriptions — same mental model on both sides. Framework-specific bindings (React hooks, Svelte stores) would be separate packages built on top.
 
+### 409 Handling
+
+When a send method (`action`, `write`, `send`) receives 409 Conflict, it rejects with a typed `ConflictError`. The client does not retry automatically — the caller decides whether to retry, queue, or discard. `actionAndWait` also rejects on 409 rather than silently retrying, since the caller explicitly awaits the result and should handle the contention.
+
+### Error Events
+
+`actionAndWait` resolves on `message:processed` and rejects on `message:failed`. The rejected error includes the message ID and the server-provided error string.
+
 ---
 
 ## 6. Tree Interaction Patterns
@@ -447,6 +479,8 @@ untilSuccess(
 ```
 
 When the child returns FAILURE, `untilSuccess` returns RUNNING. Since no in-flight work exists, the tick loop exits and the tree is suspended. On the next message, the tree resumes here.
+
+This is distinct from `RepeatNode` with `untilStatus: NodeStatus.SUCCESS`. `RepeatNode` re-ticks its child synchronously within a single `execute()` call and never returns RUNNING due to a child FAILURE — it loops internally. `untilSuccess` must return RUNNING to the caller on child FAILURE so that `runToCompletion()` can detect the suspension point via `hasInflightWork() === false`.
 
 ### emitToClient() — action factory
 
@@ -550,6 +584,8 @@ No session affinity needed. Fly's load balancer can route freely across machines
 
 The Phase 1 root-level endpoints (`POST /api/messages`, `GET /api/blackboard`, etc.) remain as shortcuts for a default auto-created session. Existing clients and the Phase 1 dashboard continue to work without changes. The session-scoped endpoints are additive.
 
+The default session uses the fixed ID `"default"`, is auto-created on first request to a root-level endpoint if it doesn't already exist, and persists across server restarts (stored in the StateStore like any other session). It cannot be deleted via `DELETE /api/sessions/default` — attempting to do so returns 409.
+
 ---
 
 ## 9. Session API
@@ -629,7 +665,7 @@ The reverse-proxy layer itself is unchanged (static files + API forwarding), but
 ### Modified
 - `BTreeNode` interface — adds `contentHash()`, `hasInflightWork()`, `inflightPromise()`, `serialize()`, `restore()` methods
 - `BehaviorTree` — adds tree-level `hasInflightWork()`, `settled()`, and `rootHash` (computed from root node's content hash)
-- `TreeEvents` — adds `'client:event'` entry with `{ name: string, data: unknown }` payload and `'message:processed'` entry with `{ messageId: string, treeStatus: string }` payload
+- `TreeEvents` — adds `'client:event'` entry with `{ name: string, data: unknown }` payload, `'message:processed'` entry with `{ messageId: string, treeStatus: string }` payload, and `'message:failed'` entry with `{ messageId: string, error: string }` payload
 - `src/index.ts` — export new primitives
 
 ### New (Phase 1)
