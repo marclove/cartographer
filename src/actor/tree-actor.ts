@@ -15,6 +15,8 @@ export interface ProcessResult {
   treeStatus: NodeStatus | 'error';
   error?: string;
   interrupted?: boolean;
+  /** Returned when the tree is held and a tick was skipped. */
+  held?: boolean;
 }
 
 /**
@@ -51,6 +53,20 @@ export class TreeActor {
         tree.blackboard.set(key, value);
       }
       restoreTree(tree.root, tree.rootHash, stored.treeState, this.topologyPolicy);
+    }
+
+    // Handle held state: tick messages are no-ops, action/write clear held,
+    // signal:resume clears held without ticking
+    if (stored?.held) {
+      if (msg.type === 'tick') {
+        return { treeStatus: NodeStatus.RUNNING, held: true };
+      }
+      if (msg.type === 'signal' && msg.signal === 'resume') {
+        await this.stateStore.saveState(this.stateKey, { ...stored, held: false });
+        return { treeStatus: 'error', error: 'Signal handled: resume' };
+      }
+      // action/write: clear held flag, then fall through to normal processing
+      await this.stateStore.saveState(this.stateKey, { ...stored, held: false });
     }
 
     // Apply message

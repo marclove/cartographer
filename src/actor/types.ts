@@ -25,7 +25,7 @@ export interface WriteMessage {
 
 export interface SignalMessage {
   type: 'signal';
-  signal: 'stop' | 'reset' | 'abort';
+  signal: 'stop' | 'reset' | 'abort' | 'resume';
   id?: string;
 }
 
