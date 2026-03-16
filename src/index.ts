@@ -93,3 +93,33 @@ export type { OnElicitation, ElicitationRequest } from '@anthropic-ai/claude-age
 export { TreeServer } from './server/tree-server.js';
 export type { TreeServerOptions } from './server/tree-server.js';
 export type { SerializedNodeRef, SerializedTreeNode } from './server/serializers.js';
+
+// Actor
+export { TreeActor } from './actor/tree-actor.js';
+export type { TreeActorOptions, ProcessResult } from './actor/tree-actor.js';
+export type { ActorMessage, TickMessage, ActionMessage, WriteMessage, SignalMessage } from './actor/types.js';
+export { generateMessageId } from './actor/types.js';
+
+// State
+export type { StateStore, TreeSessionState, TreeEvent } from './state/state-store.js';
+export { InMemoryStateStore } from './state/in-memory-state-store.js';
+export { RedisStateStore } from './state/redis-state-store.js';
+export type { RedisStateStoreOptions } from './state/redis-state-store.js';
+
+// ActorServer
+export { ActorServer } from './server/actor-server.js';
+export type { ActorServerOptions } from './server/actor-server.js';
+
+// Client
+export { createCartographerClient, ConflictError } from './client/index.js';
+export type { CartographerClient } from './client/types.js';
+
+// New nodes
+export { untilSuccess, UntilSuccessNode } from './decorators/until-success.js';
+export { actionReceived, ActionReceivedNode } from './nodes/action-received.js';
+export { emitToClient, EmitToClientNode } from './nodes/emit-to-client.js';
+
+// Serialization
+export { serializeTree, restoreTree, buildHashIndex } from './core/serialization.js';
+export type { SerializedTreeState, NodeState } from './core/serialization.js';
+export { computeContentHash } from './core/content-hash.js';
