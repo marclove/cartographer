@@ -94,11 +94,34 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
     },
 
     async interruptAndAction(name, payload) {
-      // Interrupt first
-      await this.interrupt();
-      // Wait briefly for the processing loop to finish and release the lock
-      await new Promise((r) => setTimeout(r, 100));
-      // Send the new action (clears held implicitly)
+      const { interrupted, messageId } = await this.interrupt();
+
+      // If nothing was processing, send the action directly
+      if (!interrupted) {
+        return this.action(name, payload);
+      }
+
+      // Wait for the interrupted message's processing to finish (lock release)
+      await new Promise<void>((resolve) => {
+        const onProcessed = (data: unknown) => {
+          const d = data as { messageId: string };
+          if (d.messageId === messageId) { cleanup(); resolve(); }
+        };
+        const onFailed = (data: unknown) => {
+          const d = data as { messageId: string };
+          if (d.messageId === messageId) { cleanup(); resolve(); }
+        };
+        const cleanup = () => {
+          listeners.get('message:processed')?.delete(onProcessed);
+          listeners.get('message:failed')?.delete(onFailed);
+        };
+        if (!listeners.has('message:processed')) listeners.set('message:processed', new Set());
+        if (!listeners.has('message:failed')) listeners.set('message:failed', new Set());
+        listeners.get('message:processed')!.add(onProcessed);
+        listeners.get('message:failed')!.add(onFailed);
+      });
+
+      // Lock is released — send the new action
       return this.action(name, payload);
     },
 

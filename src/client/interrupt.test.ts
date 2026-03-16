@@ -31,8 +31,10 @@ function makeFastTree() {
 
 describe('CartographerClient interrupt/resume', () => {
   let server: ActorServer;
+  let client: ReturnType<typeof createCartographerClient>;
 
   afterEach(async () => {
+    client?.disconnect();
     await server?.stop();
   });
 
@@ -40,7 +42,7 @@ describe('CartographerClient interrupt/resume', () => {
     const store = new InMemoryStateStore();
     server = new ActorServer({ createTree: makeSlowTree, stateStore: store, port: 0 });
     const { port } = await server.start();
-    const client = createCartographerClient(`http://localhost:${port}`);
+    client = createCartographerClient(`http://localhost:${port}`);
 
     // Start slow work
     await client.action('go');
@@ -60,7 +62,7 @@ describe('CartographerClient interrupt/resume', () => {
   it('interrupt() returns { interrupted: false } when idle', async () => {
     server = new ActorServer({ createTree: makeFastTree, port: 0 });
     const { port } = await server.start();
-    const client = createCartographerClient(`http://localhost:${port}`);
+    client = createCartographerClient(`http://localhost:${port}`);
 
     const result = await client.interrupt();
     expect(result.interrupted).toBe(false);
@@ -70,7 +72,7 @@ describe('CartographerClient interrupt/resume', () => {
     const store = new InMemoryStateStore();
     server = new ActorServer({ createTree: makeFastTree, stateStore: store, port: 0 });
     const { port } = await server.start();
-    const client = createCartographerClient(`http://localhost:${port}`);
+    client = createCartographerClient(`http://localhost:${port}`);
 
     // Set held state
     const tree = makeFastTree();
@@ -93,24 +95,38 @@ describe('CartographerClient interrupt/resume', () => {
   it('resume() returns { resumed: false } when not held', async () => {
     server = new ActorServer({ createTree: makeFastTree, port: 0 });
     const { port } = await server.start();
-    const client = createCartographerClient(`http://localhost:${port}`);
+    client = createCartographerClient(`http://localhost:${port}`);
 
     const result = await client.resume();
     expect(result.resumed).toBe(false);
   });
 
-  it('interruptAndAction() interrupts and then sends action', async () => {
+  it('interruptAndAction() waits for SSE confirmation before sending action', async () => {
     const store = new InMemoryStateStore();
     server = new ActorServer({ createTree: makeSlowTree, stateStore: store, port: 0 });
     const { port } = await server.start();
-    const client = createCartographerClient(`http://localhost:${port}`);
+    client = createCartographerClient(`http://localhost:${port}`);
+
+    // Connect SSE so interruptAndAction can listen for message:processed
+    client.connect();
+    await new Promise((r) => setTimeout(r, 100));
 
     // Start slow work
     await client.action('go');
     await new Promise((r) => setTimeout(r, 50));
 
-    // interruptAndAction: interrupts then sends a new action
+    // interruptAndAction: interrupts, waits for SSE confirmation, then sends action
     const result = await client.interruptAndAction('redirect', { target: 'new-path' });
+    expect(result.id).toBeDefined();
+  });
+
+  it('interruptAndAction() sends action directly when nothing is processing', async () => {
+    server = new ActorServer({ createTree: makeFastTree, port: 0 });
+    const { port } = await server.start();
+    client = createCartographerClient(`http://localhost:${port}`);
+
+    // No SSE needed — fast path skips waiting
+    const result = await client.interruptAndAction('go', {});
     expect(result.id).toBeDefined();
   });
 });
