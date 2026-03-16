@@ -152,6 +152,13 @@ export class AgentNode extends BaseNode {
     this._inflightState = null;
   }
 
+  override interrupt(): void {
+    this.activeAbortController?.abort();
+    this._inflightState = null;
+    // Deliberately does NOT clear cachedStatus — previously completed
+    // cached results survive interrupt.
+  }
+
   override serialize(): NodeState {
     return this._lastTerminalStatus !== null
       ? { lastStatus: this._lastTerminalStatus }
