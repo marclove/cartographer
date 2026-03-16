@@ -112,6 +112,10 @@ export class ActorServer {
       return jsonResponse(res, 200, { name: tree.name, rootHash: tree.rootHash });
     }
 
+    if (method === 'GET' && url.pathname === '/api/events') {
+      return this.handleSSE(req, res);
+    }
+
     // Write endpoints
     if (method === 'POST' && url.pathname === '/api/messages') {
       return this.handleMessage(req, res);
@@ -196,6 +200,38 @@ export class ActorServer {
     } finally {
       clearInterval(heartbeat);
       await this.stateStore.releaseLock('default', requestId);
+    }
+  }
+
+  private async handleSSE(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
+
+    const state = await this.stateStore.getState('default');
+    const snapshot = {
+      blackboard: state?.blackboard ?? {},
+      treeRootHash: state?.treeState.rootHash ?? null,
+      lastMessageAt: state?.lastMessageAt ?? null,
+    };
+    res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
+
+    const lastEventId = req.headers['last-event-id'] as string | undefined;
+
+    let closed = false;
+    req.on('close', () => { closed = true; });
+
+    try {
+      for await (const event of this.stateStore.readEvents('default', lastEventId)) {
+        if (closed) break;
+        res.write(`id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`);
+      }
+    } catch {
+      // Connection closed or error — clean exit
+    } finally {
+      if (!closed) res.end();
     }
   }
 

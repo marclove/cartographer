@@ -156,6 +156,24 @@ describe('ActorServer write endpoints', () => {
     expect(bb.myKey).toBe('hello');
   });
 
+  it('GET /api/events returns SSE stream with snapshot', async () => {
+    server = new ActorServer({ createTree: makeTree, port: 0 });
+    port = (await server.start()).port;
+
+    const res = await fetch(`http://localhost:${port}/api/events`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('text/event-stream');
+
+    // Read the first chunk (snapshot)
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    const { value } = await reader.read();
+    const text = decoder.decode(value);
+    expect(text).toContain('event: snapshot');
+    expect(text).toContain('"blackboard"');
+    reader.cancel();
+  });
+
   it('emits message:processed event on success', async () => {
     const store = new InMemoryStateStore();
     server = new ActorServer({ createTree: makeTree, stateStore: store, port: 0 });
