@@ -1,0 +1,21 @@
+export class ConflictError extends Error {
+  constructor() {
+    super('Session is currently processing a message');
+    this.name = 'ConflictError';
+  }
+}
+
+export interface CartographerClient {
+  action(name: string, payload?: unknown): Promise<{ id: string }>;
+  write(key: string, value: unknown): Promise<{ id: string }>;
+  send(msg: { type: string; name?: string; payload?: unknown; key?: string; value?: unknown }): Promise<{ id: string }>;
+  actionAndWait(name: string, payload?: unknown): Promise<{ messageId: string; treeStatus: string }>;
+  blackboard(): Promise<Record<string, unknown>>;
+  tree(): Promise<unknown>;
+  status(): Promise<unknown>;
+  on(event: string, handler: (data: unknown) => void): void;
+  onAny(handler: (event: string, data: unknown) => void): void;
+  off(event: string, handler: (data: unknown) => void): void;
+  connect(): void;
+  disconnect(): void;
+}
