@@ -10,6 +10,12 @@ export interface CartographerClient {
   write(key: string, value: unknown): Promise<{ id: string }>;
   send(msg: { type: string; name?: string; payload?: unknown; key?: string; value?: unknown }): Promise<{ id: string }>;
   actionAndWait(name: string, payload?: unknown): Promise<{ messageId: string; treeStatus: string }>;
+  /** Interrupt the currently processing message. Bypasses the lock. */
+  interrupt(): Promise<{ interrupted: boolean; messageId?: string }>;
+  /** Clear the held state so the next tick processes normally. */
+  resume(): Promise<{ resumed: boolean }>;
+  /** Interrupt, wait for processing to finish, then send a new action (clears held implicitly). */
+  interruptAndAction(name: string, payload?: unknown): Promise<{ id: string }>;
   blackboard(): Promise<Record<string, unknown>>;
   tree(): Promise<unknown>;
   status(): Promise<unknown>;

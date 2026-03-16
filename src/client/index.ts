@@ -83,6 +83,25 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
       });
     },
 
+    async interrupt() {
+      const res = await fetch(`${baseUrl}/api/interrupt`, { method: 'POST' });
+      return res.json() as Promise<{ interrupted: boolean; messageId?: string }>;
+    },
+
+    async resume() {
+      const res = await fetch(`${baseUrl}/api/resume`, { method: 'POST' });
+      return res.json() as Promise<{ resumed: boolean }>;
+    },
+
+    async interruptAndAction(name, payload) {
+      // Interrupt first
+      await this.interrupt();
+      // Wait briefly for the processing loop to finish and release the lock
+      await new Promise((r) => setTimeout(r, 100));
+      // Send the new action (clears held implicitly)
+      return this.action(name, payload);
+    },
+
     async blackboard() {
       return get('/api/blackboard') as Promise<Record<string, unknown>>;
     },
@@ -115,7 +134,7 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
       eventSource.addEventListener('snapshot', (e: any) => {
         dispatchEvent('snapshot', JSON.parse(e.data));
       });
-      for (const type of ['blackboard:write', 'client:event', 'message:processed', 'message:failed', 'node:enter', 'node:exit', 'tree:tick']) {
+      for (const type of ['blackboard:write', 'client:event', 'message:processed', 'message:interrupted', 'message:failed', 'node:enter', 'node:exit', 'tree:tick']) {
         eventSource.addEventListener(type, (e: any) => {
           try { dispatchEvent(type, JSON.parse(e.data)); } catch {}
         });
