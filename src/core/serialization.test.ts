@@ -10,6 +10,8 @@ import type { BTreeNode, TreeContext } from '../types.js';
 import { EventEmitter } from './event-emitter.js';
 import { InMemoryBlackboard } from './blackboard.js';
 import type { TreeEvents } from '../types.js';
+import { buildHashIndex, serializeTree, restoreTree } from './serialization.js';
+import type { SerializedTreeState } from './serialization.js';
 
 function createContext(): TreeContext {
   return {
@@ -182,5 +184,67 @@ describe('decorator serialization', () => {
     const child = new ActionNode({ name: 'a', action: async () => NodeStatus.SUCCESS });
     const inv = new InverterNode({ name: 'inv', child });
     expect(inv.serialize()).toEqual({});
+  });
+});
+
+describe('buildHashIndex', () => {
+  it('builds flat index from tree', () => {
+    const a = new ActionNode({ name: 'a', action: async () => NodeStatus.SUCCESS });
+    const b = new ActionNode({ name: 'b', action: async () => NodeStatus.SUCCESS });
+    const seq = new SequenceNode({ name: 'seq', children: [a, b] });
+
+    const index = buildHashIndex(seq);
+    expect(index.size).toBe(3);
+    expect(index.get(a.contentHash())).toBe(a);
+    expect(index.get(b.contentHash())).toBe(b);
+    expect(index.get(seq.contentHash())).toBe(seq);
+  });
+
+  it('disambiguates duplicate hashes', () => {
+    const a1 = new ActionNode({ name: 'dup', action: async () => NodeStatus.SUCCESS });
+    const a2 = new ActionNode({ name: 'dup', action: async () => NodeStatus.SUCCESS });
+    const seq = new SequenceNode({ name: 'seq', children: [a1, a2] });
+
+    const index = buildHashIndex(seq);
+    const rawHash = a1.contentHash();
+    expect(index.has(`${rawHash}:0`)).toBe(true);
+    expect(index.has(`${rawHash}:1`)).toBe(true);
+    expect(index.get(`${rawHash}:0`)).toBe(a1);
+    expect(index.get(`${rawHash}:1`)).toBe(a2);
+  });
+});
+
+describe('serializeTree / restoreTree', () => {
+  it('round-trips tree state', async () => {
+    const makeTree = () => {
+      const a = new ActionNode({ name: 'a', action: async () => NodeStatus.SUCCESS });
+      const b = new ActionNode({ name: 'b', action: async () => NodeStatus.SUCCESS });
+      return new SequenceNode({ name: 'seq', children: [a, b] });
+    };
+
+    const tree1 = makeTree();
+    const ctx = createContext();
+    await tree1.tick(ctx);
+    await flush();
+    await tree1.tick(ctx);
+
+    const rootHash = tree1.contentHash();
+    const serialized = serializeTree(tree1, rootHash);
+
+    const tree2 = makeTree();
+    restoreTree(tree2, tree2.contentHash(), serialized);
+    expect(serializeTree(tree2, tree2.contentHash())).toEqual(serialized);
+  });
+
+  it('throws on rootHash mismatch with fail policy', () => {
+    const tree = new ActionNode({ name: 'a', action: async () => NodeStatus.SUCCESS });
+    const stored: SerializedTreeState = { rootHash: 'wrong', nodes: {} };
+    expect(() => restoreTree(tree, tree.contentHash(), stored, 'fail')).toThrow(/topology changed/i);
+  });
+
+  it('silently skips restore on rootHash mismatch with reset policy', () => {
+    const tree = new ActionNode({ name: 'a', action: async () => NodeStatus.SUCCESS });
+    const stored: SerializedTreeState = { rootHash: 'wrong', nodes: {} };
+    expect(() => restoreTree(tree, tree.contentHash(), stored, 'reset')).not.toThrow();
   });
 });
