@@ -4,6 +4,9 @@ import type { BehaviorTree } from '../core/behavior-tree.js';
 import { serializeTree } from '../core/serialization.js';
 import { InMemoryStateStore } from '../state/in-memory-state-store.js';
 import type { StateStore } from '../state/state-store.js';
+import { TreeActor } from '../actor/tree-actor.js';
+import { generateMessageId } from '../actor/types.js';
+import type { ActorMessage } from '../actor/types.js';
 import { jsonResponse, jsonError } from './http-utils.js';
 
 export interface ActorServerOptions {
@@ -109,7 +112,102 @@ export class ActorServer {
       return jsonResponse(res, 200, { name: tree.name, rootHash: tree.rootHash });
     }
 
+    // Write endpoints
+    if (method === 'POST' && url.pathname === '/api/messages') {
+      return this.handleMessage(req, res);
+    }
+
+    const actionMatch = url.pathname.match(/^\/api\/actions\/(.+)$/);
+    if (method === 'POST' && actionMatch) {
+      return this.handleAction(req, res, decodeURIComponent(actionMatch[1]));
+    }
+
+    const bbMatch = url.pathname.match(/^\/api\/blackboard\/(.+)$/);
+    if (method === 'POST' && bbMatch) {
+      return this.handleBlackboardWrite(req, res, decodeURIComponent(bbMatch[1]));
+    }
+
     jsonError(res, 404, 'Not found');
+  }
+
+  private async handleMessage(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await this.readBody(req);
+    if (!body || !body.type) {
+      return jsonError(res, 400, 'Missing message type');
+    }
+    if (body.type === 'action' && !body.name) {
+      return jsonError(res, 400, 'Action message requires name');
+    }
+    const messageId = body.id ?? generateMessageId();
+    const msg: ActorMessage = { ...body, id: messageId };
+    await this.processAsync(msg, messageId, res);
+  }
+
+  private async handleAction(req: IncomingMessage, res: ServerResponse, name: string): Promise<void> {
+    const payload = await this.readBody(req);
+    const messageId = generateMessageId();
+    await this.processAsync({ type: 'action', name, payload, id: messageId }, messageId, res);
+  }
+
+  private async handleBlackboardWrite(req: IncomingMessage, res: ServerResponse, key: string): Promise<void> {
+    const body = await this.readBody(req);
+    const value = body?.value;
+    const messageId = generateMessageId();
+    await this.processAsync({ type: 'write', key, value, id: messageId }, messageId, res);
+  }
+
+  private async processAsync(msg: ActorMessage, messageId: string, res: ServerResponse): Promise<void> {
+    const requestId = generateMessageId();
+
+    const acquired = await this.stateStore.acquireLock('default', requestId, 30000);
+    if (!acquired) {
+      return jsonError(res, 409, 'Processing in progress');
+    }
+
+    jsonResponse(res, 202, { id: messageId, status: 'processing' });
+
+    const heartbeat = setInterval(async () => {
+      // Renew lock TTL (no-op for InMemoryStateStore)
+      try { await this.stateStore.acquireLock('default', requestId, 30000); } catch {}
+    }, 10000);
+
+    try {
+      const actor = new TreeActor({
+        createTree: this.createTree,
+        stateStore: this.stateStore,
+        stateKey: 'default',
+        topologyPolicy: this.topologyPolicy,
+      });
+      const result = await actor.process(msg);
+
+      await this.stateStore.appendEvents('default', [{
+        id: generateMessageId(),
+        type: 'message:processed',
+        data: { messageId, treeStatus: String(result.treeStatus) },
+        timestamp: Date.now(),
+      }]);
+    } catch (error) {
+      await this.stateStore.appendEvents('default', [{
+        id: generateMessageId(),
+        type: 'message:failed',
+        data: { messageId, error: error instanceof Error ? error.message : String(error) },
+        timestamp: Date.now(),
+      }]);
+    } finally {
+      clearInterval(heartbeat);
+      await this.stateStore.releaseLock('default', requestId);
+    }
+  }
+
+  private readBody(req: IncomingMessage): Promise<any> {
+    return new Promise((resolve) => {
+      let data = '';
+      req.on('data', (chunk: Buffer) => data += chunk);
+      req.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch { resolve(null); }
+      });
+    });
   }
 
   private serializeBlackboard(tree: BehaviorTree): Record<string, unknown> {
