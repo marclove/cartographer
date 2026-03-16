@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, TreeContext } from '../types.js';
+import { computeContentHash } from '../core/content-hash.js';
 
 /**
  * Abstract base class that all behavior tree nodes extend.
@@ -66,6 +67,8 @@ export abstract class BaseNode implements BTreeNode {
    * store (per-subtree scoping is a future feature requiring a different
    * mechanism).
    */
+  private _contentHash: string | null = null;
+
   protected _inflightState: {
     promise: Promise<NodeStatus>;
     result?: NodeStatus;
@@ -190,6 +193,17 @@ export abstract class BaseNode implements BTreeNode {
       return true;
     }
     return this.children.some(child => child.hasInflightWork());
+  }
+
+  contentHash(): string {
+    if (this._contentHash === null) {
+      this._contentHash = this.computeHash();
+    }
+    return this._contentHash;
+  }
+
+  protected computeHash(): string {
+    return computeContentHash(this.constructor.name, this.name);
   }
 
   inflightPromise(): Promise<void> | null {

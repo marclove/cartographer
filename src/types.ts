@@ -334,6 +334,9 @@ export interface BTreeNode {
 
   /** Returns the in-flight promise if unsettled work exists, null otherwise. */
   inflightPromise(): Promise<void> | null;
+
+  /** Content-based Merkle hash for serialization identity. Deterministic across factory invocations. */
+  contentHash(): string;
 }
 
 // --- Strategy Interfaces ---

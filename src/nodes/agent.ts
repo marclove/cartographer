@@ -4,6 +4,7 @@ import { NodeStatus } from '../types.js';
 import type { AgentNodeConfig, TreeContext } from '../types.js';
 import { createBlackboardMcpServer } from '../agent/blackboard-mcp.js';
 import { emitMessageEvents, wrapElicitation } from '../agent/sdk-helpers.js';
+import { computeContentHash } from '../core/content-hash.js';
 
 /**
  * A leaf node that calls the Claude SDK when ticked.
@@ -118,6 +119,11 @@ export class AgentNode extends BaseNode {
   constructor(config: AgentNodeConfig) {
     super(config.name, config.id);
     this.config = config;
+  }
+
+  protected override computeHash(): string {
+    const prompt = typeof this.config.prompt === 'string' ? this.config.prompt : '';
+    return computeContentHash('AgentNode', this.config.name, prompt);
   }
 
   /**
