@@ -296,6 +296,14 @@ Fired when `BehaviorTree.abort()` is called.
 { tree: string }
 ```
 
+### `tree:interrupt`
+
+Fired when `BehaviorTree.interrupt()` is called. Unlike `tree:abort`, the tree remains tickable without needing `reset()`.
+
+```typescript
+{ tree: string }
+```
+
 ### `tree:tick:skipped`
 
 Fired when a scheduled tick is skipped because the previous tick is still in progress (requires `skipOnOverlap: true` on the scheduler).
@@ -358,6 +366,14 @@ Fired by `ActorServer` when a message completes processing successfully. Subscri
 
 ```typescript
 { messageId: string; treeStatus: string }
+```
+
+### `message:interrupted`
+
+Fired by `ActorServer` when an in-progress message is interrupted via `POST /api/interrupt`. Fires *before* the `message:processed` event, giving the client context for why the tree is now suspended.
+
+```typescript
+{ messageId: string }
 ```
 
 ### `message:failed`

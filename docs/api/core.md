@@ -55,6 +55,7 @@ import { BehaviorTree } from "cartographer";
 | `run`             | `(): Promise<{ status: NodeStatus; blackboard: Record<string, unknown> }>` | Tick the tree and return the status together with a blackboard snapshot.                                |
 | `reset`           | `(): void`                                                                 | Reset the root node and create a new `AbortController`.                                                 |
 | `abort`           | `(): void`                                                                 | Abort the root node and signal abort via the internal controller.                                       |
+| `interrupt`       | `(): void`                                                                 | Cancel in-flight work without destroying cycle state. No `reset()` needed. Emits `tree:interrupt`.      |
 | `hasInflightWork` | `(): boolean`                                                              | Returns `true` if any node in the tree has unsettled async work.                                        |
 | `settled`         | `(): Promise<void>`                                                        | Resolves when all in-flight work across the tree has settled.                                           |
 | `start`           | `(options: { intervalMs: number; signal?: AbortSignal }): TickLoopHandle`  | Start a reactive tick loop. Returns a handle to stop it.                                                |
@@ -203,6 +204,7 @@ Base contract every behavior tree node must satisfy.
 | `tick`            | `(context: TreeContext) => Promise<NodeStatus>`                  | Execute one tick of this node                                     |
 | `reset`           | `() => void`                                                     | Reset internal state                                              |
 | `abort`           | `() => void`                                                     | Cancel any in-progress work (requires reset before next tick)     |
+| `interrupt`       | `() => void`                                                     | Cancel in-flight work without destroying cycle state (no reset needed) |
 | `hasInflightWork` | `() => boolean`                                                  | True if unsettled async work exists in this subtree               |
 | `inflightPromise` | `() => Promise<void> \| null`                                   | Promise that resolves when all inflight work settles, or null     |
 | `contentHash`     | `() => string`                                                   | Deterministic Merkle hash for serialization identity              |
@@ -240,6 +242,7 @@ Event map defining every event a tree can emit.
 | `tree:tick`                  | `{ tree: string; status: NodeStatus; durationMs: number }`                                            |
 | `tree:reset`                 | `{ tree: string }`                                                                                    |
 | `tree:abort`                 | `{ tree: string }`                                                                                    |
+| `tree:interrupt`             | `{ tree: string }`                                                                                    |
 | `tree:tick:skipped`          | `{ timestamp: number }`                                                                               |
 | `blackboard:keys`            | `{ keys: string[]; source: string }`                                                                  |
 | `blackboard:read`            | `{ key: string; value: unknown; hit: boolean; source: string }`                                       |
@@ -248,4 +251,5 @@ Event map defining every event a tree can emit.
 | `strategy:decision`          | `{ composite: BTreeNode; strategy: string; decision: unknown }`                                       |
 | `client:event`               | `{ name: string; data: unknown }`                                                                     |
 | `message:processed`          | `{ messageId: string; treeStatus: string }`                                                           |
+| `message:interrupted`        | `{ messageId: string }`                                                                               |
 | `message:failed`             | `{ messageId: string; error: string }`                                                                |

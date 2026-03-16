@@ -255,6 +255,12 @@ A node whose result can change between ticks without external state change. Cond
 **Inflight State**
 The pattern used by leaf nodes (ActionNode, AgentNode) to launch async work on the first tick, return RUNNING immediately, and poll for results on subsequent ticks without re-invoking the work. This keeps ticks non-blocking so the reactive model can re-evaluate other branches while async operations are pending.
 
+**Interrupt**
+A soft cancellation that cancels in-flight work (like abort) but preserves composite cycle state (unlike abort). After interrupt, the tree is in a normal suspension point — `RUNNING` with `hasInflightWork() === false`. No `reset()` is needed before the next tick. Compare with **Abort**, which clears all cycle state and requires `reset()`.
+
+**Held State**
+A flag on `TreeSessionState` set after an interrupt in the actor framework. While held, tick messages are no-ops (preventing the scheduler from immediately restarting interrupted work). Cleared by action messages, write messages, or `signal: resume`.
+
 **Strategy**
 A pluggable component that controls how a composite node orders its children or evaluates its policy. Strategies can be static (fixed rules) or agent-backed (AI-driven decisions).
 

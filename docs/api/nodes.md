@@ -46,6 +46,10 @@ No-op by default. Override in subclasses that hold state between ticks.
 
 No-op by default. Override in subclasses that have in-progress work to cancel.
 
+#### `interrupt(): void`
+
+Default implementation clears unsettled `_inflightState` and calls `interrupt()` on all children. Unlike `abort()`, composites' cycle state (`completedMap`, `committedOrder`) is preserved, and no `reset()` is required afterward. Override in subclasses that need additional cleanup beyond clearing inflight state.
+
 #### `setContextOverrides(overrides: Partial<TreeContext>): void`
 
 Replace the node's context overrides. These overrides are shallow-merged onto the `TreeContext` at the start of each `tick()`, so all descendants of this node see the overridden values. `events` and `blackboard` are pinned and cannot be overridden.

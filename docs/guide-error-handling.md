@@ -269,6 +269,52 @@ If you skip `reset()`, the tree's abort signal will still be in the aborted stat
 
 ---
 
+## Interrupt: Soft Cancellation
+
+`interrupt()` is a middle ground between doing nothing and calling `abort()`. It cancels in-flight work (like abort) but preserves composite cycle state (unlike abort). The tree remains tickable immediately — no `reset()` needed.
+
+### When to use interrupt vs abort
+
+| Scenario | Use |
+|----------|-----|
+| User wants to cancel and redirect | `interrupt()` |
+| Agent is heading in the wrong direction | `interrupt()` |
+| Tree is stuck and needs a clean slate | `abort()` + `reset()` |
+| Shutting down the process | `abort()` |
+
+### Interrupt preserves progress
+
+The key difference from `abort()` is what happens to composite state. In a sequence `[A, B_agent, C]` where B is interrupted:
+
+- **With `abort()`**: A's `SUCCESS` in the `completedMap` is cleared. On the next tick, the sequence starts over from A.
+- **With `interrupt()`**: A's `SUCCESS` is preserved. On the next tick, the sequence skips A and re-ticks B (which starts a fresh SDK call).
+
+```typescript
+const tree = new BehaviorTree({ name: 'pipeline', root: mySequence });
+await tree.tick(); // A succeeds, B starts agent call
+
+// Agent is taking too long — cancel without losing A's progress
+tree.interrupt();
+
+// Tree is immediately tickable — no reset needed
+await tree.tick(); // Skips A (cached), re-starts B
+```
+
+### Interrupt propagation
+
+`interrupt()` cascades through the tree similarly to `abort()`:
+
+- **Composites** (`SequenceNode`, `SelectorNode`, `ParallelNode`) call `interrupt()` on children but do **not** clear cycle state (`completedMap`, `committedOrder`). This is the critical difference from `abort()`.
+- **Decorators** call `child.interrupt()` and preserve their own state (retry count, repeat iteration). `TimeoutNode` additionally clears its timer so the timeout window resets on re-activation.
+- **Leaf nodes** (`ActionNode`) clear unsettled inflight state. `AgentNode` additionally aborts the active SDK controller but preserves `cachedStatus`.
+- **`BehaviorTree.interrupt()`** calls `root.interrupt()` and emits `tree:interrupt`. It does **not** trigger the `AbortController`, so `context.signal.aborted` remains `false`.
+
+### In the actor framework
+
+The actor framework provides server-side interrupt support via `POST /api/interrupt` and client SDK methods. See [Actor Framework — Interrupts](guide-actor-framework.md#interrupts) for the full integration guide.
+
+---
+
 ## Scheduler Error Handling
 
 `TreeScheduler` provides three error handling modes via the `onError` option:

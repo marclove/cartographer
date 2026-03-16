@@ -79,6 +79,37 @@ class PollingNode extends BaseNode {
 }
 ```
 
+Override `interrupt()` for soft cancellation that preserves progress. The default `BaseNode.interrupt()` clears unsettled inflight state and recurses into children — only override if your node needs additional cleanup beyond what the default provides:
+
+```typescript
+class WebSocketNode extends BaseNode {
+  private socket?: WebSocket;
+
+  constructor() {
+    super("ws-listener");
+  }
+
+  protected async execute(context: TreeContext): Promise<NodeStatus> {
+    // connect and listen...
+    return NodeStatus.RUNNING;
+  }
+
+  // interrupt() cancels the connection but preserves any accumulated state
+  override interrupt(): void {
+    this.socket?.close();
+    this.socket = undefined;
+    // Do NOT clear accumulated results — just stop the active connection.
+    // The default super.interrupt() handles _inflightState and children.
+    super.interrupt();
+  }
+
+  abort(): void {
+    this.socket?.close();
+    this.socket = undefined;
+  }
+}
+```
+
 ---
 
 ## Custom Strategies

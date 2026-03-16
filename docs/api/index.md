@@ -128,6 +128,44 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `emitMessageEvents`            | Emits granular `agent:*` observability events for a raw SDK message. Used internally by `AgentNode` and agent strategies; available for custom strategy implementations.                                      |
 | `createStrategyMessageHandler` | Creates a message handler for strategy SDK calls that emits per-message observability events plus `agent:response`/`agent:error` lifecycle events. Intended as the `onMessage` callback to `queryStructured`. |
 
+## [Actor Framework](actor.md)
+
+| Export                     | Description                                                      |
+| -------------------------- | ---------------------------------------------------------------- |
+| `TreeActor`                | Transient per-message processor                                  |
+| `TreeActorOptions`         | Options for `TreeActor` constructor                              |
+| `ProcessResult`            | Result of `TreeActor.process()`                                  |
+| `ActorServer`              | HTTP server wrapping `TreeActor` with REST and SSE               |
+| `ActorServerOptions`       | Options for `ActorServer` constructor                            |
+| `ActorMessage`             | Union of all message types                                       |
+| `TickMessage`              | Tick message type                                                |
+| `ActionMessage`            | Action message type                                              |
+| `WriteMessage`             | Write message type                                               |
+| `SignalMessage`            | Signal message type (stop, reset, abort, resume)                 |
+| `MessageProcessedEvent`    | Event emitted on message completion                              |
+| `MessageInterruptedEvent`  | Event emitted when a message is interrupted                      |
+| `MessageFailedEvent`       | Event emitted on message failure                                 |
+| `generateMessageId`        | Utility to generate unique message IDs                           |
+
+## State
+
+| Export                | Description                                                       |
+| --------------------- | ----------------------------------------------------------------- |
+| `StateStore`          | Interface for state persistence, locking, and event streaming     |
+| `TreeSessionState`    | Persisted session state (blackboard, tree state, held flag)       |
+| `TreeEvent`           | Persisted event (id, type, data, timestamp)                       |
+| `InMemoryStateStore`  | In-memory `StateStore` for development                            |
+| `RedisStateStore`     | Redis-backed `StateStore` for production                          |
+| `RedisStateStoreOptions` | Options for `RedisStateStore` constructor                      |
+
+## [Client SDK](client.md)
+
+| Export                        | Description                                           |
+| ----------------------------- | ----------------------------------------------------- |
+| `createCartographerClient`    | Create a client connected to an `ActorServer`         |
+| `CartographerClient`          | Client interface (action, write, interrupt, resume)   |
+| `ConflictError`               | Thrown on 409 (another message is being processed)    |
+
 ## Logging
 
 | Export              | Description                                                                                                                                                                                   |

@@ -32,6 +32,20 @@ Sends any message type via `POST /api/messages`.
 
 Sends an action and waits for the corresponding `message:processed` or `message:failed` event via SSE. Requires `connect()` to be called first.
 
+### Control Methods
+
+#### `interrupt(): Promise<{ interrupted: boolean; messageId?: string }>`
+
+Interrupts the currently processing message. Bypasses the lock. Returns `{ interrupted: true, messageId }` if processing was active, `{ interrupted: false }` if idle. Calls `POST /api/interrupt`.
+
+#### `resume(): Promise<{ resumed: boolean }>`
+
+Clears the held state so the next tick processes normally. Returns `{ resumed: true }` if the tree was held, `{ resumed: false }` if not. Calls `POST /api/resume`.
+
+#### `interruptAndAction(name: string, payload?: unknown): Promise<{ id: string }>`
+
+Convenience method that interrupts the current processing, waits for the lock to release, then sends a new action. The action clears the held state implicitly.
+
 ### Read Methods
 
 #### `blackboard(): Promise<Record<string, unknown>>`
