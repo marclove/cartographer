@@ -14,6 +14,7 @@ export interface TreeActorOptions {
 export interface ProcessResult {
   treeStatus: NodeStatus | 'error';
   error?: string;
+  interrupted?: boolean;
 }
 
 /**
@@ -26,12 +27,18 @@ export class TreeActor {
   private stateStore: StateStore;
   private stateKey: string;
   private topologyPolicy: 'fail' | 'reset';
+  private interruptController: AbortController | null = null;
 
   constructor(options: TreeActorOptions) {
     this.createTree = options.createTree;
     this.stateStore = options.stateStore;
     this.stateKey = options.stateKey;
     this.topologyPolicy = options.topologyPolicy ?? 'fail';
+  }
+
+  /** Signal the in-progress processing loop to interrupt. Safe to call at any time. */
+  requestInterrupt(): void {
+    this.interruptController?.abort();
   }
 
   async process(msg: ActorMessage): Promise<ProcessResult> {
@@ -55,8 +62,23 @@ export class TreeActor {
       return this.handleSignal(tree, msg.signal);
     }
 
-    // Run to completion
-    const treeStatus = await this.runToCompletion(tree);
+    // Run to completion (or until interrupted)
+    this.interruptController = new AbortController();
+    let interrupted = false;
+    let treeStatus: NodeStatus;
+    try {
+      treeStatus = await this.runToCompletion(tree);
+    } catch (e) {
+      if ((e as Error).message === 'interrupted') {
+        tree.interrupt();
+        treeStatus = NodeStatus.RUNNING;
+        interrupted = true;
+      } else {
+        throw e;
+      }
+    } finally {
+      this.interruptController = null;
+    }
 
     // Serialize and save
     const blackboardSnapshot = this.serializeBlackboard(tree);
@@ -66,9 +88,10 @@ export class TreeActor {
       treeState,
       createdAt: stored?.createdAt ?? Date.now(),
       lastMessageAt: Date.now(),
+      ...(interrupted && { held: true }),
     });
 
-    return { treeStatus };
+    return { treeStatus, ...(interrupted && { interrupted: true }) };
   }
 
   private async runToCompletion(tree: BehaviorTree): Promise<NodeStatus> {
@@ -78,7 +101,11 @@ export class TreeActor {
       if (status !== NodeStatus.RUNNING) return status;
 
       if (tree.hasInflightWork()) {
-        await tree.settled();
+        // Race: wait for inflight work to settle, or for an interrupt signal
+        const interrupted = await this.raceSettledOrInterrupt(tree);
+        if (interrupted) {
+          throw new Error('interrupted');
+        }
         consecutiveNoInflight = 0;
         continue;
       }
@@ -90,6 +117,31 @@ export class TreeActor {
       consecutiveNoInflight++;
       if (consecutiveNoInflight >= 2) return status;
     }
+  }
+
+  /**
+   * Race tree.settled() against the interrupt signal.
+   * Returns true if interrupted, false if settled normally.
+   */
+  private raceSettledOrInterrupt(tree: BehaviorTree): Promise<boolean> {
+    const signal = this.interruptController?.signal;
+    if (!signal) return tree.settled().then(() => false);
+    if (signal.aborted) return Promise.resolve(true);
+
+    return new Promise<boolean>((resolve) => {
+      let resolved = false;
+      const onInterrupt = () => {
+        if (!resolved) { resolved = true; resolve(true); }
+      };
+      signal.addEventListener('abort', onInterrupt, { once: true });
+      tree.settled().then(() => {
+        if (!resolved) {
+          resolved = true;
+          signal.removeEventListener('abort', onInterrupt);
+          resolve(false);
+        }
+      });
+    });
   }
 
   private handleSignal(tree: BehaviorTree, signal: string): ProcessResult {
