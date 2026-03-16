@@ -186,13 +186,22 @@ export abstract class BaseNode implements BTreeNode {
   }
 
   hasInflightWork(): boolean {
-    if (!this._inflightState) return false;
-    return this._inflightState.result === undefined && this._inflightState.error === undefined;
+    if (this._inflightState && this._inflightState.result === undefined && this._inflightState.error === undefined) {
+      return true;
+    }
+    return this.children.some(child => child.hasInflightWork());
   }
 
   inflightPromise(): Promise<void> | null {
-    if (!this.hasInflightWork()) return null;
-    return this._inflightState!.promise.then(() => {});
+    const promises: Promise<void>[] = [];
+    if (this._inflightState && this._inflightState.result === undefined && this._inflightState.error === undefined) {
+      promises.push(this._inflightState.promise.then(() => {}));
+    }
+    for (const child of this.children) {
+      const p = child.inflightPromise();
+      if (p) promises.push(p);
+    }
+    return promises.length > 0 ? Promise.all(promises).then(() => {}) : null;
   }
 
   /**
