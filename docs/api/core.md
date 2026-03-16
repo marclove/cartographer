@@ -39,21 +39,25 @@ import { BehaviorTree } from "cartographer";
 
 ### Properties
 
-| Property     | Type                                  | Description                        |
-| ------------ | ------------------------------------- | ---------------------------------- |
-| `name`       | `string` (readonly)                   | Tree name                          |
-| `blackboard` | `Blackboard` (readonly)               | Shared blackboard instance         |
-| `events`     | `EventEmitter<TreeEvents>` (readonly) | Event system for tree-level events |
+| Property     | Type                                  | Description                                                  |
+| ------------ | ------------------------------------- | ------------------------------------------------------------ |
+| `name`       | `string` (readonly)                   | Tree name                                                    |
+| `blackboard` | `Blackboard` (readonly)               | Shared blackboard instance                                   |
+| `events`     | `EventEmitter<TreeEvents>` (readonly) | Event system for tree-level events                           |
+| `root`       | `BTreeNode` (readonly)                | The root node of the tree                                    |
+| `rootHash`   | `string` (getter)                     | Content hash of the root node — fingerprints the entire tree |
 
 ### Methods
 
-| Method  | Signature                                                                  | Description                                                                                             |
-| ------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `tick`  | `(): Promise<NodeStatus>`                                                  | Tick the tree once. Creates a `TreeContext` from the blackboard, events, and an internal `AbortSignal`. |
-| `run`   | `(): Promise<{ status: NodeStatus; blackboard: Record<string, unknown> }>` | Tick the tree and return the status together with a blackboard snapshot.                                |
-| `reset` | `(): void`                                                                 | Reset the root node and create a new `AbortController`.                                                 |
-| `abort` | `(): void`                                                                 | Abort the root node and signal abort via the internal controller.                                       |
-| `start` | `(options: { intervalMs: number; signal?: AbortSignal }): TickLoopHandle`  | Start a reactive tick loop. Returns a handle to stop it.                                                |
+| Method            | Signature                                                                  | Description                                                                                             |
+| ----------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `tick`            | `(): Promise<NodeStatus>`                                                  | Tick the tree once. Creates a `TreeContext` from the blackboard, events, and an internal `AbortSignal`. |
+| `run`             | `(): Promise<{ status: NodeStatus; blackboard: Record<string, unknown> }>` | Tick the tree and return the status together with a blackboard snapshot.                                |
+| `reset`           | `(): void`                                                                 | Reset the root node and create a new `AbortController`.                                                 |
+| `abort`           | `(): void`                                                                 | Abort the root node and signal abort via the internal controller.                                       |
+| `hasInflightWork` | `(): boolean`                                                              | Returns `true` if any node in the tree has unsettled async work.                                        |
+| `settled`         | `(): Promise<void>`                                                        | Resolves when all in-flight work across the tree has settled.                                           |
+| `start`           | `(options: { intervalMs: number; signal?: AbortSignal }): TickLoopHandle`  | Start a reactive tick loop. Returns a handle to stop it.                                                |
 
 ### Example
 
@@ -136,12 +140,14 @@ Typed event emitter implementing `TypedEventEmitter<TEvents>`.
 
 ### Methods
 
-| Method               | Signature                                                   | Description                                |
-| -------------------- | ----------------------------------------------------------- | ------------------------------------------ |
-| `on`                 | `<K>(event: K, listener: (data: TEvents[K]) => void): void` | Subscribe to an event.                     |
-| `off`                | `<K>(event: K, listener: (data: TEvents[K]) => void): void` | Unsubscribe a listener.                    |
-| `emit`               | `<K>(event: K, data: TEvents[K]): void`                     | Emit an event to all registered listeners. |
-| `removeAllListeners` | `(): void`                                                  | Remove every listener on every event.      |
+| Method               | Signature                                                    | Description                                          |
+| -------------------- | ------------------------------------------------------------ | ---------------------------------------------------- |
+| `on`                 | `<K>(event: K, listener: (data: TEvents[K]) => void): void` | Subscribe to an event.                               |
+| `off`                | `<K>(event: K, listener: (data: TEvents[K]) => void): void` | Unsubscribe a listener.                              |
+| `emit`               | `<K>(event: K, data: TEvents[K]): void`                     | Emit an event to all registered listeners.           |
+| `onAny`              | `(listener: (event: string, data: unknown) => void): void`  | Subscribe to all events (wildcard listener).         |
+| `offAny`             | `(listener: (event: string, data: unknown) => void): void`  | Unsubscribe a previously registered wildcard listener. |
+| `removeAllListeners` | `(): void`                                                   | Remove every listener on every event.                |
 
 ---
 
@@ -189,13 +195,19 @@ import type { BTreeNode } from "cartographer";
 
 Base contract every behavior tree node must satisfy.
 
-| Member  | Type                                            | Description                   |
-| ------- | ----------------------------------------------- | ----------------------------- |
-| `id`    | `string` (readonly)                             | Unique node identifier        |
-| `name`  | `string` (readonly)                             | Human-readable node name      |
-| `tick`  | `(context: TreeContext) => Promise<NodeStatus>` | Execute one tick of this node |
-| `reset` | `() => void`                                    | Reset internal state          |
-| `abort` | `() => void`                                    | Cancel any in-progress work   |
+| Member            | Type                                                             | Description                                                       |
+| ----------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `id`              | `string` (readonly)                                              | Unique node identifier                                            |
+| `name`            | `string` (readonly)                                              | Human-readable node name                                          |
+| `children`        | `readonly BTreeNode[]` (readonly)                                | Direct children (empty for leaf nodes)                            |
+| `tick`            | `(context: TreeContext) => Promise<NodeStatus>`                  | Execute one tick of this node                                     |
+| `reset`           | `() => void`                                                     | Reset internal state                                              |
+| `abort`           | `() => void`                                                     | Cancel any in-progress work (requires reset before next tick)     |
+| `hasInflightWork` | `() => boolean`                                                  | True if unsettled async work exists in this subtree               |
+| `inflightPromise` | `() => Promise<void> \| null`                                   | Promise that resolves when all inflight work settles, or null     |
+| `contentHash`     | `() => string`                                                   | Deterministic Merkle hash for serialization identity              |
+| `serialize`       | `() => NodeState`                                                | Serialize execution state for persistence                         |
+| `restore`         | `(state: NodeState, hashToNode: Map<string, BTreeNode>) => void` | Restore execution state from serialized data                      |
 
 ---
 
@@ -216,15 +228,24 @@ Event map defining every event a tree can emit.
 | `agent:thinking`             | `{ node: BTreeNode; thinking: string }`                                                               |
 | `agent:text`                 | `{ node: BTreeNode; text: string }`                                                                   |
 | `agent:tool_use`             | `{ node: BTreeNode; tool: string; input: unknown }`                                                   |
-| `agent:response`             | `{ node: BTreeNode; result: unknown; cost?: number }`                                                 |
-| `agent:error`                | `{ node: BTreeNode; subtype: string; errors?: string[]; permissionDenials?: unknown; cost?: number }` |
+| `agent:response`             | `{ node: BTreeNode; result: unknown; cost?: number; modelUsage?: Record<string, ModelUsage> }`                                                 |
+| `agent:error`                | `{ node: BTreeNode; subtype: string; errors?: string[]; permissionDenials?: unknown; cost?: number; modelUsage?: Record<string, ModelUsage> }` |
 | `agent:stream`               | `{ node: BTreeNode; event: unknown }`                                                                 |
 | `agent:message`              | `{ node: BTreeNode; message: unknown }`                                                               |
 | `agent:tool_progress`        | `{ node: BTreeNode; toolUseId: string; toolName: string; elapsedSeconds: number }`                    |
 | `agent:init`                 | `{ node: BTreeNode; sessionId: string; model?: string; tools?: unknown; mcpServers?: unknown }`       |
 | `agent:status`               | `{ node: BTreeNode; status: string }`                                                                 |
 | `agent:rate_limit`           | `{ node: BTreeNode; info: unknown }`                                                                  |
+| `tree:init`                  | `{ tree: string; root: string }`                                                                      |
+| `tree:tick`                  | `{ tree: string; status: NodeStatus; durationMs: number }`                                            |
+| `tree:reset`                 | `{ tree: string }`                                                                                    |
+| `tree:abort`                 | `{ tree: string }`                                                                                    |
 | `tree:tick:skipped`          | `{ timestamp: number }`                                                                               |
+| `blackboard:keys`            | `{ keys: string[]; source: string }`                                                                  |
+| `blackboard:read`            | `{ key: string; value: unknown; hit: boolean; source: string }`                                       |
 | `blackboard:write`           | `{ key: string; value: unknown; source: string }`                                                     |
 | `agent:elicitation_declined` | `{ node: BTreeNode; request: ElicitationRequest }`                                                    |
 | `strategy:decision`          | `{ composite: BTreeNode; strategy: string; decision: unknown }`                                       |
+| `client:event`               | `{ name: string; data: unknown }`                                                                     |
+| `message:processed`          | `{ messageId: string; treeStatus: string }`                                                           |
+| `message:failed`             | `{ messageId: string; error: string }`                                                                |

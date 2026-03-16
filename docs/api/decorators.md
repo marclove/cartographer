@@ -1,6 +1,6 @@
 # Decorator Nodes
 
-API reference for all seven decorator nodes. Each decorator wraps a single child node, transforming or controlling its execution.
+API reference for all eight decorator nodes. Each decorator wraps a single child node, transforming or controlling its execution.
 
 All decorators extend `BaseNode`. All provide `reset()` and `abort()` methods that delegate to the child.
 
@@ -160,3 +160,25 @@ import { GuardNode } from 'cartographer';
 | `condition` | `(context: TreeContext) => Promise<boolean> \| boolean`    | Yes      |
 
 **Behavior:** Evaluates the condition before ticking the child. If the condition returns false or throws, calls `child.abort()` (to clear any in-flight state) and returns FAILURE. If the condition returns true, ticks the child and returns its status. Async conditions use the inflight pattern (return RUNNING on first tick, poll on subsequent ticks).
+
+---
+
+## UntilSuccessNode
+
+```typescript
+import { untilSuccess, UntilSuccessNode } from 'cartographer';
+```
+
+**Factory:** `untilSuccess(child: BTreeNode): UntilSuccessNode`
+
+**Constructor:** `new UntilSuccessNode(config: DecoratorConfig)`
+
+**Behavior:** Converts child FAILURE to RUNNING, creating an explicit suspension point. SUCCESS and RUNNING from the child pass through unchanged. Designed for the [actor framework](../guide-actor-framework.md) where trees suspend between messages.
+
+| Child returns | UntilSuccess returns |
+|---------------|---------------------|
+| SUCCESS       | SUCCESS             |
+| FAILURE       | RUNNING             |
+| RUNNING       | RUNNING             |
+
+Distinct from `RepeatNode` with `untilStatus: SUCCESS` — RepeatNode loops internally within a single tick and never returns RUNNING due to child failure. UntilSuccessNode returns RUNNING to the caller so the processing loop can detect the suspension.

@@ -1,6 +1,6 @@
 # Leaf Nodes
 
-Leaf nodes sit at the edges of a behavior tree. They do the actual work -- checking conditions, performing actions, or delegating to an AI agent. This guide covers all three built-in leaf node types and explains how to create custom nodes by extending `BaseNode`.
+Leaf nodes sit at the edges of a behavior tree. They do the actual work -- checking conditions, performing actions, or delegating to an AI agent. This guide covers the built-in leaf node types (including the actor framework nodes `actionReceived` and `emitToClient`) and explains how to create custom nodes by extending `BaseNode`.
 
 ---
 
@@ -112,6 +112,68 @@ For the full `AgentNodeConfig` reference and advanced patterns, see [Agent Integ
 
 ---
 
+## ActionReceivedNode
+
+A synchronous, non-reactive node that checks and consumes an action key from the blackboard. Designed for the [actor framework](guide-actor-framework.md) where user actions are delivered as blackboard entries.
+
+### Factory
+
+```typescript
+import { actionReceived } from 'cartographer';
+
+const node = actionReceived('approve');
+```
+
+### Behavior
+
+- Checks for `actions:<name>` on the blackboard.
+- If present: deletes the key (consume-on-read) and returns `SUCCESS`.
+- If absent: returns `FAILURE`.
+- Never returns `RUNNING` -- execution is synchronous with no inflight state.
+
+The node extends `BaseNode` directly (not `ActionNode` or `ConditionNode`). This makes it non-reactive: when used inside a `SequenceNode`, its `SUCCESS` is cached in the sequence's `completedMap` and is not re-evaluated on subsequent ticks. This prevents the consumed blackboard key from being read twice.
+
+### Optional payload mapping
+
+```typescript
+const node = actionReceived('approve', {
+  mapPayload: (payload, blackboard) => {
+    blackboard.set('review:decision', (payload as any).decision);
+  },
+});
+```
+
+The `mapPayload` callback runs after the action key is consumed, letting you extract and rewrite data before subsequent nodes access it.
+
+---
+
+## EmitToClientNode
+
+Sends structured data to the client via a dual write. Designed for the [actor framework](guide-actor-framework.md) where trees need to push UI updates to connected clients.
+
+### Factory
+
+```typescript
+import { emitToClient } from 'cartographer';
+
+const node = emitToClient('ui:show_review', (ctx) => ({
+  findings: ctx.blackboard.get('analysis'),
+}));
+```
+
+### Behavior
+
+When ticked, the node:
+
+1. Calls the data function with the current `TreeContext`.
+2. Writes the result to `clientEvents:<name>` on the blackboard (durable, survives serialization).
+3. Emits a `client:event` event through the event system (real-time SSE delivery).
+4. Returns `SUCCESS`.
+
+`EmitToClientNode` extends `ActionNode`, so it uses the standard inflight pattern -- `RUNNING` on first tick, `SUCCESS` on the second after the action completes.
+
+---
+
 ## BaseNode (Custom Nodes)
 
 All built-in nodes extend `BaseNode`, which implements the template method pattern. You can extend it to create your own node types.
@@ -166,7 +228,7 @@ class LogNode extends BaseNode {
 ### Optional overrides
 
 - `reset()` -- override if your node maintains state between ticks that should be cleared when the tree resets. `ActionNode` and `AgentNode` override `reset()` to clear inflight state, making the next tick start fresh.
-- `abort()` -- override if your node starts work that should be cancelled when the tree is interrupted (e.g., pending network requests, timers). `ActionNode` and `AgentNode` override `abort()` to clear inflight state and (for AgentNode) cancel the in-flight SDK request.
+- `abort()` -- override if your node starts work that should be cancelled when the tree is aborted (e.g., pending network requests, timers). `ActionNode` and `AgentNode` override `abort()` to clear inflight state and (for AgentNode) cancel the in-flight SDK request. After `abort()`, a `reset()` is required before the tree can tick again.
 
 Both methods are no-ops by default on `BaseNode`.
 

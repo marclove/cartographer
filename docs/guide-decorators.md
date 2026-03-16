@@ -1,6 +1,6 @@
 # Decorators
 
-Decorators wrap a single child node and modify its behavior. Every decorator extends a common base configuration:
+Decorators wrap a single child node and modify its behavior. Cartographer includes eight built-in decorators. Every decorator extends a common base configuration:
 
 ```typescript
 interface DecoratorConfig {
@@ -203,6 +203,50 @@ builder.guard('auth-guard', {
 }, (b) => {
   b.action('protected-action', protectedAction);
 });
+```
+
+---
+
+## UntilSuccessNode
+
+Converts child `FAILURE` to `RUNNING`, creating an explicit suspension point. `SUCCESS` and `RUNNING` pass through unchanged.
+
+**Factory:**
+
+```typescript
+import { untilSuccess } from 'cartographer';
+
+const node = untilSuccess(childNode);
+```
+
+| Child returns | UntilSuccess returns |
+|---------------|---------------------|
+| SUCCESS       | SUCCESS             |
+| FAILURE       | RUNNING             |
+| RUNNING       | RUNNING             |
+
+**When to use:**
+
+`untilSuccess` is designed for the [actor framework](guide-actor-framework.md) where a tree processes one message at a time and suspends between messages. Wrapping an `actionReceived` node in `untilSuccess` tells the processing loop "keep this tree alive and wait for more input."
+
+**How it differs from RepeatNode:**
+
+`RepeatNode` with `untilStatus: NodeStatus.SUCCESS` loops *internally* within a single tick -- it re-ticks its child immediately after each failure and never returns `RUNNING` to the caller due to a child failure. `untilSuccess` returns `RUNNING` to the tree, which causes the `runToCompletion()` loop to detect the suspension (via `hasInflightWork() === false`) and save state.
+
+```typescript
+import { untilSuccess, actionReceived } from 'cartographer';
+import { SelectorNode } from 'cartographer';
+
+// Wait for user to approve or reject
+const waitForDecision = untilSuccess(
+  new SelectorNode({
+    name: 'decision',
+    children: [
+      actionReceived('approve'),
+      actionReceived('reject'),
+    ],
+  }),
+);
 ```
 
 ---
