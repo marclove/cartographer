@@ -2,11 +2,23 @@ import { ConflictError, type CartographerClient } from './types.js';
 
 export { ConflictError, type CartographerClient } from './types.js';
 
+/**
+ * Creates a client connected to an ActorServer at the given URL.
+ *
+ * The client uses `fetch` for HTTP calls and the browser `EventSource` API for
+ * real-time SSE events. In Node.js, EventSource requires a polyfill or the
+ * `--experimental-eventsource` flag (Node 22+).
+ */
 export function createCartographerClient(baseUrl: string): CartographerClient {
   let eventSource: any | null = null;
   const listeners = new Map<string, Set<(data: unknown) => void>>();
   const anyListeners = new Set<(event: string, data: unknown) => void>();
 
+  /**
+   * POST JSON to the server. Returns the message ID on success.
+   * @throws {ConflictError} if the server is already processing a message (409)
+   * @throws {Error} on validation errors (400) or shutdown (503)
+   */
   async function post(path: string, body: unknown): Promise<{ id: string }> {
     const res = await fetch(`${baseUrl}${path}`, {
       method: 'POST',
@@ -22,11 +34,17 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
     return res.json() as Promise<{ id: string }>;
   }
 
+  /** GET JSON from the server. */
   async function get(path: string): Promise<unknown> {
     const res = await fetch(`${baseUrl}${path}`);
     return res.json();
   }
 
+  /**
+   * Route an SSE event to registered listeners. For `client:event` types,
+   * also dispatches to handlers registered under the event's `name` field,
+   * so `on('ui:show_review', handler)` works directly.
+   */
   function dispatchEvent(type: string, data: unknown): void {
     const handlers = listeners.get(type);
     if (handlers) {

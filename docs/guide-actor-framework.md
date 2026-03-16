@@ -390,8 +390,10 @@ const { interrupted } = await client.interrupt();
 // Clear the held state so the next tick processes normally
 const { resumed } = await client.resume();
 
-// Interrupt, wait for the processing loop to finish, then send a new action
-// The action clears the held state implicitly
+// Interrupt, wait for lock release via SSE, then send a new action.
+// Requires connect() since it listens for message:processed/message:failed events.
+// If nothing was processing, the action is sent immediately without SSE.
+client.connect();
 const { id } = await client.interruptAndAction('redirect', { target: 'new-path' });
 ```
 
@@ -405,7 +407,7 @@ const status = await client.status();   // Tree metadata
 
 ### Real-Time Events
 
-The client uses the browser `EventSource` API for SSE. In Node.js, you need a polyfill like the `eventsource` package. If `globalThis.EventSource` is undefined, `connect()` silently returns without error — `actionAndWait()` will hang indefinitely in this case since it depends on SSE events dispatched by the connection.
+The client uses the browser `EventSource` API for SSE. In Node.js, you need a polyfill like the `eventsource` package or the `--experimental-eventsource` flag (Node 22+). If `globalThis.EventSource` is undefined, `connect()` silently returns without error — `actionAndWait()` and `interruptAndAction()` (when processing is active) will hang indefinitely in this case since they depend on SSE events dispatched by the connection.
 
 ```typescript
 // Start listening for events

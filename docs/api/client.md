@@ -46,6 +46,8 @@ Clears the held state so the next tick processes normally. Returns `{ resumed: t
 
 Convenience method that interrupts the current processing, waits for the lock to release, then sends a new action. The action clears the held state implicitly.
 
+If nothing is being processed (`interrupted === false`), the action is sent immediately without waiting. If processing was active, the method waits for the interrupted message's `message:processed` or `message:failed` SSE event before sending the follow-up action. This requires `connect()` to have been called first (same requirement as `actionAndWait()`).
+
 ### Read Methods
 
 #### `blackboard(): Promise<Record<string, unknown>>`
@@ -78,7 +80,7 @@ Unsubscribe a handler.
 
 #### `connect(): void`
 
-Opens an `EventSource` connection to `GET /api/events`. No-op if already connected. In Node.js, requires an `EventSource` polyfill (e.g., the `eventsource` package). If `globalThis.EventSource` is undefined, `connect()` silently returns without error. This means `actionAndWait()` will hang indefinitely in environments without `EventSource` — ensure the polyfill is loaded before calling `connect()`.
+Opens an `EventSource` connection to `GET /api/events`. No-op if already connected. In Node.js, requires an `EventSource` polyfill (e.g., the `eventsource` package) or the `--experimental-eventsource` flag (Node 22+). If `globalThis.EventSource` is undefined, `connect()` silently returns without error. This means `actionAndWait()` and `interruptAndAction()` (when processing is active) will hang indefinitely in environments without `EventSource` — ensure EventSource is available before calling `connect()`.
 
 #### `disconnect(): void`
 
