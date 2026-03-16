@@ -97,4 +97,9 @@ export class TimeoutNode extends BaseNode {
     this.clearTimeout();
     this.child.abort();
   }
+
+  override interrupt(): void {
+    this.clearTimeout();
+    this.child.interrupt();
+  }
 }
