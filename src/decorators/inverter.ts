@@ -1,6 +1,7 @@
 import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, DecoratorConfig, TreeContext } from '../types.js';
+import { computeContentHash } from '../core/content-hash.js';
 
 /**
  * A decorator that flips its child's terminal result: SUCCESS becomes FAILURE
@@ -27,6 +28,10 @@ export class InverterNode extends BaseNode {
     if (status === NodeStatus.SUCCESS) return NodeStatus.FAILURE;
     if (status === NodeStatus.FAILURE) return NodeStatus.SUCCESS;
     return NodeStatus.RUNNING;
+  }
+
+  protected override computeHash(): string {
+    return computeContentHash('InverterNode', this.child.contentHash());
   }
 
   reset(): void { this.child.reset(); }

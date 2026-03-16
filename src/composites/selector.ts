@@ -3,6 +3,7 @@ import { NodeStatus } from '../types.js';
 import type { SelectorConfig, TreeContext, SelectionStrategy, BTreeNode } from '../types.js';
 import { DefaultSelectionStrategy } from '../strategies/default-selection.js';
 import { isReactiveNode } from './is-reactive-node.js';
+import { computeContentHash } from '../core/content-hash.js';
 
 /**
  * A composite node that succeeds as soon as any child succeeds (OR logic).
@@ -106,6 +107,10 @@ export class SelectorNode extends BaseNode {
 
   override get children(): readonly BTreeNode[] {
     return this._children;
+  }
+
+  protected override computeHash(): string {
+    return computeContentHash('SelectorNode', this._children.map(c => c.contentHash()));
   }
 
   constructor(config: SelectorConfig) {

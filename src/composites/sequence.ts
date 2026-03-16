@@ -3,6 +3,7 @@ import { NodeStatus } from '../types.js';
 import type { SequenceConfig, TreeContext, ExecutionStrategy, BTreeNode } from '../types.js';
 import { DefaultExecutionStrategy } from '../strategies/default-execution.js';
 import { isReactiveNode } from './is-reactive-node.js';
+import { computeContentHash } from '../core/content-hash.js';
 
 /**
  * A composite node that succeeds only when every child succeeds (AND logic).
@@ -77,6 +78,10 @@ export class SequenceNode extends BaseNode {
 
   override get children(): readonly BTreeNode[] {
     return this._children;
+  }
+
+  protected override computeHash(): string {
+    return computeContentHash('SequenceNode', this._children.map(c => c.contentHash()));
   }
 
   constructor(config: SequenceConfig) {

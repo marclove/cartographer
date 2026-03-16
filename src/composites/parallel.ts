@@ -1,5 +1,6 @@
 import { BaseNode } from '../nodes/base.js';
 import { NodeStatus } from '../types.js';
+import { computeContentHash } from '../core/content-hash.js';
 import type {
   ParallelConfig,
   TreeContext,
@@ -134,6 +135,10 @@ export class ParallelNode extends BaseNode {
 
   override get children(): readonly BTreeNode[] {
     return this._children;
+  }
+
+  protected override computeHash(): string {
+    return computeContentHash('ParallelNode', this._children.map(c => c.contentHash()));
   }
 
   constructor(config: ParallelConfig) {

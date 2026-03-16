@@ -62,6 +62,11 @@ export class BehaviorTree {
   readonly events: EventEmitter<TreeEvents>;
 
   readonly root: BTreeNode;
+
+  /** Content hash of the root node — fingerprint of the entire tree topology. */
+  get rootHash(): string {
+    return this.root.contentHash();
+  }
   private abortController: AbortController;
   private _scheduler: TreeScheduler | null = null;
 

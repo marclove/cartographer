@@ -1,8 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { computeContentHash } from './content-hash.js';
+import { BehaviorTree } from './behavior-tree.js';
 import { ActionNode } from '../nodes/action.js';
 import { ConditionNode } from '../nodes/condition.js';
 import { AgentNode } from '../nodes/agent.js';
+import { SequenceNode } from '../composites/sequence.js';
+import { SelectorNode } from '../composites/selector.js';
+import { InverterNode } from '../decorators/inverter.js';
+import { RetryNode } from '../decorators/retry.js';
 import { NodeStatus } from '../types.js';
 
 describe('computeContentHash', () => {
@@ -54,5 +59,63 @@ describe('node contentHash', () => {
     const first = node.contentHash();
     const second = node.contentHash();
     expect(first).toBe(second);
+  });
+});
+
+describe('composite contentHash', () => {
+  it('sequence hash includes children order', () => {
+    const a = new ActionNode({ name: 'a', action: async () => NodeStatus.SUCCESS });
+    const b = new ActionNode({ name: 'b', action: async () => NodeStatus.SUCCESS });
+    const seq1 = new SequenceNode({ name: 'seq', children: [a, b] });
+    const seq2 = new SequenceNode({ name: 'seq', children: [b, a] });
+    expect(seq1.contentHash()).not.toBe(seq2.contentHash());
+  });
+
+  it('same structure produces same hash', () => {
+    const make = () => new SequenceNode({
+      name: 'seq',
+      children: [
+        new ActionNode({ name: 'a', action: async () => NodeStatus.SUCCESS }),
+        new ActionNode({ name: 'b', action: async () => NodeStatus.SUCCESS }),
+      ],
+    });
+    expect(make().contentHash()).toBe(make().contentHash());
+  });
+
+  it('selector produces different hash from sequence with same children', () => {
+    const children = () => [
+      new ActionNode({ name: 'a', action: async () => NodeStatus.SUCCESS }),
+    ];
+    const seq = new SequenceNode({ name: 's', children: children() });
+    const sel = new SelectorNode({ name: 's', children: children() });
+    expect(seq.contentHash()).not.toBe(sel.contentHash());
+  });
+
+  it('changing a leaf changes the root hash', () => {
+    const makeTree = (prompt: string) => new BehaviorTree({
+      name: 'test',
+      root: new SequenceNode({
+        name: 'seq',
+        children: [new AgentNode({ name: 'agent', prompt })],
+      }),
+    });
+    expect(makeTree('Do X').rootHash).not.toBe(makeTree('Do Y').rootHash);
+  });
+});
+
+describe('decorator contentHash', () => {
+  it('includes config in hash (RetryNode maxAttempts)', () => {
+    const child = new ActionNode({ name: 'a', action: async () => NodeStatus.SUCCESS });
+    const r3 = new RetryNode({ name: 'r', child, maxAttempts: 3 });
+    const r5 = new RetryNode({ name: 'r', child, maxAttempts: 5 });
+    expect(r3.contentHash()).not.toBe(r5.contentHash());
+  });
+
+  it('includes child in hash', () => {
+    const a = new ActionNode({ name: 'a', action: async () => NodeStatus.SUCCESS });
+    const b = new ActionNode({ name: 'b', action: async () => NodeStatus.SUCCESS });
+    const inv1 = new InverterNode({ name: 'inv', child: a });
+    const inv2 = new InverterNode({ name: 'inv', child: b });
+    expect(inv1.contentHash()).not.toBe(inv2.contentHash());
   });
 });
