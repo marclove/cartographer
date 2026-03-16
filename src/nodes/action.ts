@@ -1,6 +1,7 @@
 import { BaseNode } from './base.js';
 import type { ActionNodeConfig, TreeContext } from '../types.js';
 import { NodeStatus } from '../types.js';
+import type { NodeState } from '../core/serialization.js';
 
 /**
  * A leaf node that executes an arbitrary function when ticked.
@@ -77,6 +78,7 @@ import { NodeStatus } from '../types.js';
  */
 export class ActionNode extends BaseNode {
   private action: ActionNodeConfig['action'];
+  private _lastTerminalStatus: NodeStatus | null = null;
 
   constructor(config: ActionNodeConfig) {
     super(config.name, config.id);
@@ -88,6 +90,9 @@ export class ActionNode extends BaseNode {
     if (this._inflightState?.result !== undefined) {
       const result = this._inflightState.result;
       this._inflightState = null;
+      if (result !== NodeStatus.RUNNING) {
+        this._lastTerminalStatus = result;
+      }
       return result;
     }
 
@@ -114,6 +119,18 @@ export class ActionNode extends BaseNode {
     );
 
     return NodeStatus.RUNNING;
+  }
+
+  override serialize(): NodeState {
+    return this._lastTerminalStatus !== null
+      ? { lastStatus: this._lastTerminalStatus }
+      : {};
+  }
+
+  override restore(state: NodeState, _hashToNode: Map<string, import('../types.js').BTreeNode>): void {
+    if (state.lastStatus !== undefined) {
+      this._lastTerminalStatus = state.lastStatus;
+    }
   }
 
   override abort(): void {

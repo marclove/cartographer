@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, TreeContext } from '../types.js';
+import type { NodeState } from '../core/serialization.js';
 import { computeContentHash } from '../core/content-hash.js';
 
 /**
@@ -236,5 +237,13 @@ export abstract class BaseNode implements BTreeNode {
    * @param context - The execution context carrying the blackboard, event
    *   emitter, and optional abort signal.
    */
+  serialize(): NodeState {
+    return {};
+  }
+
+  restore(_state: NodeState, _hashToNode: Map<string, BTreeNode>): void {
+    // Default: no state to restore
+  }
+
   protected abstract execute(context: TreeContext): Promise<NodeStatus>;
 }

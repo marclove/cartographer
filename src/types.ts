@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type { Options, OnElicitation, ElicitationRequest, ModelUsage } from '@anthropic-ai/claude-agent-sdk';
+import type { NodeState } from './core/serialization.js';
 
 // --- Node Status ---
 
@@ -337,6 +338,12 @@ export interface BTreeNode {
 
   /** Content-based Merkle hash for serialization identity. Deterministic across factory invocations. */
   contentHash(): string;
+
+  /** Serialize this node's execution state. */
+  serialize(): NodeState;
+
+  /** Restore this node's execution state from serialized data. */
+  restore(state: NodeState, hashToNode: Map<string, BTreeNode>): void;
 }
 
 // --- Strategy Interfaces ---
