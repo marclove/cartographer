@@ -25,6 +25,8 @@ export class ActorServer {
   readonly topologyPolicy: 'fail' | 'reset';
   private server: Server | null = null;
   private startTime = 0;
+  private activeActor: TreeActor | null = null;
+  private activeMessageId: string | null = null;
 
   constructor(options: ActorServerOptions) {
     this.createTree = options.createTree;
@@ -131,6 +133,14 @@ export class ActorServer {
       return this.handleBlackboardWrite(req, res, decodeURIComponent(bbMatch[1]));
     }
 
+    if (method === 'POST' && url.pathname === '/api/interrupt') {
+      return this.handleInterrupt(res);
+    }
+
+    if (method === 'POST' && url.pathname === '/api/resume') {
+      return this.handleResume(res);
+    }
+
     jsonError(res, 404, 'Not found');
   }
 
@@ -182,7 +192,18 @@ export class ActorServer {
         stateKey: 'default',
         topologyPolicy: this.topologyPolicy,
       });
+      this.activeActor = actor;
+      this.activeMessageId = messageId;
       const result = await actor.process(msg);
+
+      if (result.interrupted) {
+        await this.stateStore.appendEvents('default', [{
+          id: generateMessageId(),
+          type: 'message:interrupted',
+          data: { messageId },
+          timestamp: Date.now(),
+        }]);
+      }
 
       await this.stateStore.appendEvents('default', [{
         id: generateMessageId(),
@@ -198,8 +219,30 @@ export class ActorServer {
         timestamp: Date.now(),
       }]);
     } finally {
+      this.activeActor = null;
+      this.activeMessageId = null;
       clearInterval(heartbeat);
       await this.stateStore.releaseLock('default', requestId);
+    }
+  }
+
+  private handleInterrupt(res: ServerResponse): void {
+    if (this.activeActor) {
+      const messageId = this.activeMessageId;
+      this.activeActor.requestInterrupt();
+      jsonResponse(res, 200, { interrupted: true, messageId });
+    } else {
+      jsonResponse(res, 200, { interrupted: false });
+    }
+  }
+
+  private async handleResume(res: ServerResponse): Promise<void> {
+    const state = await this.stateStore.getState('default');
+    if (state?.held) {
+      await this.stateStore.saveState('default', { ...state, held: false });
+      jsonResponse(res, 200, { resumed: true });
+    } else {
+      jsonResponse(res, 200, { resumed: false });
     }
   }
 

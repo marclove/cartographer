@@ -39,6 +39,10 @@ export interface MessageFailedEvent {
   error: string;
 }
 
+export interface MessageInterruptedEvent {
+  messageId: string;
+}
+
 /** Generate a unique message ID. */
 export function generateMessageId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
