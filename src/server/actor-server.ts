@@ -196,6 +196,15 @@ export class ActorServer {
       this.activeMessageId = messageId;
       const result = await actor.process(msg);
 
+      if (result.clientEvents && result.clientEvents.length > 0) {
+        await this.stateStore.appendEvents('default', result.clientEvents.map((ce) => ({
+          id: generateMessageId(),
+          type: 'client:event',
+          data: { name: ce.name, data: ce.data },
+          timestamp: Date.now(),
+        })));
+      }
+
       if (result.interrupted) {
         await this.stateStore.appendEvents('default', [{
           id: generateMessageId(),

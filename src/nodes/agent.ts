@@ -148,13 +148,21 @@ export class AgentNode extends BaseNode {
    * underlying API request.
    */
   abort(): void {
+    const pending = this._inflightState?.promise;
     this.activeAbortController?.abort();
     this._inflightState = null;
+    // The abort causes the SDK child process to reject. Catch the orphaned
+    // promise to prevent an unhandled rejection.
+    pending?.catch(() => {});
   }
 
   override interrupt(): void {
+    const pending = this._inflightState?.promise;
     this.activeAbortController?.abort();
     this._inflightState = null;
+    // The abort causes the SDK child process to reject. Catch the orphaned
+    // promise to prevent an unhandled rejection.
+    pending?.catch(() => {});
     // Deliberately does NOT clear cachedStatus — previously completed
     // cached results survive interrupt.
   }

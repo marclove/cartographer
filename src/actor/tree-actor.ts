@@ -17,6 +17,8 @@ export interface ProcessResult {
   interrupted?: boolean;
   /** Returned when the tree is held and a tick was skipped. */
   held?: boolean;
+  /** Client events emitted by emitToClient nodes during processing. */
+  clientEvents?: Array<{ name: string; data: unknown }>;
 }
 
 /**
@@ -45,6 +47,11 @@ export class TreeActor {
 
   async process(msg: ActorMessage): Promise<ProcessResult> {
     const tree = this.createTree();
+
+    const clientEvents: Array<{ name: string; data: unknown }> = [];
+    tree.events.on('client:event', (event) => {
+      clientEvents.push(event as { name: string; data: unknown });
+    });
 
     // Load and restore state
     const stored = await this.stateStore.getState(this.stateKey);
@@ -107,7 +114,7 @@ export class TreeActor {
       ...(interrupted && { held: true }),
     });
 
-    return { treeStatus, ...(interrupted && { interrupted: true }) };
+    return { treeStatus, ...(interrupted && { interrupted: true }), clientEvents };
   }
 
   private async runToCompletion(tree: BehaviorTree): Promise<NodeStatus> {

@@ -221,7 +221,11 @@ export abstract class BaseNode implements BTreeNode {
   inflightPromise(): Promise<void> | null {
     const promises: Promise<void>[] = [];
     if (this._inflightState && this._inflightState.result === undefined && this._inflightState.error === undefined) {
-      promises.push(this._inflightState.promise.then(() => {}));
+      // Swallow rejections — errors are already captured in _inflightState.error
+      // by the .then(onFulfilled, onRejected) handler attached in execute().
+      // Without this, callers like settled() would get an unhandled rejection
+      // when inflight work is aborted.
+      promises.push(this._inflightState.promise.then(() => {}, () => {}));
     }
     for (const child of this.children) {
       const p = child.inflightPromise();
