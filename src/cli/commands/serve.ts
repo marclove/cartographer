@@ -1,10 +1,6 @@
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
-import { NodeStatus } from '../../types.js';
 import { TreeScheduler } from '../../scheduler/tree-scheduler.js';
 import { ActorServer } from '../../server/actor-server.js';
-import type { RunContext, TreeRunConfig } from '../types.js';
+import { loadEnvFile, loadTreeModule, startDashboard } from './shared.js';
 
 export interface ServeOptions {
   file: string;
@@ -28,34 +24,9 @@ export async function serveCommand(options: ServeOptions): Promise<void> {
     loadEnvFile(envFile, env);
   }
 
-  const runContext: RunContext = { env, args };
+  const runContext = { env, args };
 
-  // Import user module
-  const modulePath = resolve(file);
-  if (modulePath.endsWith('.ts')) {
-    try {
-      const tsx = await import('tsx/esm/api');
-      tsx.register();
-    } catch {
-      process.stderr.write(
-        'Error: tsx is required to load .ts files. Install it with: npm i -D tsx\n',
-      );
-      process.exit(1);
-    }
-  }
-
-  let factory: (ctx: RunContext) => TreeRunConfig;
-  try {
-    const mod = await import(modulePath);
-    factory = mod.default;
-    if (typeof factory !== 'function') {
-      process.stderr.write(`Error: ${file} must export a default function\n`);
-      process.exit(1);
-    }
-  } catch (err) {
-    process.stderr.write(`Error loading ${file}: ${(err as Error).message}\n`);
-    process.exit(1);
-  }
+  const factory = await loadTreeModule(file);
 
   // Start ActorServer
   const server = new ActorServer({
@@ -70,26 +41,14 @@ export async function serveCommand(options: ServeOptions): Promise<void> {
   }
 
   // Start DashboardServer (unless disabled)
-  let dashServer: any;
+  let dashHandle: Awaited<ReturnType<typeof startDashboard>> = null;
   if (!noDashboard) {
-    try {
-      const dashboardServerPath = new URL('../../dashboard-server/server.js', import.meta.url);
-      const { DashboardServer } = await import(dashboardServerPath.href);
-      const staticDir = new URL('../../dashboard/', import.meta.url);
-      dashServer = new DashboardServer({
-        port: dashboardPort,
-        staticDir: fileURLToPath(staticDir),
-        apiUrl: `http://localhost:${serverPort}`,
-      });
-      const { port: dashPort } = await dashServer.start();
-      if (!quiet) {
-        process.stderr.write(`Dashboard: http://localhost:${dashPort}\n`);
-      }
-    } catch {
-      if (!quiet) {
-        process.stderr.write('Dashboard: not available (run npm run build first)\n');
-      }
-    }
+    dashHandle = await startDashboard({
+      apiPort: serverPort,
+      dashboardPort,
+      importMetaUrl: import.meta.url,
+      quiet,
+    });
   }
 
   // Tick loop — use TreeScheduler to tick the tree naturally (one tick per
@@ -118,7 +77,7 @@ export async function serveCommand(options: ServeOptions): Promise<void> {
         process.stderr.write('\nShutting down...\n');
       }
       if (scheduler) await scheduler.stop();
-      if (dashServer) await dashServer.close();
+      if (dashHandle) await dashHandle.close();
       await server.stop();
       resolve();
     };
@@ -126,23 +85,4 @@ export async function serveCommand(options: ServeOptions): Promise<void> {
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
   });
-}
-
-function loadEnvFile(filePath: string, target: Record<string, string | undefined>): void {
-  const content = readFileSync(resolve(filePath), 'utf-8');
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eqIndex = trimmed.indexOf('=');
-    if (eqIndex === -1) continue;
-    const key = trimmed.slice(0, eqIndex).trim();
-    let value = trimmed.slice(eqIndex + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    target[key] = value;
-  }
 }

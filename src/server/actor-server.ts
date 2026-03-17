@@ -98,9 +98,7 @@ export class ActorServer {
   bridgeTree(tree: BehaviorTree): void {
     tree.events.onAny((type, data) => {
       const serialized = serializeEvent(type as any, data as any);
-      this.trackEvent({ type, data: serialized });
-      const entry = this.eventBuffer.push(type, serialized);
-      broadcastSseEvent(this.sseClients, entry);
+      this.forwardEvent({ type, data: serialized });
     });
   }
 
@@ -257,11 +255,7 @@ export class ActorServer {
     const acquired = await this.stateStore.acquireLock('default', requestId, 30000);
     if (!acquired) return null;
 
-    const bridge = new EventBridge(this.stateStore, 'default', msg.id, (event) => {
-      this.trackEvent(event);
-      const entry = this.eventBuffer.push(event.type, event.data);
-      broadcastSseEvent(this.sseClients, entry);
-    });
+    const bridge = new EventBridge(this.stateStore, 'default', msg.id, (event) => this.forwardEvent(event));
     msg.id = bridge.messageId;
 
     return this.executeMessage(msg, requestId, bridge);
@@ -275,11 +269,7 @@ export class ActorServer {
       return jsonError(res, 409, 'Processing in progress');
     }
 
-    const bridge = new EventBridge(this.stateStore, 'default', clientMessageId, (event) => {
-      this.trackEvent(event);
-      const entry = this.eventBuffer.push(event.type, event.data);
-      broadcastSseEvent(this.sseClients, entry);
-    });
+    const bridge = new EventBridge(this.stateStore, 'default', clientMessageId, (event) => this.forwardEvent(event));
     msg.id = bridge.messageId;
 
     // Respond immediately, process in background
@@ -427,7 +417,13 @@ export class ActorServer {
     });
   }
 
-  trackEvent(event: { type: string; data: Record<string, unknown> }): void {
+  private forwardEvent(event: { type: string; data: Record<string, unknown> }): void {
+    this.trackEvent(event);
+    const entry = this.eventBuffer.push(event.type, event.data);
+    broadcastSseEvent(this.sseClients, entry);
+  }
+
+  private trackEvent(event: { type: string; data: Record<string, unknown> }): void {
     if (event.type === 'tree:tick') {
       this.stats.tickCount++;
       this.stats.lastStatus = event.data.status as string;

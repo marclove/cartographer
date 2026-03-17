@@ -1,11 +1,8 @@
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
 import { NodeStatus } from '../../types.js';
 import { TreeScheduler } from '../../scheduler/tree-scheduler.js';
 import { createFormatter } from '../formatter.js';
 import { TreeServer } from '../../server/tree-server.js';
-import type { RunContext, TreeRunConfig } from '../types.js';
+import { loadEnvFile, loadTreeModule, startDashboard } from './shared.js';
 
 export interface RunOptions {
   file: string;
@@ -30,36 +27,12 @@ export async function runCommand(options: RunOptions): Promise<void> {
   }
 
   // Build RunContext
-  const runContext: RunContext = { env, args };
+  const runContext = { env, args };
 
-  // Import user module — register tsx loader for TypeScript files
-  const modulePath = resolve(file);
-  if (modulePath.endsWith('.ts')) {
-    try {
-      const tsx = await import('tsx/esm/api');
-      tsx.register();
-    } catch {
-      process.stderr.write(
-        'Error: tsx is required to load .ts files. Install it with: npm i -D tsx\n',
-      );
-      process.exit(1);
-    }
-  }
-  let factory: (ctx: RunContext) => TreeRunConfig;
-  try {
-    const mod = await import(modulePath);
-    factory = mod.default;
-    if (typeof factory !== 'function') {
-      process.stderr.write(`Error: ${file} must export a default function\n`);
-      process.exit(1);
-    }
-  } catch (err) {
-    process.stderr.write(`Error loading ${file}: ${(err as Error).message}\n`);
-    process.exit(1);
-  }
+  const factory = await loadTreeModule(file);
 
   // Call factory
-  let config: TreeRunConfig;
+  let config;
   try {
     config = factory(runContext);
   } catch (err) {
@@ -90,30 +63,18 @@ export async function runCommand(options: RunOptions): Promise<void> {
 
     // Start dashboard server (unless disabled or tree server is disabled)
     if (!noDashboard) {
-      try {
-        const dashboardServerPath = new URL('../../dashboard-server/server.js', import.meta.url);
-        const { DashboardServer } = await import(dashboardServerPath.href);
-        const staticDir = new URL('../../dashboard/', import.meta.url);
-        const dashServer = new DashboardServer({
-          port: dashboardPort,
-          staticDir: fileURLToPath(staticDir),
-          apiUrl: `http://localhost:${serverPort}`,
-        });
-        const { port: dashPort } = await dashServer.start();
-        if (!quiet) {
-          process.stderr.write(`Dashboard: http://localhost:${dashPort}\n`);
-        }
-        // Clean up dashboard server on exit
+      const dashHandle = await startDashboard({
+        apiPort: serverPort,
+        dashboardPort,
+        importMetaUrl: import.meta.url,
+        quiet,
+      });
+      if (dashHandle) {
         const origExit = exit;
         exit = async (code: number) => {
-          await dashServer.close();
+          await dashHandle.close();
           await origExit(code);
         };
-      } catch {
-        // Dashboard not built — skip silently
-        if (!quiet) {
-          process.stderr.write('Dashboard: not available (run npm run build first)\n');
-        }
       }
     }
   }
@@ -180,26 +141,4 @@ export async function runCommand(options: RunOptions): Promise<void> {
     await exit(2);
   }
   await exit(1);
-}
-
-/**
- * Parse a simple KEY=VALUE env file (lines starting with # are comments,
- * blank lines are skipped, values can be optionally quoted).
- */
-function loadEnvFile(filePath: string, target: Record<string, string | undefined>): void {
-  const content = readFileSync(resolve(filePath), 'utf-8');
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eqIndex = trimmed.indexOf('=');
-    if (eqIndex === -1) continue;
-    const key = trimmed.slice(0, eqIndex).trim();
-    let value = trimmed.slice(eqIndex + 1).trim();
-    // Strip surrounding quotes
-    if ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    target[key] = value;
-  }
 }
