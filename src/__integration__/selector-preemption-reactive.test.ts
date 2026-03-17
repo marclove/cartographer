@@ -8,7 +8,7 @@ import { emitToClient } from '../nodes/emit-to-client.js';
 import { actionReceived } from '../nodes/action-received.js';
 import { untilSuccess } from '../decorators/until-success.js';
 import { NodeStatus } from '../types.js';
-import { setupTest } from './helpers.js';
+import { setupTest, waitForEvent, waitForBlackboard } from './helpers.js';
 
 describe('selector preemption reactive', () => {
   it('reactive guard failure mid-deploy triggers rollback via selector fallback', async () => {
@@ -112,14 +112,13 @@ describe('selector preemption reactive', () => {
     expect(bb['activated']).toBeUndefined();
 
     // 3. Write an error to blackboard — re-ticks the tree; reactive guard "no-errors" fails,
-    //    deploy-path fails, selector falls through to rollback
-    const rollbackEvents: unknown[] = [];
-    harness.client.on('ui:rollback-complete', (data) => rollbackEvents.push(data));
-
+    //    deploy-path fails, selector falls through to rollback.
+    // Register the rollback event listener BEFORE triggering the write to avoid the race.
+    const rollbackPromise = waitForEvent(harness.client, 'ui:rollback-complete', 1, 3000);
     await harness.client.write('error', 'critical failure detected');
 
-    // Wait for processing to complete
-    await new Promise((r) => setTimeout(r, 200));
+    // Wait for rollback processing to complete (reverted key set on blackboard)
+    await waitForBlackboard(harness.client, 'reverted', 3000);
 
     // 4. Verify: deploy-path failed (guard failed), selector fell through to rollback
     bb = await harness.client.blackboard();
@@ -129,8 +128,8 @@ describe('selector preemption reactive', () => {
     expect(bb['reverted']).toBe(true);
     expect(bb['error']).toBe('critical failure detected');
 
-    // 5. Verify rollback event received
-    await new Promise((r) => setTimeout(r, 50));
+    // 5. Verify rollback event received via SSE
+    const rollbackEvents = await rollbackPromise;
     expect(rollbackEvents).toHaveLength(1);
     expect(rollbackEvents[0]).toEqual(
       expect.objectContaining({ reverted: true, error: 'critical failure detected' }),

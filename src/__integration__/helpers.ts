@@ -88,6 +88,54 @@ export function countingAction(name: string, statuses: NodeStatus[]) {
   };
 }
 
+/**
+ * Wait for N SSE events of a given type. Register BEFORE triggering
+ * the action that emits the events to avoid race conditions.
+ */
+export function waitForEvent(
+  client: CartographerClient,
+  eventName: string,
+  count = 1,
+  timeoutMs = 2000,
+): Promise<unknown[]> {
+  return new Promise((resolve, reject) => {
+    const collected: unknown[] = [];
+    const timeout = setTimeout(() => {
+      client.off(eventName, handler);
+      reject(new Error(`waitForEvent('${eventName}'): timed out after ${timeoutMs}ms (received ${collected.length}/${count})`));
+    }, timeoutMs);
+
+    const handler = (data: unknown) => {
+      collected.push(data);
+      if (collected.length >= count) {
+        clearTimeout(timeout);
+        client.off(eventName, handler);
+        resolve(collected);
+      }
+    };
+    client.on(eventName, handler);
+  });
+}
+
+/**
+ * Poll the blackboard until a key is set. Returns the value.
+ * Use this instead of setTimeout when waiting for processing to complete.
+ */
+export async function waitForBlackboard(
+  client: CartographerClient,
+  key: string,
+  timeoutMs = 5000,
+  intervalMs = 100,
+): Promise<unknown> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const bb = await client.blackboard();
+    if (bb[key] !== undefined) return bb[key];
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  throw new Error(`waitForBlackboard('${key}'): timed out after ${timeoutMs}ms`);
+}
+
 export interface TestHarness {
   server: ActorServer;
   client: CartographerClient;

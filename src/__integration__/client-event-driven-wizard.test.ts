@@ -8,7 +8,7 @@ import { emitToClient } from '../nodes/emit-to-client.js';
 import { actionReceived } from '../nodes/action-received.js';
 import { untilSuccess } from '../decorators/until-success.js';
 import { NodeStatus } from '../types.js';
-import { setupTest } from './helpers.js';
+import { setupTest, waitForEvent } from './helpers.js';
 
 function wizardStep(
   stepNumber: number,
@@ -95,43 +95,47 @@ describe('client-event-driven wizard', () => {
         }),
     });
 
-    const formEvents: unknown[] = [];
-    const confirmEvents: unknown[] = [];
-    harness.client.on('ui:form', (data) => formEvents.push(data));
-    harness.client.on('ui:confirmation', (data) => confirmEvents.push(data));
-
     // 1. Start wizard — step 1 form emitted, suspends
-    await harness.client.actionAndWait('tick');
-    await new Promise((r) => setTimeout(r, 50));
-    expect(formEvents).toHaveLength(1);
-    expect(formEvents[0]).toEqual({ step: 1, fields: ['name', 'email'] });
+    const form1Promise = waitForEvent(harness.client, 'ui:form', 1);
+    const step1Result = await harness.client.actionAndWait('tick');
+    expect(step1Result.treeStatus).toBe('running');
+    const [form1Data] = await form1Promise;
+    expect(form1Data).toEqual({ step: 1, fields: ['name', 'email'] });
 
     // 2. Submit step 1 with valid data — validation passes, step 2 form emitted
-    await harness.client.actionAndWait('step-1', { name: 'Alice', email: 'alice@acme.com' });
-    await new Promise((r) => setTimeout(r, 50));
-    expect(formEvents).toHaveLength(2);
-    expect(formEvents[1]).toEqual({ step: 2, fields: ['company', 'role'] });
+    const form2Promise = waitForEvent(harness.client, 'ui:form', 1);
+    const step2StartResult = await harness.client.actionAndWait('step-1', { name: 'Alice', email: 'alice@acme.com' });
+    expect(step2StartResult.treeStatus).toBe('running');
+    const [form2Data] = await form2Promise;
+    expect(form2Data).toEqual({ step: 2, fields: ['company', 'role'] });
 
     // 3. Submit step 2 with INVALID data — validation fails, retry re-emits step 2 form
-    await harness.client.actionAndWait('step-2', { company: '', role: 'eng' });
-    await new Promise((r) => setTimeout(r, 50));
-    expect(formEvents).toHaveLength(3);
-    expect(formEvents[2]).toEqual({ step: 2, fields: ['company', 'role'] }); // Re-emitted
+    const form3Promise = waitForEvent(harness.client, 'ui:form', 1);
+    const invalidResult = await harness.client.actionAndWait('step-2', { company: '', role: 'eng' });
+    expect(invalidResult.treeStatus).toBe('running');
+    const [form3Data] = await form3Promise;
+    expect(form3Data).toEqual({ step: 2, fields: ['company', 'role'] }); // Re-emitted
 
     // 4. Submit step 2 with valid data — validation passes, step 3 form emitted
-    await harness.client.actionAndWait('step-2', { company: 'Acme Corp', role: 'eng' });
-    await new Promise((r) => setTimeout(r, 50));
-    expect(formEvents).toHaveLength(4);
-    expect(formEvents[3]).toEqual({ step: 3, fields: ['plan'] });
+    const form4Promise = waitForEvent(harness.client, 'ui:form', 1);
+    const step2ValidResult = await harness.client.actionAndWait('step-2', { company: 'Acme Corp', role: 'eng' });
+    expect(step2ValidResult.treeStatus).toBe('running');
+    const [form4Data] = await form4Promise;
+    expect(form4Data).toEqual({ step: 3, fields: ['plan'] });
+
+    // Intermediate check: after step 2 succeeds, both step-1 and step-2 data are on the blackboard
+    const bbMid = await harness.client.blackboard();
+    expect(bbMid['wizard:step-1']).toEqual({ name: 'Alice', email: 'alice@acme.com' });
+    expect(bbMid['wizard:step-2']).toEqual({ company: 'Acme Corp', role: 'eng' });
 
     // 5. Submit step 3 — validation passes, account created, confirmation emitted
-    const result = await harness.client.actionAndWait('step-3', { plan: 'pro' });
-    expect(result.treeStatus).toBe('success');
+    const confirmPromise = waitForEvent(harness.client, 'ui:confirmation', 1);
+    const finalResult = await harness.client.actionAndWait('step-3', { plan: 'pro' });
+    expect(finalResult.treeStatus).toBe('success');
 
     // 6. Verify confirmation event with aggregated data
-    await new Promise((r) => setTimeout(r, 50));
-    expect(confirmEvents).toHaveLength(1);
-    expect(confirmEvents[0]).toEqual({
+    const [confirmData] = await confirmPromise;
+    expect(confirmData).toEqual({
       name: 'Alice',
       email: 'alice@acme.com',
       company: 'Acme Corp',

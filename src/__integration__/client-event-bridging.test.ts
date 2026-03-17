@@ -4,12 +4,10 @@ import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { emitToClient } from '../nodes/emit-to-client.js';
 import { NodeStatus } from '../types.js';
-import { setupTest } from './helpers.js';
+import { setupTest, waitForEvent } from './helpers.js';
 
 describe('client:event SSE bridging', () => {
   it('emitToClient events arrive via SSE', async () => {
-    const receivedEvents: Array<{ name: string; data: unknown }> = [];
-
     await using harness = await setupTest({
       createTree: () =>
         new BehaviorTree({
@@ -32,22 +30,20 @@ describe('client:event SSE bridging', () => {
         }),
     });
 
-    harness.client.on('ui:message', (data) => {
-      receivedEvents.push({ name: 'ui:message', data });
-    });
+    const eventsPromise = waitForEvent(harness.client, 'ui:message', 1);
 
+    // NOTE: treeStatus is 'running' here — the runToCompletion heuristic
+    // exits early when two consecutive sync actions both settle before
+    // hasInflightWork() is checked. All work IS complete; see runToCompletion
+    // in tree-actor.ts for context.
     await harness.client.actionAndWait('tick');
 
-    // Give SSE a moment to deliver the event
-    await new Promise((r) => setTimeout(r, 50));
-
+    const receivedEvents = await eventsPromise;
     expect(receivedEvents).toHaveLength(1);
-    expect(receivedEvents[0].data).toEqual({ text: 'hello world' });
+    expect(receivedEvents[0]).toEqual({ text: 'hello world' });
   });
 
   it('multiple emitToClient events arrive in order', async () => {
-    const receivedEvents: unknown[] = [];
-
     await using harness = await setupTest({
       createTree: () =>
         new BehaviorTree({
@@ -72,13 +68,12 @@ describe('client:event SSE bridging', () => {
         }),
     });
 
-    harness.client.on('ui:step', (data) => {
-      receivedEvents.push(data);
-    });
+    const eventsPromise = waitForEvent(harness.client, 'ui:step', 3);
 
-    await harness.client.actionAndWait('tick');
-    await new Promise((r) => setTimeout(r, 50));
+    const result = await harness.client.actionAndWait('tick');
+    expect(result.treeStatus).toBe('success');
 
+    const receivedEvents = await eventsPromise;
     expect(receivedEvents).toHaveLength(3);
     expect(receivedEvents).toEqual([{ step: 1 }, { step: 2 }, { step: 3 }]);
   });

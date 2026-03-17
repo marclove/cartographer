@@ -8,7 +8,7 @@ import { emitToClient } from '../nodes/emit-to-client.js';
 import { actionReceived } from '../nodes/action-received.js';
 import { untilSuccess } from '../decorators/until-success.js';
 import { NodeStatus } from '../types.js';
-import { setupTest } from './helpers.js';
+import { setupTest, waitForEvent } from './helpers.js';
 
 function reviewerBranch(reviewerName: string, reviewerId: string) {
   return new SequenceNode({
@@ -78,12 +78,12 @@ describe('parallel approval policy', () => {
     });
 
     // 1. Start the flow — prepare runs, all 3 reviewers emit requests, all suspend
-    const reviewRequests: unknown[] = [];
-    harness.client.on('ui:review-request', (data) => reviewRequests.push(data));
-    await harness.client.actionAndWait('tick');
-    await new Promise((r) => setTimeout(r, 50));
+    const reviewRequestsPromise = waitForEvent(harness.client, 'ui:review-request', 3);
+    const step1Result = await harness.client.actionAndWait('tick');
+    expect(step1Result.treeStatus).toBe('running');
 
     // Verify 3 review request events
+    const reviewRequests = await reviewRequestsPromise;
     expect(reviewRequests).toHaveLength(3);
     expect(reviewRequests).toEqual(
       expect.arrayContaining([
@@ -94,7 +94,8 @@ describe('parallel approval policy', () => {
     );
 
     // 2. First reviewer approves — parallel still RUNNING (need 2)
-    await harness.client.actionAndWait('reviewer-1', { verdict: 'approve' });
+    const step2Result = await harness.client.actionAndWait('reviewer-1', { verdict: 'approve' });
+    expect(step2Result.treeStatus).toBe('running');
     const bb1 = await harness.client.blackboard();
     expect(bb1['published']).toBeUndefined(); // Not yet published
 

@@ -7,7 +7,7 @@ import { SelectorNode } from '../composites/selector.js';
 import { actionReceived } from '../nodes/action-received.js';
 import { untilSuccess } from '../decorators/until-success.js';
 import { NodeStatus } from '../types.js';
-import { setupTest } from './helpers.js';
+import { setupTest, waitForEvent } from './helpers.js';
 
 describe('multi-step action workflow', () => {
   it('document review pipeline: analyze → emit → wait for decision → branch', async () => {
@@ -95,15 +95,12 @@ describe('multi-step action workflow', () => {
     });
 
     // 1. Start the pipeline — analyze runs, findings emitted, suspends at untilSuccess
-    const findingsReceived: unknown[] = [];
-    harness.client.on('ui:findings', (data) => findingsReceived.push(data));
-    await harness.client.actionAndWait('tick');
+    const findingsPromise = waitForEvent(harness.client, 'ui:findings', 1);
+    const step1Result = await harness.client.actionAndWait('tick');
+    expect(step1Result.treeStatus).toBe('running');
 
     // Verify: tree is RUNNING (suspended), findings event arrived
-    const status1 = await harness.client.status();
-    expect((status1 as any).lastMessageAt).toBeDefined();
-    await new Promise((r) => setTimeout(r, 50));
-    expect(findingsReceived).toHaveLength(1);
+    const findingsReceived = await findingsPromise;
     expect(findingsReceived[0]).toEqual({
       summary: 'Code review for auth module',
       issues: ['missing input validation', 'no rate limiting'],

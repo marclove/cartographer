@@ -3,13 +3,12 @@ import { BehaviorTree } from '../core/behavior-tree.js';
 import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { NodeStatus } from '../types.js';
-import { setupTest } from './helpers.js';
+import { setupTest, waitForEvent, waitForBlackboard } from './helpers.js';
 
 describe('interrupt-redirect-resume', () => {
   it('interrupt cancels in-flight work, write clears held, sequence resumes without re-executing completed children', async () => {
     let gatherCount = 0;
     let analysisCount = 0;
-    const reportEvents: unknown[] = [];
 
     await using harness = await setupTest({
       createTree: () =>
@@ -62,22 +61,25 @@ describe('interrupt-redirect-resume', () => {
         }),
     });
 
-    // Subscribe to report events before starting
-    harness.client.on('ui:report', (data) => reportEvents.push(data));
-
     // 1. Start the pipeline (fire-and-forget) — gather-context completes fast,
-    //    deep-analysis begins in-flight (~500ms)
-    harness.client.send({ type: 'tick' });
+    //    deep-analysis begins in-flight (~500ms).
+    // Set up the processed-event promise BEFORE triggering the tick to avoid the race.
+    // Await send() to confirm the server accepted the tick (202) and is processing.
+    const processedPromise = waitForEvent(harness.client, 'message:processed', 1, 5000);
+    await harness.client.send({ type: 'tick' });
 
-    // Wait for gather-context to complete and deep-analysis to be in-flight
-    await new Promise((r) => setTimeout(r, 50));
-
-    // 2. Interrupt — cancels deep-analysis mid-execution, sets held state
+    // 2. Interrupt — the server is in-flight running deep-analysis (~500ms).
+    //    By the time the 202 was received, activeActor was already set on the server.
     const interruptResult = await harness.client.interrupt();
     expect(interruptResult.interrupted).toBe(true);
 
-    // Wait for the interrupt to be fully processed and held state to be saved
-    await new Promise((r) => setTimeout(r, 150));
+    // Wait for the interrupt to be fully processed
+    await processedPromise;
+
+    // Intermediate check: context was set by gather-context, analysis was not yet written
+    const bbAfterInterrupt = await harness.client.blackboard();
+    expect(bbAfterInterrupt['context']).toBeDefined();
+    expect(bbAfterInterrupt['analysis']).toBeUndefined();
 
     // 3. Verify held state blocks tick messages
     //    Tick is accepted but will be a no-op due to held state
@@ -85,14 +87,15 @@ describe('interrupt-redirect-resume', () => {
     expect(tickResult.id).toBeDefined();
 
     // Wait for the no-op tick to process
-    await new Promise((r) => setTimeout(r, 100));
+    await waitForEvent(harness.client, 'message:processed', 1, 2000);
 
     // 4. Write new topic — clears held state, then tree resumes from deep-analysis
+    // Set up report event listener BEFORE triggering the write
+    const reportPromise = waitForEvent(harness.client, 'ui:report', 1, 5000);
     await harness.client.write('topic', 'new-topic');
 
-    // Wait for the write to be processed, then deep-analysis (~500ms) to complete,
-    // then synthesize-and-emit to run
-    await new Promise((r) => setTimeout(r, 1200));
+    // Wait for deep-analysis (~500ms) to complete and report to be written
+    await waitForBlackboard(harness.client, 'report', 5000);
 
     // 5. Verify: gather-context ran only once (was cached in completedMap before interrupt)
     expect(gatherCount).toBe(1);
@@ -107,6 +110,7 @@ describe('interrupt-redirect-resume', () => {
     expect(bb['report']).toContain('new-topic');
 
     // 7. Verify the report event arrived via SSE
+    const reportEvents = await reportPromise;
     expect(reportEvents).toHaveLength(1);
     expect((reportEvents[0] as any).report).toContain('new-topic');
   });
