@@ -102,4 +102,10 @@ describe('parseArgs', () => {
     const result = parseArgs(['node', 'cli', 'run', 'tree.ts', '--dashboard-port', '4000']);
     expect(result.flags.dashboardPort).toBe(4000);
   });
+
+  it('parseArgs recognizes serve command', () => {
+    const result = parseArgs(['node', 'cli', 'serve', 'my-tree.ts']);
+    expect(result.command).toBe('serve');
+    expect(result.file).toBe('my-tree.ts');
+  });
 });

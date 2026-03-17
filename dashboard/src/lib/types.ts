@@ -44,6 +44,13 @@ export interface NodeRef {
 export interface Snapshot {
   tree: TreeNode;
   blackboard: Record<string, unknown>;
+  stats?: {
+    tickCount: number;
+    cycleCount: number;
+    lastStatus: string | null;
+    lastDurationMs: number | null;
+    asOfEventId: number;
+  };
 }
 
 export interface NodeEnterEvent {
@@ -183,6 +190,22 @@ export interface StrategyDecisionEvent {
   decision: unknown;
 }
 
+// ---- Actor lifecycle events ------------------------------------------------
+
+export interface MessageProcessedEvent {
+  messageId: string;
+  treeStatus: string;
+}
+
+export interface MessageInterruptedEvent {
+  messageId: string;
+}
+
+export interface MessageFailedEvent {
+  messageId: string;
+  error: string;
+}
+
 // ---- SSE message envelope -------------------------------------------------
 
 export type SseEventMap = {
@@ -211,6 +234,9 @@ export type SseEventMap = {
   'blackboard:read': BlackboardReadEvent;
   'blackboard:write': BlackboardWriteEvent;
   'strategy:decision': StrategyDecisionEvent;
+  'message:processed': MessageProcessedEvent;
+  'message:interrupted': MessageInterruptedEvent;
+  'message:failed': MessageFailedEvent;
 };
 
 export type SseEventName = keyof SseEventMap;

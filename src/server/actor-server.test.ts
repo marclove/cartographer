@@ -57,24 +57,58 @@ describe('ActorServer', () => {
     expect(body).toBeDefined();
   });
 
-  it('GET /api/status returns tree metadata', async () => {
+  it('GET /api/status returns tick stats', async () => {
     server = new ActorServer({ createTree: makeTree, port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/status`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.treeRootHash).toBeDefined();
+    expect(body.tree).toBe('test');
+    expect(body.tickCount).toBe(0);
+    expect(body.cycleCount).toBe(0);
+    expect(body.lastStatus).toBeNull();
+    expect(body.lastDurationMs).toBeNull();
+    expect(body.uptime).toBeGreaterThanOrEqual(0);
   });
 
-  it('GET /api/tree returns tree structure', async () => {
+  it('GET /api/tree returns full tree structure', async () => {
     server = new ActorServer({ createTree: makeTree, port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/tree`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.name).toBe('test');
+    expect(body.tree).toBe('test');
+    expect(body.root).toBeDefined();
+    expect(body.root.id).toBeDefined();
+    expect(body.root.name).toBe('noop');
+    expect(body.root.type).toBe('action');
+    expect(Array.isArray(body.root.children)).toBe(true);
+  });
+
+  it('GET /api/nodes/:id returns node detail', async () => {
+    server = new ActorServer({ createTree: makeTree, port: 0 });
+    port = (await server.start()).port;
+
+    const treeRes = await fetch(`http://localhost:${port}/api/tree`);
+    const treeBody = await treeRes.json();
+    const nodeId = treeBody.root.id;
+
+    const res = await fetch(`http://localhost:${port}/api/nodes/${encodeURIComponent(nodeId)}`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.id).toBe(nodeId);
+    expect(body.name).toBe('noop');
+    expect(body.type).toBe('action');
+  });
+
+  it('GET /api/nodes/nonexistent returns 404', async () => {
+    server = new ActorServer({ createTree: makeTree, port: 0 });
+    port = (await server.start()).port;
+
+    const res = await fetch(`http://localhost:${port}/api/nodes/nonexistent-id`);
+    expect(res.status).toBe(404);
   });
 
   it('returns 404 for unknown routes', async () => {
@@ -198,5 +232,111 @@ describe('ActorServer write endpoints', () => {
       next = await iter.next();
     }
     expect(events.some(e => e.type === 'message:processed')).toBe(true);
+  });
+});
+
+describe('ActorServer /events SSE', () => {
+  let server: ActorServer;
+  let port: number;
+
+  afterEach(async () => {
+    await server?.stop();
+  });
+
+  /** Helper: parse SSE text into individual event objects. */
+  function parseSseEvents(text: string): Array<{ id?: string; event?: string; data?: string }> {
+    const results: Array<{ id?: string; event?: string; data?: string }> = [];
+    const blocks = text.split('\n\n').filter(b => b.trim());
+    for (const block of blocks) {
+      const entry: Record<string, string> = {};
+      for (const line of block.split('\n')) {
+        const colonIdx = line.indexOf(':');
+        if (colonIdx > 0) {
+          const key = line.slice(0, colonIdx).trim();
+          const value = line.slice(colonIdx + 1).trim();
+          entry[key] = value;
+        }
+      }
+      results.push(entry);
+    }
+    return results;
+  }
+
+  it('GET /events sends snapshot with tree structure on connect', async () => {
+    server = new ActorServer({ createTree: makeTree, port: 0 });
+    port = (await server.start()).port;
+
+    const res = await fetch(`http://localhost:${port}/events`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('text/event-stream');
+
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    const { value } = await reader.read();
+    const text = decoder.decode(value);
+    reader.cancel();
+
+    const events = parseSseEvents(text);
+    expect(events.length).toBeGreaterThanOrEqual(1);
+    const snapshot = events[0];
+    expect(snapshot.event).toBe('snapshot');
+    expect(snapshot.id).toBeDefined();
+
+    const data = JSON.parse(snapshot.data!);
+    expect(data.tree).toBeDefined();
+    expect(data.tree.id).toBeDefined();
+    expect(data.tree.name).toBe('noop');
+    expect(data.tree.type).toBe('action');
+    expect(Array.isArray(data.tree.children)).toBe(true);
+    expect(data.blackboard).toBeDefined();
+  });
+
+  it('GET /events broadcasts tree events in real-time during message processing', async () => {
+    server = new ActorServer({ createTree: makeTree, port: 0 });
+    port = (await server.start()).port;
+
+    const res = await fetch(`http://localhost:${port}/events`);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+
+    // Read initial snapshot
+    await reader.read();
+
+    // Trigger a tick
+    await fetch(`http://localhost:${port}/api/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'tick' }),
+    });
+
+    // Collect SSE events until we see message:processed
+    let collected = '';
+    const timeout = Date.now() + 3000;
+    while (Date.now() < timeout) {
+      const { value, done } = await Promise.race([
+        reader.read(),
+        new Promise<{ value: undefined; done: true }>((resolve) =>
+          setTimeout(() => resolve({ value: undefined, done: true }), 200),
+        ),
+      ]);
+      if (done && !value) break;
+      if (value) collected += decoder.decode(value, { stream: true });
+      if (collected.includes('message:processed')) break;
+    }
+    reader.cancel();
+
+    const events = parseSseEvents(collected);
+    const eventTypes = events.map(e => e.event).filter(Boolean);
+    expect(eventTypes).toContain('message:processed');
+
+    // Verify numeric monotonically-increasing IDs
+    const ids = events.filter(e => e.id !== undefined).map(e => parseInt(e.id!, 10));
+    expect(ids.length).toBeGreaterThan(0);
+    for (const id of ids) {
+      expect(Number.isInteger(id)).toBe(true);
+    }
+    for (let i = 1; i < ids.length; i++) {
+      expect(ids[i]).toBeGreaterThan(ids[i - 1]);
+    }
   });
 });

@@ -80,7 +80,7 @@ export class TreeActor {
     } else if (msg.type === 'write') {
       tree.blackboard.set(msg.key, msg.value);
     } else if (msg.type === 'signal') {
-      return this.handleSignal(tree, msg.signal);
+      return this.handleSignal(tree, stored, msg.signal);
     }
 
     // Run to completion (or until interrupted)
@@ -165,9 +165,20 @@ export class TreeActor {
     });
   }
 
-  private handleSignal(tree: BehaviorTree, signal: string): ProcessResult {
+  private async handleSignal(tree: BehaviorTree, stored: { createdAt?: number } | null, signal: string): Promise<ProcessResult> {
     if (signal === 'reset') tree.reset();
     if (signal === 'abort') tree.abort();
+
+    // Save state so the reset/abort is persisted for the next tick
+    const blackboard = this.serializeBlackboard(tree);
+    const treeState = serializeTree(tree.root, tree.rootHash);
+    await this.stateStore.saveState(this.stateKey, {
+      blackboard,
+      treeState,
+      createdAt: stored?.createdAt ?? Date.now(),
+      lastMessageAt: Date.now(),
+    });
+
     return { treeStatus: 'error', error: `Signal handled: ${signal}` };
   }
 

@@ -6,11 +6,25 @@ import { InMemoryStateStore } from '../state/in-memory-state-store.js';
 import type { StateStore } from '../state/state-store.js';
 import { TreeActor } from '../actor/tree-actor.js';
 import type { ActorMessage } from '../actor/types.js';
+import type { ProcessResult } from '../actor/tree-actor.js';
 import { jsonResponse, jsonError } from './http-utils.js';
 import { EventBridge } from './event-bridge.js';
+import { EventBuffer } from './event-buffer.js';
+import { broadcastSseEvent } from './sse-handler.js';
+import type { SseClient } from './sse-handler.js';
+import { serializeTree as serializeTreeForApi, serializeNodeRef, serializeEvent } from './serializers.js';
+import { findNodeById } from './api-handlers.js';
+import { AgentNode } from '../nodes/agent.js';
 
 function generateRequestId(): string {
   return `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+interface ActorStatusState {
+  tickCount: number;
+  cycleCount: number;
+  lastStatus: string | null;
+  lastDurationMs: number | null;
 }
 
 export interface ActorServerOptions {
@@ -31,6 +45,18 @@ export class ActorServer {
   private startTime = 0;
   private activeActor: TreeActor | null = null;
   private activeMessageId: string | null = null;
+  private readonly stats: ActorStatusState = { tickCount: 0, cycleCount: 0, lastStatus: null, lastDurationMs: null };
+  private readonly eventBuffer: EventBuffer = new EventBuffer(500);
+  private readonly sseClients: Set<SseClient> = new Set();
+  private _readTree: BehaviorTree | null = null;
+
+  /** Returns a stable tree instance used for read-only introspection (consistent node IDs). */
+  private get readTree(): BehaviorTree {
+    if (!this._readTree) {
+      this._readTree = this.createTree();
+    }
+    return this._readTree;
+  }
 
   constructor(options: ActorServerOptions) {
     this.createTree = options.createTree;
@@ -65,7 +91,25 @@ export class ActorServer {
     });
   }
 
+  /**
+   * Subscribe to a tree's events and forward them through the SSE pipeline.
+   * Used by the serve command to bridge TreeScheduler events to dashboard clients.
+   */
+  bridgeTree(tree: BehaviorTree): void {
+    tree.events.onAny((type, data) => {
+      const serialized = serializeEvent(type as any, data as any);
+      this.trackEvent({ type, data: serialized });
+      const entry = this.eventBuffer.push(type, serialized);
+      broadcastSseEvent(this.sseClients, entry);
+    });
+  }
+
   async stop(): Promise<void> {
+    for (const client of this.sseClients) {
+      client.end();
+    }
+    this.sseClients.clear();
+
     return new Promise((resolve) => {
       if (!this.server) return resolve();
       this.server.close(() => resolve());
@@ -106,16 +150,49 @@ export class ActorServer {
     }
 
     if (method === 'GET' && url.pathname === '/api/status') {
-      const state = await this.stateStore.getState('default');
+      const tree = this.readTree;
       return jsonResponse(res, 200, {
-        lastMessageAt: state?.lastMessageAt ?? null,
-        treeRootHash: state?.treeState.rootHash ?? null,
+        tree: tree.name,
+        tickCount: this.stats.tickCount,
+        cycleCount: this.stats.cycleCount,
+        lastStatus: this.stats.lastStatus,
+        lastDurationMs: this.stats.lastDurationMs,
+        uptime: Date.now() - this.startTime,
       });
     }
 
     if (method === 'GET' && url.pathname === '/api/tree') {
-      const tree = this.createTree();
-      return jsonResponse(res, 200, { name: tree.name, rootHash: tree.rootHash });
+      const tree = this.readTree;
+      return jsonResponse(res, 200, { tree: tree.name, root: serializeTreeForApi(tree.root) });
+    }
+
+    const nodeMatch = url.pathname.match(/^\/api\/nodes\/(.+)$/);
+    if (method === 'GET' && nodeMatch) {
+      const tree = this.readTree;
+      const nodeId = decodeURIComponent(nodeMatch[1]);
+      const node = findNodeById(tree.root, nodeId);
+      if (!node) {
+        return jsonError(res, 404, 'Not found');
+      }
+      const detail: Record<string, unknown> = { ...serializeNodeRef(node) };
+      if (node instanceof AgentNode) {
+        const config = (node as any).config;
+        if (config) {
+          const opts = config.options ?? {};
+          if (opts.model) detail.model = opts.model;
+          detail.tools = opts.allowedTools ?? [];
+          const mcpServers = opts.mcpServers ? Object.keys(opts.mcpServers) : [];
+          detail.mcpServers = mcpServers;
+        }
+      }
+      if (node.children.length > 0) {
+        detail.children = node.children.map(serializeNodeRef);
+      }
+      return jsonResponse(res, 200, detail);
+    }
+
+    if (method === 'GET' && url.pathname === '/events') {
+      return this.handleDashboardSSE(req, res);
     }
 
     if (method === 'GET' && url.pathname === '/api/events') {
@@ -170,6 +247,26 @@ export class ActorServer {
     await this.processAsync({ type: 'write', key, value }, res);
   }
 
+  /**
+   * Process a message programmatically (no HTTP response needed).
+   * Returns null if the lock could not be acquired (another message is processing).
+   */
+  async processMessage(msg: ActorMessage): Promise<ProcessResult | null> {
+    const requestId = generateRequestId();
+
+    const acquired = await this.stateStore.acquireLock('default', requestId, 30000);
+    if (!acquired) return null;
+
+    const bridge = new EventBridge(this.stateStore, 'default', msg.id, (event) => {
+      this.trackEvent(event);
+      const entry = this.eventBuffer.push(event.type, event.data);
+      broadcastSseEvent(this.sseClients, entry);
+    });
+    msg.id = bridge.messageId;
+
+    return this.executeMessage(msg, requestId, bridge);
+  }
+
   private async processAsync(msg: ActorMessage, res: ServerResponse, clientMessageId?: string): Promise<void> {
     const requestId = generateRequestId();
 
@@ -178,14 +275,24 @@ export class ActorServer {
       return jsonError(res, 409, 'Processing in progress');
     }
 
-    const bridge = new EventBridge(this.stateStore, 'default', clientMessageId);
-    const messageId = bridge.messageId;
-    msg.id = messageId;
+    const bridge = new EventBridge(this.stateStore, 'default', clientMessageId, (event) => {
+      this.trackEvent(event);
+      const entry = this.eventBuffer.push(event.type, event.data);
+      broadcastSseEvent(this.sseClients, entry);
+    });
+    msg.id = bridge.messageId;
 
-    jsonResponse(res, 202, { id: messageId, status: 'processing' });
+    // Respond immediately, process in background
+    jsonResponse(res, 202, { id: bridge.messageId, status: 'processing' });
+    this.executeMessage(msg, requestId, bridge).catch(() => {});
+  }
 
+  private async executeMessage(
+    msg: ActorMessage,
+    requestId: string,
+    bridge: EventBridge,
+  ): Promise<ProcessResult> {
     const heartbeat = setInterval(async () => {
-      // Renew lock TTL (no-op for InMemoryStateStore)
       try { await this.stateStore.acquireLock('default', requestId, 30000); } catch {}
     }, 10000);
 
@@ -198,7 +305,7 @@ export class ActorServer {
         eventBridge: bridge,
       });
       this.activeActor = actor;
-      this.activeMessageId = messageId;
+      this.activeMessageId = bridge.messageId;
       const result = await actor.process(msg);
 
       if (result.interrupted) {
@@ -206,8 +313,10 @@ export class ActorServer {
       }
 
       await bridge.emitProcessed(String(result.treeStatus));
+      return result;
     } catch (error) {
       await bridge.emitFailed(error instanceof Error ? error.message : String(error));
+      return { treeStatus: 'error', error: error instanceof Error ? error.message : String(error) };
     } finally {
       this.activeActor = null;
       this.activeMessageId = null;
@@ -234,6 +343,45 @@ export class ActorServer {
     } else {
       jsonResponse(res, 200, { resumed: false });
     }
+  }
+
+  private async handleDashboardSSE(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
+
+    // Build snapshot from readTree (structure) + state store (blackboard) + stats
+    const tree = this.readTree;
+    const state = await this.stateStore.getState('default');
+    const snapshot = {
+      tree: serializeTreeForApi(tree.root),
+      blackboard: state?.blackboard ?? {},
+      stats: { ...this.stats, asOfEventId: this.eventBuffer.latestId },
+    };
+
+    // Send snapshot
+    res.write(`id: 0\nevent: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
+
+    // Replay buffered events — on reconnect, replay since last-event-id;
+    // on initial connect, replay the entire buffer so the dashboard
+    // shows events that occurred before the client connected.
+    const lastEventId = req.headers['last-event-id'];
+    const sinceId = lastEventId ? parseInt(lastEventId as string, 10) : 0;
+    if (!isNaN(sinceId)) {
+      const events = this.eventBuffer.getEventsSince(sinceId);
+      if (events !== null) {
+        for (const event of events) {
+          res.write(`id: ${event.id}\nevent: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`);
+        }
+      }
+    }
+
+    this.sseClients.add(res);
+    req.on('close', () => {
+      this.sseClients.delete(res);
+    });
   }
 
   private async handleSSE(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -277,6 +425,17 @@ export class ActorServer {
         catch { resolve(null); }
       });
     });
+  }
+
+  trackEvent(event: { type: string; data: Record<string, unknown> }): void {
+    if (event.type === 'tree:tick') {
+      this.stats.tickCount++;
+      this.stats.lastStatus = event.data.status as string;
+      this.stats.lastDurationMs = event.data.durationMs as number;
+      if (event.data.status !== 'running') {
+        this.stats.cycleCount++;
+      }
+    }
   }
 
   private serializeBlackboard(tree: BehaviorTree): Record<string, unknown> {

@@ -111,6 +111,9 @@ export function connectSSE(handlers: SseHandlers): () => void {
     'blackboard:read',
     'blackboard:write',
     'strategy:decision',
+    'message:processed',
+    'message:interrupted',
+    'message:failed',
   ];
 
   let openFired = false;
