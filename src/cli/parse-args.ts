@@ -12,6 +12,8 @@ export interface ParsedArgs {
     noServe: boolean;
     noDashboard: boolean;
     dashboardPort?: number;
+    noTick: boolean;
+    tickInterval?: number;
   };
 }
 
@@ -29,6 +31,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
     noServe: false,
     noDashboard: false,
     dashboardPort: undefined as number | undefined,
+    noTick: false,
+    tickInterval: undefined as number | undefined,
   };
 
   const positional: string[] = [];
@@ -69,6 +73,17 @@ export function parseArgs(argv: string[]): ParsedArgs {
         process.exit(1);
       }
       flags.dashboardPort = parsed;
+    } else if (arg === '--no-tick') {
+      flags.noTick = true;
+    } else if (arg === '--tick-interval') {
+      i++;
+      const parsed = parseInt(args[i], 10);
+      if (isNaN(parsed) || parsed < 1) {
+        process.stderr.write(`Error: --tick-interval requires a positive number (ms)\n\n`);
+        process.stdout.write(USAGE);
+        process.exit(1);
+      }
+      flags.tickInterval = parsed;
     } else if (arg === '--') {
       // Everything after -- is positional
       positional.push(...args.slice(i + 1));
@@ -114,4 +129,6 @@ Serve options:
   --port <number>          Port for the actor server (default: 3147)
   --dashboard-port <num>   Port for the dashboard server (default: 3148)
   --no-dashboard           Disable the dashboard server
+  --tick-interval <ms>     Delay between tick cycles (default: 1000)
+  --no-tick                Disable automatic ticking (message-driven only)
 `;

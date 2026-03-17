@@ -50,6 +50,8 @@ async function main(): Promise<void> {
         port: parsed.flags.port,
         noDashboard: parsed.flags.noDashboard,
         dashboardPort: parsed.flags.dashboardPort,
+        noTick: parsed.flags.noTick,
+        tickInterval: parsed.flags.tickInterval,
       });
       break;
     }

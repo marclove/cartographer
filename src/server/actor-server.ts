@@ -6,6 +6,7 @@ import { InMemoryStateStore } from '../state/in-memory-state-store.js';
 import type { StateStore } from '../state/state-store.js';
 import { TreeActor } from '../actor/tree-actor.js';
 import type { ActorMessage } from '../actor/types.js';
+import type { ProcessResult } from '../actor/tree-actor.js';
 import { jsonResponse, jsonError } from './http-utils.js';
 import { EventBridge } from './event-bridge.js';
 import { EventBuffer } from './event-buffer.js';
@@ -233,6 +234,26 @@ export class ActorServer {
     await this.processAsync({ type: 'write', key, value }, res);
   }
 
+  /**
+   * Process a message programmatically (no HTTP response needed).
+   * Returns null if the lock could not be acquired (another message is processing).
+   */
+  async processMessage(msg: ActorMessage): Promise<ProcessResult | null> {
+    const requestId = generateRequestId();
+
+    const acquired = await this.stateStore.acquireLock('default', requestId, 30000);
+    if (!acquired) return null;
+
+    const bridge = new EventBridge(this.stateStore, 'default', msg.id, (event) => {
+      this.trackEvent(event);
+      const entry = this.eventBuffer.push(event.type, event.data);
+      broadcastSseEvent(this.sseClients, entry);
+    });
+    msg.id = bridge.messageId;
+
+    return this.executeMessage(msg, requestId, bridge);
+  }
+
   private async processAsync(msg: ActorMessage, res: ServerResponse, clientMessageId?: string): Promise<void> {
     const requestId = generateRequestId();
 
@@ -246,13 +267,19 @@ export class ActorServer {
       const entry = this.eventBuffer.push(event.type, event.data);
       broadcastSseEvent(this.sseClients, entry);
     });
-    const messageId = bridge.messageId;
-    msg.id = messageId;
+    msg.id = bridge.messageId;
 
-    jsonResponse(res, 202, { id: messageId, status: 'processing' });
+    // Respond immediately, process in background
+    jsonResponse(res, 202, { id: bridge.messageId, status: 'processing' });
+    this.executeMessage(msg, requestId, bridge).catch(() => {});
+  }
 
+  private async executeMessage(
+    msg: ActorMessage,
+    requestId: string,
+    bridge: EventBridge,
+  ): Promise<ProcessResult> {
     const heartbeat = setInterval(async () => {
-      // Renew lock TTL (no-op for InMemoryStateStore)
       try { await this.stateStore.acquireLock('default', requestId, 30000); } catch {}
     }, 10000);
 
@@ -265,7 +292,7 @@ export class ActorServer {
         eventBridge: bridge,
       });
       this.activeActor = actor;
-      this.activeMessageId = messageId;
+      this.activeMessageId = bridge.messageId;
       const result = await actor.process(msg);
 
       if (result.interrupted) {
@@ -273,8 +300,10 @@ export class ActorServer {
       }
 
       await bridge.emitProcessed(String(result.treeStatus));
+      return result;
     } catch (error) {
       await bridge.emitFailed(error instanceof Error ? error.message : String(error));
+      return { treeStatus: 'error', error: error instanceof Error ? error.message : String(error) };
     } finally {
       this.activeActor = null;
       this.activeMessageId = null;

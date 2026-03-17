@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
+import { NodeStatus } from '../../types.js';
 import { ActorServer } from '../../server/actor-server.js';
 import type { RunContext, TreeRunConfig } from '../types.js';
 
@@ -12,6 +13,8 @@ export interface ServeOptions {
   port?: number;
   noDashboard?: boolean;
   dashboardPort?: number;
+  noTick?: boolean;
+  tickInterval?: number;
   context?: Record<string, unknown>;
 }
 
@@ -88,9 +91,31 @@ export async function serveCommand(options: ServeOptions): Promise<void> {
     }
   }
 
+  // Tick loop — continuously tick the tree unless --no-tick
+  let stopping = false;
+
+  if (!options.noTick) {
+    const intervalMs = options.tickInterval ?? 1000;
+    (async () => {
+      while (!stopping) {
+        const result = await server.processMessage({ type: 'tick' });
+        if (result && !stopping) {
+          // Terminal status — reset tree for next cycle
+          if (result.treeStatus === NodeStatus.SUCCESS || result.treeStatus === NodeStatus.FAILURE) {
+            await server.processMessage({ type: 'signal', signal: 'reset' });
+          }
+        }
+        if (!stopping) {
+          await new Promise((r) => setTimeout(r, intervalMs));
+        }
+      }
+    })();
+  }
+
   // Wait for shutdown signal
   await new Promise<void>((resolve) => {
     const shutdown = async () => {
+      stopping = true;
       if (!quiet) {
         process.stderr.write('\nShutting down...\n');
       }
