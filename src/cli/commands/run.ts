@@ -20,7 +20,7 @@ export interface RunOptions {
 }
 
 export async function runCommand(options: RunOptions): Promise<void> {
-  const { file, args, json, verbose, quiet, envFile } = options;
+  const { file, args, envFile } = options;
 
   const env: Record<string, string | undefined> = { ...process.env };
   if (envFile) {
