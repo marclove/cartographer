@@ -65,7 +65,7 @@ export function handleApiNode(res: ServerResponse, tree: BehaviorTree, nodeId: s
   jsonResponse(res, 200, detail);
 }
 
-function findNodeById(root: BTreeNode, id: string): BTreeNode | undefined {
+export function findNodeById(root: BTreeNode, id: string): BTreeNode | undefined {
   const stack: BTreeNode[] = [root];
   while (stack.length > 0) {
     const node = stack.pop()!;
