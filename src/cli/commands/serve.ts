@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { NodeStatus } from '../../types.js';
+import { TreeScheduler } from '../../scheduler/tree-scheduler.js';
 import { ActorServer } from '../../server/actor-server.js';
 import type { RunContext, TreeRunConfig } from '../types.js';
 
@@ -91,34 +92,32 @@ export async function serveCommand(options: ServeOptions): Promise<void> {
     }
   }
 
-  // Tick loop — continuously tick the tree unless --no-tick
-  let stopping = false;
+  // Tick loop — use TreeScheduler to tick the tree naturally (one tick per
+  // interval, letting the tree progress across ticks like the `run` command).
+  // The ActorServer still accepts external messages alongside the scheduler.
+  let scheduler: TreeScheduler | undefined;
 
   if (!options.noTick) {
     const intervalMs = options.tickInterval ?? 1000;
-    (async () => {
-      while (!stopping) {
-        const result = await server.processMessage({ type: 'tick' });
-        if (result && !stopping) {
-          // Terminal status — reset tree for next cycle
-          if (result.treeStatus === NodeStatus.SUCCESS || result.treeStatus === NodeStatus.FAILURE) {
-            await server.processMessage({ type: 'signal', signal: 'reset' });
-          }
-        }
-        if (!stopping) {
-          await new Promise((r) => setTimeout(r, intervalMs));
-        }
-      }
-    })();
+    const tickTree = factory(runContext).tree;
+    // Bridge tree events to ActorServer's SSE pipeline so the dashboard
+    // sees ticks, node enter/exit, blackboard writes, etc.
+    server.bridgeTree(tickTree);
+    scheduler = new TreeScheduler({
+      tree: tickTree,
+      schedule: { type: 'interval', delayMs: intervalMs },
+      onError: 'continue',
+    });
+    scheduler.start();
   }
 
   // Wait for shutdown signal
   await new Promise<void>((resolve) => {
     const shutdown = async () => {
-      stopping = true;
       if (!quiet) {
         process.stderr.write('\nShutting down...\n');
       }
+      if (scheduler) await scheduler.stop();
       if (dashServer) await dashServer.close();
       await server.stop();
       resolve();

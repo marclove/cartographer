@@ -12,7 +12,7 @@ import { EventBridge } from './event-bridge.js';
 import { EventBuffer } from './event-buffer.js';
 import { broadcastSseEvent } from './sse-handler.js';
 import type { SseClient } from './sse-handler.js';
-import { serializeTree as serializeTreeForApi, serializeNodeRef } from './serializers.js';
+import { serializeTree as serializeTreeForApi, serializeNodeRef, serializeEvent } from './serializers.js';
 import { findNodeById } from './api-handlers.js';
 import { AgentNode } from '../nodes/agent.js';
 
@@ -88,6 +88,19 @@ export class ActorServer {
         const actualPort = typeof addr === 'object' && addr ? addr.port : this.configPort;
         resolve({ port: actualPort });
       });
+    });
+  }
+
+  /**
+   * Subscribe to a tree's events and forward them through the SSE pipeline.
+   * Used by the serve command to bridge TreeScheduler events to dashboard clients.
+   */
+  bridgeTree(tree: BehaviorTree): void {
+    tree.events.onAny((type, data) => {
+      const serialized = serializeEvent(type as any, data as any);
+      this.trackEvent({ type, data: serialized });
+      const entry = this.eventBuffer.push(type, serialized);
+      broadcastSseEvent(this.sseClients, entry);
     });
   }
 
