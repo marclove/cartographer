@@ -8,6 +8,9 @@ import { TreeActor } from '../actor/tree-actor.js';
 import type { ActorMessage } from '../actor/types.js';
 import { jsonResponse, jsonError } from './http-utils.js';
 import { EventBridge } from './event-bridge.js';
+import { EventBuffer } from './event-buffer.js';
+import { broadcastSseEvent } from './sse-handler.js';
+import type { SseClient } from './sse-handler.js';
 import { serializeTree as serializeTreeForApi, serializeNodeRef } from './serializers.js';
 import { findNodeById } from './api-handlers.js';
 import { AgentNode } from '../nodes/agent.js';
@@ -42,6 +45,8 @@ export class ActorServer {
   private activeActor: TreeActor | null = null;
   private activeMessageId: string | null = null;
   private readonly stats: ActorStatusState = { tickCount: 0, cycleCount: 0, lastStatus: null, lastDurationMs: null };
+  private readonly eventBuffer: EventBuffer = new EventBuffer(500);
+  private readonly sseClients: Set<SseClient> = new Set();
   private _readTree: BehaviorTree | null = null;
 
   /** Returns a stable tree instance used for read-only introspection (consistent node IDs). */
@@ -86,6 +91,11 @@ export class ActorServer {
   }
 
   async stop(): Promise<void> {
+    for (const client of this.sseClients) {
+      client.end();
+    }
+    this.sseClients.clear();
+
     return new Promise((resolve) => {
       if (!this.server) return resolve();
       this.server.close(() => resolve());
@@ -167,6 +177,10 @@ export class ActorServer {
       return jsonResponse(res, 200, detail);
     }
 
+    if (method === 'GET' && url.pathname === '/events') {
+      return this.handleDashboardSSE(req, res);
+    }
+
     if (method === 'GET' && url.pathname === '/api/events') {
       return this.handleSSE(req, res);
     }
@@ -227,7 +241,11 @@ export class ActorServer {
       return jsonError(res, 409, 'Processing in progress');
     }
 
-    const bridge = new EventBridge(this.stateStore, 'default', clientMessageId);
+    const bridge = new EventBridge(this.stateStore, 'default', clientMessageId, (event) => {
+      this.trackEvent(event);
+      const entry = this.eventBuffer.push(event.type, event.data);
+      broadcastSseEvent(this.sseClients, entry);
+    });
     const messageId = bridge.messageId;
     msg.id = messageId;
 
@@ -283,6 +301,45 @@ export class ActorServer {
     } else {
       jsonResponse(res, 200, { resumed: false });
     }
+  }
+
+  private async handleDashboardSSE(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
+
+    // Build snapshot from readTree (structure) + state store (blackboard)
+    const tree = this.readTree;
+    const state = await this.stateStore.getState('default');
+    const snapshot = {
+      tree: serializeTreeForApi(tree.root),
+      blackboard: state?.blackboard ?? {},
+    };
+
+    // Send snapshot
+    const snapshotId = this.eventBuffer.latestId;
+    res.write(`id: ${snapshotId}\nevent: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
+
+    // Replay missed events on reconnect
+    const lastEventId = req.headers['last-event-id'];
+    if (lastEventId) {
+      const lastId = parseInt(lastEventId as string, 10);
+      if (!isNaN(lastId)) {
+        const missed = this.eventBuffer.getEventsSince(lastId);
+        if (missed !== null) {
+          for (const event of missed) {
+            res.write(`id: ${event.id}\nevent: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`);
+          }
+        }
+      }
+    }
+
+    this.sseClients.add(res);
+    req.on('close', () => {
+      this.sseClients.delete(res);
+    });
   }
 
   private async handleSSE(req: IncomingMessage, res: ServerResponse): Promise<void> {
