@@ -24,6 +24,7 @@ export class EventBridge {
     private stateStore: StateStore,
     private stateKey: string,
     messageId?: string,
+    private onEvent?: (event: { type: string; data: Record<string, unknown> }) => void,
   ) {
     this.messageId = messageId ?? generateMessageId();
   }
@@ -31,20 +32,20 @@ export class EventBridge {
   /** Subscribe to all tree events. Call before processing. */
   bridgeTree(tree: BehaviorTree): void {
     tree.events.onAny((type, data) => {
-      this.buffer.push({
-        type,
-        data: serializeEvent(type as keyof TreeEvents, data as any),
-      });
+      const serialized = { type, data: serializeEvent(type as keyof TreeEvents, data as any) };
+      this.buffer.push(serialized);
+      this.onEvent?.(serialized);
     });
   }
 
   /** Flush buffered tree events + emit message:processed. */
   async emitProcessed(treeStatus: string): Promise<void> {
     await this.flush();
+    const event = { type: 'message:processed', data: { messageId: this.messageId, treeStatus } };
+    this.onEvent?.(event);
     await this.stateStore.appendEvents(this.stateKey, [{
       id: generateEventId(),
-      type: 'message:processed',
-      data: { messageId: this.messageId, treeStatus },
+      ...event,
       timestamp: Date.now(),
     }]);
   }
@@ -52,10 +53,11 @@ export class EventBridge {
   /** Flush buffered tree events + emit message:interrupted. */
   async emitInterrupted(): Promise<void> {
     await this.flush();
+    const event = { type: 'message:interrupted', data: { messageId: this.messageId } };
+    this.onEvent?.(event);
     await this.stateStore.appendEvents(this.stateKey, [{
       id: generateEventId(),
-      type: 'message:interrupted',
-      data: { messageId: this.messageId },
+      ...event,
       timestamp: Date.now(),
     }]);
   }
@@ -63,10 +65,11 @@ export class EventBridge {
   /** Flush buffered tree events + emit message:failed. */
   async emitFailed(error: string): Promise<void> {
     await this.flush();
+    const event = { type: 'message:failed', data: { messageId: this.messageId, error } };
+    this.onEvent?.(event);
     await this.stateStore.appendEvents(this.stateKey, [{
       id: generateEventId(),
-      type: 'message:failed',
-      data: { messageId: this.messageId, error },
+      ...event,
       timestamp: Date.now(),
     }]);
   }
