@@ -9,7 +9,7 @@ import { emitToClient } from '../../nodes/emit-to-client.js';
 import { actionReceived } from '../../nodes/action-received.js';
 import { untilSuccess } from '../../decorators/until-success.js';
 import { NodeStatus } from '../../types.js';
-import { setupTest } from '../helpers.js';
+import { setupTest, waitForBlackboard } from '../helpers.js';
 
 describe('agent structured pipeline (live)', () => {
   it('classifies a document and branches on confidence', async () => {
@@ -133,41 +133,36 @@ describe('agent structured pipeline (live)', () => {
     // Use send (non-blocking) since actionAndWait would time out waiting for the agent.
     await harness.client.send({ type: 'tick' });
 
-    // Poll blackboard until the pipeline completes. The ActorServer auto-reticks
-    // a RUNNING tree reactively, so we just wait for the terminal state.
-    let bb: Record<string, unknown> = {};
-    const startTime = Date.now();
-    while (Date.now() - startTime < 60000) {
-      await new Promise((r) => setTimeout(r, 1000));
-      bb = await harness.client.blackboard();
+    // Wait for the agent to produce structured classification output.
+    const classificationOutput = await waitForBlackboard(
+      harness.client,
+      'classifier:classify:output',
+      60000,
+      1000,
+    );
 
-      // High-confidence path: published via auto-publish
-      if (bb['published'] === true) break;
-
-      // Low-confidence path: agent classified but needs human review
-      if (bb['clientEvents:ui:needs-review'] != null && bb['published'] == null) {
-        // Send a confirmation action to proceed through the manual-publish path
-        await harness.client.action('confirm-classification');
-        // Give the server time to process the action and complete the tree
-        await new Promise((r) => setTimeout(r, 3000));
-        bb = await harness.client.blackboard();
-        break;
-      }
-    }
-
-    // Verify: agent produced structured classification output
-    const classificationOutput = bb['classifier:classify:output'];
+    // Intermediate assertion: classification output must have the expected structure
+    // before we proceed to branch-dependent behaviour.
     expect(classificationOutput).toBeDefined();
-
-    // The output should have the expected structure (parsed object or parseable string)
     const parsed =
       typeof classificationOutput === 'string'
         ? JSON.parse(classificationOutput as string)
-        : classificationOutput;
+        : (classificationOutput as any);
     expect(parsed).toBeDefined();
-    expect(typeof (parsed as any).category).toBe('string');
-    expect(typeof (parsed as any).confidence).toBe('number');
-    expect(Array.isArray((parsed as any).tags)).toBe(true);
+    expect(typeof parsed.category).toBe('string');
+    expect(typeof parsed.confidence).toBe('number');
+    expect(Array.isArray(parsed.tags)).toBe(true);
+
+    // Read the full blackboard once to determine which path the tree took.
+    let bb = await harness.client.blackboard();
+
+    if (bb['clientEvents:ui:needs-review'] != null && bb['published'] == null) {
+      // Low-confidence path: confirm the classification so the tree can proceed.
+      await harness.client.actionAndWait('confirm-classification');
+      // Wait for manual-publish to set the key rather than using a fixed delay.
+      await waitForBlackboard(harness.client, 'published', 10000, 500);
+      bb = await harness.client.blackboard();
+    }
 
     // Verify: document was published through one of the two paths
     expect(bb['published']).toBe(true);

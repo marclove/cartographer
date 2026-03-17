@@ -6,7 +6,7 @@ import { SequenceNode } from '../../composites/sequence.js';
 import { actionReceived } from '../../nodes/action-received.js';
 import { untilSuccess } from '../../decorators/until-success.js';
 import { NodeStatus } from '../../types.js';
-import { setupTest } from '../helpers.js';
+import { setupTest, waitForEvent, waitForBlackboard } from '../helpers.js';
 
 describe('agent interrupt and redirect (live)', () => {
   it('interrupts agent mid-research, redirects with new topic, verifies new output', async () => {
@@ -67,27 +67,34 @@ describe('agent interrupt and redirect (live)', () => {
     // 1. Set topic and start the agent
     await harness.client.action('set-topic', { topic: 'quantum computing basics' });
 
-    // Wait for agent to be in-flight (~3s should be enough for it to start)
-    await new Promise((r) => setTimeout(r, 3000));
+    // Confirm the topic was written to the blackboard before proceeding
+    await waitForBlackboard(harness.client, 'research:topic', 10000, 500);
 
-    // 2. Interrupt the agent mid-research
+    // Brief delay to let the agent reach an in-flight API call before we interrupt.
+    // A deterministic signal isn't available here — we need the agent mid-call, not
+    // just started, so a short fixed delay is the appropriate wait strategy.
+    await new Promise((r) => setTimeout(r, 2000));
+
+    // 2. Interrupt the agent mid-research.
+    // Register the listener BEFORE calling interrupt() to avoid a race where the
+    // event fires before we start listening.
+    const interruptSettled = waitForEvent(harness.client, 'message:interrupted', 1, 10000);
     const interruptResult = await harness.client.interrupt();
     expect(interruptResult.interrupted).toBe(true);
 
-    // Wait for interrupt to settle
-    await new Promise((r) => setTimeout(r, 500));
+    // Wait for the interrupt to fully settle
+    await interruptSettled;
+
+    // Verify topic is still set after interrupt
+    const bbAfterInterrupt = await harness.client.blackboard();
+    expect(bbAfterInterrupt['research:topic']).toBe('quantum computing basics');
 
     // 3. Redirect: write new topic — clears held state, agent restarts with new topic
     await harness.client.write('research:topic', 'history of the internet');
 
     // 4. Wait for tree to complete (agent restarts with new topic, finishes, report emitted)
-    let bb: Record<string, unknown> = {};
-    const startTime = Date.now();
-    while (Date.now() - startTime < 60000) {
-      await new Promise((r) => setTimeout(r, 2000));
-      bb = await harness.client.blackboard();
-      if (bb['report'] != null) break;
-    }
+    await waitForBlackboard(harness.client, 'report', 60000, 2000);
+    const bb = await harness.client.blackboard();
 
     // 5. Verify: topic was set only once (completedMap preserved set-topic)
     expect(topicSetCount).toBe(1);
