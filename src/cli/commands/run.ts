@@ -1,7 +1,7 @@
 import { NodeStatus } from '../../types.js';
 import { TreeScheduler } from '../../scheduler/tree-scheduler.js';
+import { ActorServer } from '../../server/actor-server.js';
 import { createFormatter } from '../formatter.js';
-import { TreeServer } from '../../server/tree-server.js';
 import { loadEnvFile, loadTreeModule, startDashboard } from './shared.js';
 
 export interface RunOptions {
@@ -11,27 +11,38 @@ export interface RunOptions {
   verbose?: boolean;
   quiet?: boolean;
   envFile?: string;
+  serve?: boolean;
   port?: number;
-  noServe?: boolean;
   noDashboard?: boolean;
   dashboardPort?: number;
+  noTick?: boolean;
+  tickInterval?: number;
 }
 
 export async function runCommand(options: RunOptions): Promise<void> {
-  const { file, args, json, verbose, quiet, envFile, port, noServe, noDashboard, dashboardPort } = options;
+  const { file, args, json, verbose, quiet, envFile } = options;
 
-  // Load env file if provided
-  const env = { ...process.env };
+  const env: Record<string, string | undefined> = { ...process.env };
   if (envFile) {
     loadEnvFile(envFile, env);
   }
 
-  // Build RunContext
   const runContext = { env, args };
-
   const factory = await loadTreeModule(file);
 
-  // Call factory
+  if (options.serve) {
+    return runDaemon(factory, runContext, options);
+  }
+  return runBatch(factory, runContext, options);
+}
+
+async function runBatch(
+  factory: Awaited<ReturnType<typeof loadTreeModule>>,
+  runContext: { env: Record<string, string | undefined>; args: string[] },
+  options: RunOptions,
+): Promise<void> {
+  const { json, verbose, quiet } = options;
+
   let config;
   try {
     config = factory(runContext);
@@ -41,51 +52,12 @@ export async function runCommand(options: RunOptions): Promise<void> {
   }
 
   const { tree } = config;
-
-  // Set up formatter
   const stopFormatter = createFormatter(tree.events, { json, verbose, quiet });
 
-  // Start tree server
-  let treeServer: TreeServer | undefined;
-
-  let exit = async (code: number): Promise<void> => {
-    if (treeServer) await treeServer.close();
-    stopFormatter();
-    process.exit(code);
-  };
-
-  if (!noServe) {
-    treeServer = new TreeServer(tree, { port });
-    const { port: serverPort } = await treeServer.start();
-    if (!quiet) {
-      process.stderr.write(`API: http://localhost:${serverPort}\n`);
-    }
-
-    // Start dashboard server (unless disabled or tree server is disabled)
-    if (!noDashboard) {
-      const dashHandle = await startDashboard({
-        apiPort: serverPort,
-        dashboardPort,
-        importMetaUrl: import.meta.url,
-        quiet,
-      });
-      if (dashHandle) {
-        const origExit = exit;
-        exit = async (code: number) => {
-          await dashHandle.close();
-          await origExit(code);
-        };
-      }
-    }
-  }
-
-  // Track final status for exit code
   let finalStatus: NodeStatus | undefined;
-
-  // Signal handling
   let aborted = false;
   const handleSignal = () => {
-    if (aborted) return; // second signal → force exit
+    if (aborted) return;
     aborted = true;
     tree.abort();
   };
@@ -94,7 +66,6 @@ export async function runCommand(options: RunOptions): Promise<void> {
 
   try {
     if (config.schedule) {
-      // Scheduled execution
       const scheduler = new TreeScheduler({
         tree,
         schedule: config.schedule,
@@ -103,12 +74,10 @@ export async function runCommand(options: RunOptions): Promise<void> {
         onError: config.onError,
       });
 
-      // Track the last status from scheduler events
       scheduler.events.on('tick:complete', ({ status }) => {
         finalStatus = status;
       });
 
-      // Abort also stops the scheduler
       const origHandler = handleSignal;
       const schedulerSignalHandler = () => {
         origHandler();
@@ -121,24 +90,86 @@ export async function runCommand(options: RunOptions): Promise<void> {
 
       await scheduler.start();
     } else {
-      // Single run
       const result = await tree.run();
       finalStatus = result.status;
     }
   } catch (err) {
     process.stderr.write(`Runtime error: ${(err as Error).message}\n`);
-    await exit(1);
+    stopFormatter();
+    process.exit(1);
   }
 
-  // Exit code based on final status
+  stopFormatter();
+
   if (aborted && finalStatus === undefined) {
-    await exit(2);
+    process.exit(2);
   }
   if (finalStatus === NodeStatus.SUCCESS) {
-    await exit(0);
+    process.exit(0);
   }
   if (finalStatus === NodeStatus.RUNNING) {
-    await exit(2);
+    process.exit(2);
   }
-  await exit(1);
+  process.exit(1);
+}
+
+async function runDaemon(
+  factory: Awaited<ReturnType<typeof loadTreeModule>>,
+  runContext: { env: Record<string, string | undefined>; args: string[] },
+  options: RunOptions,
+): Promise<void> {
+  const { json, verbose, quiet, port, noDashboard, dashboardPort } = options;
+
+  const server = new ActorServer({
+    createTree: () => {
+      const tree = factory(runContext).tree;
+      createFormatter(tree.events, { json, verbose, quiet });
+      return tree;
+    },
+    port: port ?? 3147,
+  });
+
+  const { port: serverPort } = await server.start();
+  if (!quiet) {
+    process.stderr.write(`Actor server: http://localhost:${serverPort}\n`);
+  }
+
+  let dashHandle: Awaited<ReturnType<typeof startDashboard>> = null;
+  if (!noDashboard) {
+    dashHandle = await startDashboard({
+      apiPort: serverPort,
+      dashboardPort,
+      importMetaUrl: import.meta.url,
+      quiet,
+    });
+  }
+
+  let scheduler: TreeScheduler | undefined;
+
+  if (!options.noTick && options.tickInterval) {
+    const tickTree = factory(runContext).tree;
+    createFormatter(tickTree.events, { json, verbose, quiet });
+    server.bridgeTree(tickTree);
+    scheduler = new TreeScheduler({
+      tree: tickTree,
+      schedule: { type: 'interval', delayMs: options.tickInterval },
+      onError: 'continue',
+    });
+    scheduler.start();
+  }
+
+  await new Promise<void>((resolve) => {
+    const shutdown = async () => {
+      if (!quiet) {
+        process.stderr.write('\nShutting down...\n');
+      }
+      if (scheduler) await scheduler.stop();
+      if (dashHandle) await dashHandle.close();
+      await server.stop();
+      resolve();
+    };
+
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+  });
 }
