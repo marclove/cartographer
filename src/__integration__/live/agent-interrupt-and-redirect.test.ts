@@ -64,16 +64,12 @@ describe('agent interrupt and redirect (live)', () => {
         }),
     });
 
-    // 1. Set topic and start the agent
+    // 1. Set topic and start the agent.
+    // The blackboard isn't persisted until runToCompletion finishes, so we can't
+    // use waitForBlackboard here. A fixed delay is the appropriate strategy —
+    // we need the agent to be mid-API-call, not just started.
     await harness.client.action('set-topic', { topic: 'quantum computing basics' });
-
-    // Confirm the topic was written to the blackboard before proceeding
-    await waitForBlackboard(harness.client, 'research:topic', 10000, 500);
-
-    // Brief delay to let the agent reach an in-flight API call before we interrupt.
-    // A deterministic signal isn't available here — we need the agent mid-call, not
-    // just started, so a short fixed delay is the appropriate wait strategy.
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 3000));
 
     // 2. Interrupt the agent mid-research.
     // Register the listener BEFORE calling interrupt() to avoid a race where the
