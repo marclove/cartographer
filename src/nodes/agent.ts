@@ -123,6 +123,11 @@ export class AgentNode extends BaseNode {
     this.config = config;
   }
 
+  /** Read-only access to the agent's SDK options for introspection (e.g. dashboard API). */
+  get agentOptions(): Partial<AgentNodeConfig['options']> & { model?: string; allowedTools?: string[]; mcpServers?: Record<string, unknown> } {
+    return this.config.options ?? {};
+  }
+
   protected override computeHash(): string {
     const prompt = typeof this.config.prompt === 'string' ? this.config.prompt : '';
     return computeContentHash('AgentNode', this.config.name, prompt);

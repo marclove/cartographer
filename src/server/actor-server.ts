@@ -7,24 +7,18 @@ import type { StateStore } from '../state/state-store.js';
 import { TreeActor } from '../actor/tree-actor.js';
 import type { ActorMessage } from '../actor/types.js';
 import type { ProcessResult } from '../actor/tree-actor.js';
-import { jsonResponse, jsonError } from './http-utils.js';
+import { jsonResponse, jsonError, readBody } from './http-utils.js';
 import { EventBridge } from './event-bridge.js';
 import { EventBuffer } from './event-buffer.js';
-import { broadcastSseEvent } from './sse-handler.js';
+import { broadcastSseEvent, sendSseEvent, blackboardToRecord } from './sse-handler.js';
 import type { SseClient } from './sse-handler.js';
 import { serializeTree as serializeTreeForApi, serializeNodeRef, serializeEvent } from './serializers.js';
 import { findNodeById } from './api-handlers.js';
+import type { StatusState } from './api-handlers.js';
 import { AgentNode } from '../nodes/agent.js';
 
 function generateRequestId(): string {
   return `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-interface ActorStatusState {
-  tickCount: number;
-  cycleCount: number;
-  lastStatus: string | null;
-  lastDurationMs: number | null;
 }
 
 export interface ActorServerOptions {
@@ -42,10 +36,9 @@ export class ActorServer {
   private readonly context: Record<string, unknown>;
   readonly topologyPolicy: 'fail' | 'reset';
   private server: Server | null = null;
-  private startTime = 0;
   private activeActor: TreeActor | null = null;
   private activeMessageId: string | null = null;
-  private readonly stats: ActorStatusState = { tickCount: 0, cycleCount: 0, lastStatus: null, lastDurationMs: null };
+  private readonly stats: StatusState = { tickCount: 0, cycleCount: 0, lastStatus: null, lastDurationMs: null, startedAt: 0 };
   private readonly eventBuffer: EventBuffer = new EventBuffer(500);
   private readonly sseClients: Set<SseClient> = new Set();
   private _readTree: BehaviorTree | null = null;
@@ -67,7 +60,7 @@ export class ActorServer {
   }
 
   async start(): Promise<{ port: number }> {
-    this.startTime = Date.now();
+    this.stats.startedAt = Date.now();
 
     const existing = await this.stateStore.getState('default');
     if (!existing) {
@@ -116,10 +109,11 @@ export class ActorServer {
 
   private async initializeDefaultState(): Promise<void> {
     const tree = this.createTree();
+    this._readTree = tree;
     for (const [key, value] of Object.entries(this.context)) {
       tree.blackboard.set(`context:${key}`, value);
     }
-    const blackboard = this.serializeBlackboard(tree);
+    const blackboard = blackboardToRecord(tree.blackboard);
     const treeState = serializeTree(tree.root, tree.rootHash);
     await this.stateStore.saveState('default', {
       blackboard,
@@ -137,7 +131,7 @@ export class ActorServer {
     if (method === 'GET' && url.pathname === '/_platform/health') {
       return jsonResponse(res, 200, {
         status: 'ok',
-        uptime: Math.floor((Date.now() - this.startTime) / 1000),
+        uptime: Math.floor((Date.now() - this.stats.startedAt) / 1000),
       });
     }
 
@@ -151,11 +145,8 @@ export class ActorServer {
       const tree = this.readTree;
       return jsonResponse(res, 200, {
         tree: tree.name,
-        tickCount: this.stats.tickCount,
-        cycleCount: this.stats.cycleCount,
-        lastStatus: this.stats.lastStatus,
-        lastDurationMs: this.stats.lastDurationMs,
-        uptime: Date.now() - this.startTime,
+        ...this.stats,
+        uptime: Date.now() - this.stats.startedAt,
       });
     }
 
@@ -174,14 +165,10 @@ export class ActorServer {
       }
       const detail: Record<string, unknown> = { ...serializeNodeRef(node) };
       if (node instanceof AgentNode) {
-        const config = (node as any).config;
-        if (config) {
-          const opts = config.options ?? {};
-          if (opts.model) detail.model = opts.model;
-          detail.tools = opts.allowedTools ?? [];
-          const mcpServers = opts.mcpServers ? Object.keys(opts.mcpServers) : [];
-          detail.mcpServers = mcpServers;
-        }
+        const opts = node.agentOptions;
+        if (opts.model) detail.model = opts.model;
+        detail.tools = opts.allowedTools ?? [];
+        detail.mcpServers = opts.mcpServers ? Object.keys(opts.mcpServers) : [];
       }
       if (node.children.length > 0) {
         detail.children = node.children.map(serializeNodeRef);
@@ -224,7 +211,7 @@ export class ActorServer {
   }
 
   private async handleMessage(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const body = await this.readBody(req);
+    const body = await readBody(req);
     if (!body || !body.type) {
       return jsonError(res, 400, 'Missing message type');
     }
@@ -235,12 +222,12 @@ export class ActorServer {
   }
 
   private async handleAction(req: IncomingMessage, res: ServerResponse, name: string): Promise<void> {
-    const payload = await this.readBody(req);
+    const payload = await readBody(req);
     await this.processAsync({ type: 'action', name, payload }, res);
   }
 
   private async handleBlackboardWrite(req: IncomingMessage, res: ServerResponse, key: string): Promise<void> {
-    const body = await this.readBody(req);
+    const body = await readBody(req);
     const value = body?.value;
     await this.processAsync({ type: 'write', key, value }, res);
   }
@@ -352,7 +339,7 @@ export class ActorServer {
     };
 
     // Send snapshot
-    res.write(`id: 0\nevent: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
+    sendSseEvent(res, 'snapshot', snapshot, 0);
 
     // Replay buffered events — on reconnect, replay since last-event-id;
     // on initial connect, replay the entire buffer so the dashboard
@@ -363,7 +350,7 @@ export class ActorServer {
       const events = this.eventBuffer.getEventsSince(sinceId);
       if (events !== null) {
         for (const event of events) {
-          res.write(`id: ${event.id}\nevent: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`);
+          sendSseEvent(res, event.event, event.data, event.id);
         }
       }
     }
@@ -391,8 +378,9 @@ export class ActorServer {
 
     const lastEventId = req.headers['last-event-id'] as string | undefined;
 
+    this.sseClients.add(res);
     let closed = false;
-    req.on('close', () => { closed = true; });
+    req.on('close', () => { closed = true; this.sseClients.delete(res); });
 
     try {
       for await (const event of this.stateStore.readEvents('default', lastEventId)) {
@@ -402,19 +390,9 @@ export class ActorServer {
     } catch {
       // Connection closed or error — clean exit
     } finally {
+      this.sseClients.delete(res);
       if (!closed) res.end();
     }
-  }
-
-  private readBody(req: IncomingMessage): Promise<any> {
-    return new Promise((resolve) => {
-      let data = '';
-      req.on('data', (chunk: Buffer) => data += chunk);
-      req.on('end', () => {
-        try { resolve(JSON.parse(data)); }
-        catch { resolve(null); }
-      });
-    });
   }
 
   private forwardEvent(event: { type: string; data: Record<string, unknown> }): void {
@@ -434,14 +412,4 @@ export class ActorServer {
     }
   }
 
-  private serializeBlackboard(tree: BehaviorTree): Record<string, unknown> {
-    if ('toRecord' in tree.blackboard && typeof tree.blackboard.toRecord === 'function') {
-      return tree.blackboard.toRecord();
-    }
-    const result: Record<string, unknown> = {};
-    for (const key of tree.blackboard.keys()) {
-      result[key] = tree.blackboard.get(key);
-    }
-    return result;
-  }
 }

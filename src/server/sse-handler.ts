@@ -21,7 +21,7 @@ export function handleSseStream(
   // Send initial snapshot
   const snapshot = {
     tree: serializeTree(tree.root),
-    blackboard: getBlackboardRecord(tree),
+    blackboard: blackboardToRecord(tree.blackboard),
   };
   sendSseEvent(res, 'snapshot', snapshot, eventBuffer.latestId);
 
@@ -58,7 +58,7 @@ export function broadcastSseEvent(
   }
 }
 
-function sendSseEvent(
+export function sendSseEvent(
   res: ServerResponse,
   event: string,
   data: unknown,
@@ -69,8 +69,10 @@ function sendSseEvent(
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
-function getBlackboardRecord(tree: BehaviorTree): Record<string, unknown> {
-  const bb = tree.blackboard;
+export function blackboardToRecord(bb: { keys(): string[]; get<T>(key: string): T | undefined; toRecord?(): Record<string, unknown> }): Record<string, unknown> {
+  if (typeof bb.toRecord === 'function') {
+    return bb.toRecord();
+  }
   const record: Record<string, unknown> = {};
   for (const key of bb.keys()) {
     record[key] = bb.get(key);

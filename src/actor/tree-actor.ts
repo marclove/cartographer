@@ -4,6 +4,7 @@ import { serializeTree, restoreTree } from '../core/serialization.js';
 import type { StateStore } from '../state/state-store.js';
 import type { ActorMessage } from './types.js';
 import type { EventBridge } from '../server/event-bridge.js';
+import { blackboardToRecord } from '../server/sse-handler.js';
 
 export interface TreeActorOptions {
   createTree: () => BehaviorTree;
@@ -102,7 +103,7 @@ export class TreeActor {
     }
 
     // Serialize and save
-    const blackboardSnapshot = this.serializeBlackboard(tree);
+    const blackboardSnapshot = blackboardToRecord(tree.blackboard);
     const treeState = serializeTree(tree.root, tree.rootHash);
     await this.stateStore.saveState(this.stateKey, {
       blackboard: blackboardSnapshot,
@@ -170,7 +171,7 @@ export class TreeActor {
     if (signal === 'abort') tree.abort();
 
     // Save state so the reset/abort is persisted for the next tick
-    const blackboard = this.serializeBlackboard(tree);
+    const blackboard = blackboardToRecord(tree.blackboard);
     const treeState = serializeTree(tree.root, tree.rootHash);
     await this.stateStore.saveState(this.stateKey, {
       blackboard,
@@ -182,14 +183,4 @@ export class TreeActor {
     return { treeStatus: 'error', error: `Signal handled: ${signal}` };
   }
 
-  private serializeBlackboard(tree: BehaviorTree): Record<string, unknown> {
-    if ('toRecord' in tree.blackboard && typeof tree.blackboard.toRecord === 'function') {
-      return tree.blackboard.toRecord();
-    }
-    const result: Record<string, unknown> = {};
-    for (const key of tree.blackboard.keys()) {
-      result[key] = tree.blackboard.get(key);
-    }
-    return result;
-  }
 }

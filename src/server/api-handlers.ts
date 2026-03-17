@@ -4,6 +4,7 @@ import type { BTreeNode } from '../types.js';
 import { AgentNode } from '../nodes/agent.js';
 import { serializeTree, serializeNodeRef } from './serializers.js';
 import { jsonResponse, jsonError } from './http-utils.js';
+import { blackboardToRecord } from './sse-handler.js';
 
 export interface StatusState {
   tickCount: number;
@@ -29,12 +30,7 @@ export function handleApiStatus(res: ServerResponse, tree: BehaviorTree, state: 
 }
 
 export function handleApiBlackboard(res: ServerResponse, tree: BehaviorTree): void {
-  const bb = tree.blackboard;
-  const record: Record<string, unknown> = {};
-  for (const key of bb.keys()) {
-    record[key] = bb.get(key);
-  }
-  jsonResponse(res, 200, record);
+  jsonResponse(res, 200, blackboardToRecord(tree.blackboard));
 }
 
 export function handleApiNode(res: ServerResponse, tree: BehaviorTree, nodeId: string): void {
@@ -48,14 +44,10 @@ export function handleApiNode(res: ServerResponse, tree: BehaviorTree, nodeId: s
   const detail: Record<string, unknown> = { ...base };
 
   if (node instanceof AgentNode) {
-    const config = (node as any).config;
-    if (config) {
-      const opts = config.options ?? {};
-      if (opts.model) detail.model = opts.model;
-      detail.tools = opts.allowedTools ?? [];
-      const mcpServers = opts.mcpServers ? Object.keys(opts.mcpServers) : [];
-      detail.mcpServers = mcpServers;
-    }
+    const opts = node.agentOptions;
+    if (opts.model) detail.model = opts.model;
+    detail.tools = opts.allowedTools ?? [];
+    detail.mcpServers = opts.mcpServers ? Object.keys(opts.mcpServers) : [];
   }
 
   if (node.children.length > 0) {
