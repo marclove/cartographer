@@ -94,6 +94,7 @@ export const USAGE = `Usage: cartographer <command> [options]
 
 Commands:
   run <file> [args...]     Execute a behavior tree
+  serve <file> [args...]   Start actor server with dashboard
   inspect <file>           Visualize tree structure
   init <name>              Scaffold a new tree file
 
@@ -104,6 +105,13 @@ Run options:
   --env-file <path>        Load environment variables from a file
   --port <number>          Port for the tree server (default: 3147)
   --no-serve               Disable the tree server
+  --dashboard-port <num>   Port for the dashboard server (default: 3148)
+  --no-dashboard           Disable the dashboard server
+
+Serve options:
+  --quiet                  Suppress all output except errors
+  --env-file <path>        Load environment variables from a file
+  --port <number>          Port for the actor server (default: 3147)
   --dashboard-port <num>   Port for the dashboard server (default: 3148)
   --no-dashboard           Disable the dashboard server
 `;
