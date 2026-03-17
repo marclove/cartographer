@@ -50,6 +50,9 @@ const EVENT_CATEGORIES: Partial<Record<SseEventName, string>> = {
   'blackboard:read': 'blackboard',
   'blackboard:write': 'blackboard',
   'strategy:decision': 'strategy',
+  'message:processed': 'lifecycle',
+  'message:interrupted': 'lifecycle',
+  'message:failed': 'lifecycle',
 };
 
 export function getEventCategory(eventName: string): string {
@@ -111,7 +114,7 @@ export function getEvents(): TimelineEvent[] {
 
 // Event filters — all categories active by default
 let activeFilters = $state<Set<string>>(
-  new Set(['nodes', 'agent', 'blackboard', 'strategy']),
+  new Set(['nodes', 'agent', 'blackboard', 'strategy', 'lifecycle']),
 );
 export function getActiveFilters(): Set<string> {
   return activeFilters;
@@ -308,6 +311,16 @@ export function connect(): void {
       pushEvent('strategy:decision', data, id);
     },
 
+    'message:processed'(data, id) {
+      pushEvent('message:processed', data, id);
+    },
+    'message:interrupted'(data, id) {
+      pushEvent('message:interrupted', data, id);
+    },
+    'message:failed'(data, id) {
+      pushEvent('message:failed', data, id);
+    },
+
     'agent:prompt'(data, id) {
       pushEvent('agent:prompt', data, id);
     },
@@ -366,7 +379,7 @@ export function _resetForTest(): void {
   lastStatus = null;
   lastDurationMs = null;
   events = [];
-  activeFilters = new Set(['nodes', 'agent', 'blackboard', 'strategy']);
+  activeFilters = new Set(['nodes', 'agent', 'blackboard', 'strategy', 'lifecycle']);
   blackboard = {};
   for (const timer of highlightTimers.values()) clearTimeout(timer);
   highlightTimers.clear();
