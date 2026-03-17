@@ -21,7 +21,20 @@ import { TreeActor } from 'cartographer';
 
 #### `process(msg: ActorMessage): Promise<ProcessResult>`
 
-Loads state, hydrates tree, applies message, runs to completion, serializes, saves. Returns `{ treeStatus, error? }` where `treeStatus` is `NodeStatus` (`'success'`, `'failure'`, `'running'`) or `'error'` (for signal handling).
+Loads state, hydrates tree, applies message, runs to completion, serializes, saves.
+
+**ProcessResult:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `treeStatus` | `NodeStatus \| 'error'` | Final tree status. `'running'` when suspended or interrupted. `'error'` for signal handling. |
+| `error` | `string?` | Error description (for signal handling or processing errors). |
+| `interrupted` | `boolean?` | `true` when the processing loop was interrupted via `requestInterrupt()`. State is saved with `held: true`. |
+| `held` | `boolean?` | `true` when a tick message was skipped because the tree is held. |
+
+#### `requestInterrupt(): void`
+
+Signals the in-progress processing loop to interrupt. Safe to call at any time. If no processing is active, this is a no-op. See [Interrupts](../guide-actor-framework.md#interrupts).
 
 ---
 
@@ -63,7 +76,7 @@ type ActorMessage = TickMessage | ActionMessage | WriteMessage | SignalMessage;
 interface TickMessage    { type: 'tick'; id?: string }
 interface ActionMessage  { type: 'action'; name: string; payload?: unknown; id?: string }
 interface WriteMessage   { type: 'write'; key: string; value: unknown; id?: string }
-interface SignalMessage   { type: 'signal'; signal: 'stop' | 'reset' | 'abort'; id?: string }
+interface SignalMessage   { type: 'signal'; signal: 'stop' | 'reset' | 'abort' | 'resume'; id?: string }
 ```
 
 ---
@@ -91,6 +104,7 @@ interface TreeSessionState {
   treeState: SerializedTreeState;
   createdAt: number;
   lastMessageAt: number;
+  held?: boolean; // true after interrupt — tick messages are no-ops while held
 }
 ```
 
@@ -132,6 +146,38 @@ const store = new RedisStateStore({ redis, keyPrefix?, maxEvents? });
 | `maxEvents` | `number` | `1000` | Max events per stream (XTRIM MAXLEN). |
 
 Requires `ioredis` as a peer dependency.
+
+---
+
+## Message Event Types
+
+```typescript
+import type {
+  MessageProcessedEvent,
+  MessageInterruptedEvent,
+  MessageFailedEvent,
+} from 'cartographer';
+```
+
+| Type | Fields | Description |
+|------|--------|-------------|
+| `MessageProcessedEvent` | `{ messageId: string; treeStatus: string }` | Emitted when processing completes. |
+| `MessageInterruptedEvent` | `{ messageId: string }` | Emitted when processing is interrupted via `POST /api/interrupt`. |
+| `MessageFailedEvent` | `{ messageId: string; error: string }` | Emitted when processing throws an error. |
+
+---
+
+## ActorServer Endpoints
+
+In addition to the REST and SSE endpoints documented in the [Actor Framework guide](../guide-actor-framework.md#endpoints), `ActorServer` provides two control endpoints that bypass the processing lock:
+
+#### `POST /api/interrupt`
+
+Interrupts the active processing loop. Returns `{ interrupted: true, messageId }` when processing was active, or `{ interrupted: false }` when idle.
+
+#### `POST /api/resume`
+
+Clears the held state. Returns `{ resumed: true }` when the tree was held, or `{ resumed: false }` when it was not.
 
 ---
 

@@ -133,7 +133,63 @@ const result = await actor.process({ type: 'tick' });
 | `tick`   | —                        | Ticks the tree with no additional input.        |
 | `action` | `name`, `payload?`       | Writes `payload` to `actions:<name>` on the blackboard, then ticks. |
 | `write`  | `key`, `value`           | Writes `value` to `key` on the blackboard, then ticks. |
-| `signal` | `signal: 'stop'\|'reset'\|'abort'` | Resets or aborts the tree without ticking. `reset` calls `tree.reset()`, `abort` calls `tree.abort()`. `stop` is accepted but is currently a no-op (returns `{ treeStatus: 'error' }`). All signals return without ticking. |
+| `signal` | `signal: 'stop'\|'reset'\|'abort'\|'resume'` | Resets or aborts the tree without ticking. `reset` calls `tree.reset()`, `abort` calls `tree.abort()`. `resume` clears the held state (see [Interrupts](#interrupts) below). `stop` is accepted but is currently a no-op. All signals return `{ treeStatus: 'error' }` without ticking. |
+
+### Interrupts
+
+When a long-running `AgentNode` is processing (seconds to minutes), the user may want to cancel the current work without losing progress. `interrupt` is a middle ground between doing nothing and a full `abort`:
+
+| Operation     | Cancels in-flight work | Clears completedMap | Requires reset() | Tree afterward      |
+|---------------|----------------------|--------------------|-----------------|--------------------|
+| **abort**     | Yes                  | Yes                | Yes             | Dead (needs reset) |
+| **interrupt** | Yes                  | No                 | No              | RUNNING, suspended |
+| **do nothing**| No                   | No                 | No              | RUNNING, in-flight |
+
+After interrupt, the tree is in the same state as a normal suspension point: `RUNNING` with `hasInflightWork() === false`. Sequence `completedMap` entries survive, so previously completed children are not re-executed.
+
+#### How it works
+
+`TreeActor` holds an internal `interruptController`. The `runToCompletion()` loop races `tree.settled()` against this interrupt signal. When interrupted:
+
+1. `tree.interrupt()` is called — cancels in-flight SDK calls while preserving composite cycle state.
+2. The tree is serialized and saved normally.
+3. The state is marked as **held** (`held: true` in `TreeSessionState`).
+4. The `ProcessResult` includes `{ interrupted: true, treeStatus: 'running' }`.
+
+#### Held state
+
+After interrupt, the tree enters a **held** state. This prevents the scheduler from immediately restarting the interrupted agent before the user has a chance to redirect.
+
+While held:
+- **`tick` messages** → no-op (returns `{ treeStatus: 'running', held: true }` without processing).
+- **`action` / `write` messages** → clear held flag, then process normally.
+- **`signal: resume`** → clear held flag without ticking (next scheduler tick resumes the agent).
+
+#### What happens after interrupt
+
+The interrupted agent's in-flight state is cleared. On the next deliberate user action:
+
+- **"Cancel and move on"**: send an action that takes a different path (clears held, processes action).
+- **"Cancel and redirect"**: send a `write` to update blackboard context (clears held, processes write, re-invokes agent on next tick).
+- **"Just retry as-is"**: `POST /api/resume` (clears held), then the next scheduler tick resumes the agent.
+
+```typescript
+const actor = new TreeActor({
+  createTree: () => myTreeFactory(),
+  stateStore: myStore,
+  stateKey: 'session-123',
+});
+
+// Start processing in the background
+const processPromise = actor.process({ type: 'tick' });
+
+// Interrupt from another context (e.g., HTTP handler)
+actor.requestInterrupt();
+
+const result = await processPromise;
+// result.treeStatus === 'running'
+// result.interrupted === true
+```
 
 ---
 
@@ -185,6 +241,15 @@ All write endpoints use an **async 202 pattern**: the server acquires a lock, re
 | POST   | `/api/actions/:name`   | `{ ...payload }`                  | Shorthand for action messages.   |
 | POST   | `/api/blackboard/:key` | `{ value }`                       | Shorthand for write messages.    |
 
+#### Control Endpoints
+
+These endpoints bypass the processing lock and take effect immediately.
+
+| Method | Path              | Description                                                                                         |
+|--------|-------------------|-----------------------------------------------------------------------------------------------------|
+| POST   | `/api/interrupt`  | Interrupts the active processing loop. Returns `{ interrupted: true, messageId }` or `{ interrupted: false }`. |
+| POST   | `/api/resume`     | Clears the held state. Returns `{ resumed: true }` or `{ resumed: false }`.                        |
+
 #### Error Responses
 
 | Status | Meaning                                        |
@@ -219,6 +284,10 @@ source.addEventListener('snapshot', (e) => {
 source.addEventListener('message:processed', (e) => {
   const { messageId, treeStatus } = JSON.parse(e.data);
   console.log(`Message ${messageId} completed: ${treeStatus}`);
+});
+source.addEventListener('message:interrupted', (e) => {
+  const { messageId } = JSON.parse(e.data);
+  console.log(`Message ${messageId} was interrupted`);
 });
 ```
 
@@ -312,6 +381,22 @@ const result = await client.actionAndWait('approve', { comment: 'LGTM' });
 console.log(result.treeStatus); // 'success', 'failure', or 'running'
 ```
 
+### Interrupting and Resuming
+
+```typescript
+// Interrupt the currently processing message (bypasses the lock)
+const { interrupted } = await client.interrupt();
+
+// Clear the held state so the next tick processes normally
+const { resumed } = await client.resume();
+
+// Interrupt, wait for lock release via SSE, then send a new action.
+// Requires connect() since it listens for message:processed/message:failed events.
+// If nothing was processing, the action is sent immediately without SSE.
+client.connect();
+const { id } = await client.interruptAndAction('redirect', { target: 'new-path' });
+```
+
 ### Reading State
 
 ```typescript
@@ -322,7 +407,7 @@ const status = await client.status();   // Tree metadata
 
 ### Real-Time Events
 
-The client uses the browser `EventSource` API for SSE. In Node.js, you need a polyfill like the `eventsource` package. If `globalThis.EventSource` is undefined, `connect()` silently returns without error — `actionAndWait()` will hang indefinitely in this case since it depends on SSE events dispatched by the connection.
+The client uses the browser `EventSource` API for SSE. In Node.js, you need a polyfill like the `eventsource` package or the `--experimental-eventsource` flag (Node 22+). If `globalThis.EventSource` is undefined, `connect()` silently returns without error — `actionAndWait()` and `interruptAndAction()` (when processing is active) will hang indefinitely in this case since they depend on SSE events dispatched by the connection.
 
 ```typescript
 // Start listening for events

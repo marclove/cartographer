@@ -5,6 +5,8 @@ export interface TreeSessionState {
   treeState: SerializedTreeState;
   createdAt: number;
   lastMessageAt: number;
+  /** When true, the tree is held after interrupt — tick messages are no-ops. */
+  held?: boolean;
 }
 
 export interface TreeEvent {

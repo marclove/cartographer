@@ -25,7 +25,7 @@ export interface WriteMessage {
 
 export interface SignalMessage {
   type: 'signal';
-  signal: 'stop' | 'reset' | 'abort';
+  signal: 'stop' | 'reset' | 'abort' | 'resume';
   id?: string;
 }
 
@@ -37,6 +37,10 @@ export interface MessageProcessedEvent {
 export interface MessageFailedEvent {
   messageId: string;
   error: string;
+}
+
+export interface MessageInterruptedEvent {
+  messageId: string;
 }
 
 /** Generate a unique message ID. */

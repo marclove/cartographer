@@ -189,6 +189,17 @@ export abstract class BaseNode implements BTreeNode {
     // Subclasses override if they have in-progress work to cancel
   }
 
+  interrupt(): void {
+    // Clear unsettled inflight work without destroying cycle state.
+    // Composites override to recurse into children without calling clearCycle().
+    if (this._inflightState && this._inflightState.result === undefined && this._inflightState.error === undefined) {
+      this._inflightState = null;
+    }
+    for (const child of this.children) {
+      child.interrupt();
+    }
+  }
+
   hasInflightWork(): boolean {
     if (this._inflightState && this._inflightState.result === undefined && this._inflightState.error === undefined) {
       return true;

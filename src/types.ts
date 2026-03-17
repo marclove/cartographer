@@ -174,6 +174,7 @@ export interface TreeEvents {
   'tree:tick': { tree: string; status: NodeStatus; durationMs: number };
   'tree:reset': { tree: string };
   'tree:abort': { tree: string };
+  'tree:interrupt': { tree: string };
   'tree:tick:skipped': { timestamp: number };
   'blackboard:keys': { keys: string[]; source: string };
   'blackboard:read': { key: string; value: unknown; hit: boolean; source: string };
@@ -182,6 +183,7 @@ export interface TreeEvents {
   'agent:elicitation_declined': { node: BTreeNode; request: ElicitationRequest };
   'client:event': { name: string; data: unknown };
   'message:processed': { messageId: string; treeStatus: string };
+  'message:interrupted': { messageId: string };
   'message:failed': { messageId: string; error: string };
 }
 
@@ -332,6 +334,15 @@ export interface BTreeNode {
    * Propagates down through composites and decorators to all descendants.
    */
   abort(): void;
+
+  /**
+   * Cancel in-flight work without destroying cycle state.
+   *
+   * Unlike `abort()`, interrupt preserves composite cycle state (completedMap,
+   * committedOrder) so that previously completed children are not re-executed.
+   * The tree remains tickable immediately after interrupt — no reset() needed.
+   */
+  interrupt(): void;
 
   /** Returns true if this node has unsettled in-flight async work. */
   hasInflightWork(): boolean;

@@ -1,3 +1,4 @@
+/** Thrown when the server returns 409 Conflict (another message is being processed). */
 export class ConflictError extends Error {
   constructor() {
     super('Session is currently processing a message');
@@ -5,17 +6,61 @@ export class ConflictError extends Error {
   }
 }
 
+/**
+ * Client for communicating with an ActorServer over HTTP and SSE.
+ *
+ * Methods that only need HTTP (`action`, `write`, `send`, `interrupt`, `resume`)
+ * work without an SSE connection. Methods that wait for server-side events
+ * (`actionAndWait`, `interruptAndAction` when processing is active) require
+ * {@link connect} to have been called first.
+ */
 export interface CartographerClient {
+  /** Send an action message. Returns immediately with the message ID. */
   action(name: string, payload?: unknown): Promise<{ id: string }>;
+  /** Write a value to the blackboard. Returns immediately with the message ID. */
   write(key: string, value: unknown): Promise<{ id: string }>;
+  /** Send any message type. Returns immediately with the message ID. */
   send(msg: { type: string; name?: string; payload?: unknown; key?: string; value?: unknown }): Promise<{ id: string }>;
+  /**
+   * Send an action and wait for processing to complete via SSE.
+   * Resolves with the tree status on success, rejects on failure.
+   * Requires {@link connect} to have been called first.
+   */
   actionAndWait(name: string, payload?: unknown): Promise<{ messageId: string; treeStatus: string }>;
+  /** Interrupt the currently processing message. Bypasses the lock. */
+  interrupt(): Promise<{ interrupted: boolean; messageId?: string }>;
+  /** Clear the held state so the next tick processes normally. */
+  resume(): Promise<{ resumed: boolean }>;
+  /**
+   * Interrupt current processing, wait for the lock to release, then send a new action.
+   * The action clears the held state implicitly.
+   *
+   * If nothing is being processed, the action is sent immediately without waiting.
+   * Otherwise, waits for the interrupted message's `message:processed` or
+   * `message:failed` SSE event before sending. Requires {@link connect} when
+   * processing is active.
+   */
+  interruptAndAction(name: string, payload?: unknown): Promise<{ id: string }>;
+  /** Returns the current blackboard state. */
   blackboard(): Promise<Record<string, unknown>>;
+  /** Returns tree structure metadata. */
   tree(): Promise<unknown>;
+  /** Returns tree status metadata. */
   status(): Promise<unknown>;
+  /**
+   * Subscribe to a specific SSE event type. For `client:event` events, you can
+   * also subscribe by event name (e.g., `on('ui:show_review', handler)`).
+   */
   on(event: string, handler: (data: unknown) => void): void;
+  /** Subscribe to all SSE events. */
   onAny(handler: (event: string, data: unknown) => void): void;
+  /** Unsubscribe a handler from a specific event type. */
   off(event: string, handler: (data: unknown) => void): void;
+  /**
+   * Open an SSE connection to the server's event stream.
+   * No-op if already connected or if `globalThis.EventSource` is undefined.
+   */
   connect(): void;
+  /** Close the SSE connection. */
   disconnect(): void;
 }

@@ -118,4 +118,9 @@ export class GuardNode extends BaseNode {
     this._conditionInflight = null;
     this.child.abort();
   }
+
+  override interrupt(): void {
+    this._conditionInflight = null;
+    this.child.interrupt();
+  }
 }

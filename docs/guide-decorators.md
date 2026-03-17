@@ -54,7 +54,7 @@ interface RepeatConfig extends DecoratorConfig {
 - If the child returns `RUNNING`, immediately returns `RUNNING`. The iteration counter persists across ticks — when the child completes on a subsequent tick, the repeat resumes at the same iteration rather than restarting from zero.
 - If `untilStatus` is set and the child returns that status, returns that status immediately.
 - Otherwise returns the last child status after all iterations complete.
-- Counter resets on completion, `untilStatus` match, `reset()`, or `abort()`.
+- Counter resets on completion, `untilStatus` match, `reset()`, or `abort()`. Counter is *preserved* on `interrupt()` — see [Interrupt Behavior](#interrupt-behavior) below.
 
 **Builder:**
 
@@ -164,7 +164,7 @@ interface TimeoutConfig extends DecoratorConfig {
 - A background `setTimeout` fires when the deadline passes, proactively aborting the child via `child.abort()`.
 - On the next tick after timeout, returns `FAILURE` without re-ticking the child.
 - If the child completes before the deadline, returns its status and clears the timer.
-- A fresh timeout window begins on each new activation cycle (after the child completes, or on `reset()`/`abort()`).
+- A fresh timeout window begins on each new activation cycle (after the child completes, or on `reset()`/`abort()`/`interrupt()`).
 
 **Builder:**
 
@@ -248,6 +248,30 @@ const waitForDecision = untilSuccess(
   }),
 );
 ```
+
+---
+
+## Interrupt Behavior
+
+All decorators support `interrupt()` for soft cancellation — cancelling in-flight work without losing progress. Unlike `abort()`, interrupt preserves the decorator's own state and does not require `reset()` before the next tick. See [Interrupt: Soft Cancellation](guide-error-handling.md#interrupt-soft-cancellation) for the full explanation.
+
+By default, decorators delegate `interrupt()` to their child via the `BaseNode` default implementation. Two decorators have explicit overrides:
+
+- **TimeoutNode**: Clears the timer and recorded start time in addition to interrupting the child. On the next tick, a fresh timeout window starts from zero.
+- **GuardNode**: Clears any pending async condition evaluation in addition to interrupting the child.
+
+The remaining decorators (InverterNode, AlwaysSucceedNode, AlwaysFailNode, UntilSuccessNode) use the BaseNode default, which recurses `interrupt()` into the child.
+
+### Counter preservation
+
+`RepeatNode` and `RetryNode` preserve their counters on interrupt — this is a key behavioral difference from `abort()`:
+
+| Decorator    | On `abort()`             | On `interrupt()`           |
+|--------------|--------------------------|----------------------------|
+| `RepeatNode` | Counter resets to 0      | Counter preserved          |
+| `RetryNode`  | Attempt counter resets   | Attempt counter preserved  |
+
+This means an interrupted retry resumes at the same attempt count, and an interrupted repeat resumes at the same iteration. The interrupted child restarts fresh (its inflight state is cleared), but the decorator does not count the interruption as a failed attempt or completed iteration.
 
 ---
 

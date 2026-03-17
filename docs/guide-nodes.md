@@ -229,8 +229,9 @@ class LogNode extends BaseNode {
 
 - `reset()` -- override if your node maintains state between ticks that should be cleared when the tree resets. `ActionNode` and `AgentNode` override `reset()` to clear inflight state, making the next tick start fresh.
 - `abort()` -- override if your node starts work that should be cancelled when the tree is aborted (e.g., pending network requests, timers). `ActionNode` and `AgentNode` override `abort()` to clear inflight state and (for AgentNode) cancel the in-flight SDK request. After `abort()`, a `reset()` is required before the tree can tick again.
+- `interrupt()` -- override if your node needs custom behavior when the tree is interrupted. The default implementation clears unsettled inflight state and recurses into children. Unlike `abort()`, interrupt preserves composite cycle state and does not require `reset()`. `AgentNode` overrides `interrupt()` to cancel the in-flight SDK request while preserving `cachedStatus`. See [Interrupt: Soft Cancellation](guide-error-handling.md#interrupt-soft-cancellation) for details.
 
-Both methods are no-ops by default on `BaseNode`.
+`reset()` and `abort()` are no-ops by default on `BaseNode`. `interrupt()` has a default implementation that clears unsettled inflight state and recurses into children.
 
 ---
 
