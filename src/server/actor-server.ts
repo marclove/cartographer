@@ -339,12 +339,13 @@ export class ActorServer {
       'Connection': 'keep-alive',
     });
 
-    // Build snapshot from readTree (structure) + state store (blackboard)
+    // Build snapshot from readTree (structure) + state store (blackboard) + stats
     const tree = this.readTree;
     const state = await this.stateStore.getState('default');
     const snapshot = {
       tree: serializeTreeForApi(tree.root),
       blackboard: state?.blackboard ?? {},
+      stats: { ...this.stats, asOfEventId: this.eventBuffer.latestId },
     };
 
     // Send snapshot

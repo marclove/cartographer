@@ -67,6 +67,10 @@ const MAX_EVENTS = 2000;
 
 // Connection
 let connectionState = $state<ConnectionState>('connecting');
+
+// Stats baseline — events with IDs <= this value are already accounted
+// for in the snapshot stats and should not re-increment counters.
+let statsAsOfEventId = 0;
 export function getConnectionState(): ConnectionState {
   return connectionState;
 }
@@ -221,6 +225,17 @@ export function connect(): void {
       treeName = data.tree.name;
       treeRoot = data.tree;
       blackboard = data.blackboard;
+      // Initialize stats from server if provided (avoids undercounting
+      // when the event buffer has dropped older events)
+      if (data.stats) {
+        tickCount = data.stats.tickCount;
+        cycleCount = data.stats.cycleCount;
+        lastStatus = data.stats.lastStatus;
+        lastDurationMs = data.stats.lastDurationMs;
+        statsAsOfEventId = data.stats.asOfEventId;
+      } else {
+        statsAsOfEventId = 0;
+      }
       // Reset node statuses when a fresh snapshot arrives
       nodeStatuses = new Map();
       pushEvent('snapshot', data, id);
@@ -252,11 +267,16 @@ export function connect(): void {
     },
 
     'tree:tick'(data, id) {
-      tickCount += 1;
-      lastStatus = data.status;
-      if (data.status !== 'running') {
-        cycleCount += 1;
+      // Only accumulate stats from events newer than the snapshot baseline
+      // (replayed events are already accounted for in snapshot stats)
+      if (id > statsAsOfEventId) {
+        tickCount += 1;
+        if (data.status !== 'running') {
+          cycleCount += 1;
+        }
       }
+      lastStatus = data.status;
+      lastDurationMs = data.durationMs;
       lastDurationMs = data.durationMs;
       pushEvent('tree:tick', data, id);
     },
@@ -378,6 +398,7 @@ export function _resetForTest(): void {
   cycleCount = 0;
   lastStatus = null;
   lastDurationMs = null;
+  statsAsOfEventId = 0;
   events = [];
   activeFilters = new Set(['nodes', 'agent', 'blackboard', 'strategy', 'lifecycle']);
   blackboard = {};

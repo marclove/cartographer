@@ -44,6 +44,13 @@ export interface NodeRef {
 export interface Snapshot {
   tree: TreeNode;
   blackboard: Record<string, unknown>;
+  stats?: {
+    tickCount: number;
+    cycleCount: number;
+    lastStatus: string | null;
+    lastDurationMs: number | null;
+    asOfEventId: number;
+  };
 }
 
 export interface NodeEnterEvent {
