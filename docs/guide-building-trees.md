@@ -1,6 +1,6 @@
-# Three Construction Approaches
+# Two Construction Approaches
 
-Cartographer provides three ways to build behavior trees. This guide constructs the same tree using each approach so you can compare them directly.
+Cartographer provides two ways to build behavior trees. This guide constructs the same tree using each approach so you can compare them directly.
 
 **Target tree:**
 
@@ -130,70 +130,12 @@ const tree = new TreeBuilder('my-tree')
 
 ---
 
-## Approach 3: Declarative YAML
-
-Define the tree structure in YAML and bind behavior through a registry.
-
-```yaml
-name: content-pipeline
-root:
-  type: selector
-  name: content-pipeline
-  children:
-    - type: sequence
-      name: primary-path
-      children:
-        - type: condition
-          name: has-input
-          ref: hasInput
-        - type: action
-          name: process-input
-          ref: processInput
-    - type: sequence
-      name: fallback-path
-      children:
-        - type: condition
-          name: has-cache
-          ref: hasCache
-        - type: action
-          name: use-cache
-          ref: useCache
-```
-
-Load the YAML and wire up behavior with `TreeRegistry`:
-
-```typescript
-import { TreeLoader, TreeRegistry, NodeStatus } from 'cartographer';
-
-const registry = new TreeRegistry();
-registry.registerCondition('hasInput', (ctx) => ctx.blackboard.has('input'));
-registry.registerAction('processInput', async (ctx) => {
-  const input = ctx.blackboard.get<string>('input');
-  ctx.blackboard.set('result', `Processed: ${input}`);
-  return NodeStatus.SUCCESS;
-});
-registry.registerCondition('hasCache', (ctx) => ctx.blackboard.has('cache'));
-registry.registerAction('useCache', (ctx) => {
-  ctx.blackboard.set('result', ctx.blackboard.get('cache'));
-  return NodeStatus.SUCCESS;
-});
-
-const tree = TreeLoader.fromYAML(yamlString, registry);
-```
-
-**TreeRegistry methods:** `registerAction`, `registerCondition`, `registerStrategy`, `getAction`, `getCondition`, `getStrategy`.
-
-**TreeLoader static methods:** `fromYAML(yamlString, registry)`, `fromConfig(config, registry)`.
-
----
-
 ## Trade-offs
 
 | Approach | Best for | Trade-offs |
 |----------|----------|------------|
 | Programmatic | Full type safety, complex logic | Verbose, harder to visualize structure |
 | Builder | Readability, rapid prototyping | Slightly less flexible than programmatic |
-| YAML | External configuration, non-dev editing | Requires registry, no inline functions |
 
 ---
 

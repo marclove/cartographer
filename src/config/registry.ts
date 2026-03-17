@@ -7,31 +7,20 @@ type ConditionFn = (context: TreeContext) => Promise<boolean> | boolean;
 type AnyStrategy = SelectionStrategy | ExecutionStrategy | ParallelStrategy;
 
 /**
- * A named registry that maps string identifiers to TypeScript implementations.
+ * A general-purpose named registry for actions, conditions, and strategies.
  *
- * `TreeRegistry` is the dependency injection mechanism for YAML-based tree
- * configuration. When {@link TreeLoader} parses a YAML tree definition, it
- * resolves node references (e.g. `ref: fetch-user`) and strategy references
- * (e.g. `strategy.ref: my-strategy`) by looking them up in the registry.
+ * `TreeRegistry` maps string identifiers to their TypeScript implementations,
+ * providing a dependency-injection mechanism for behavior tree construction.
+ * It will serve as the resolution layer for future configuration and
+ * orchestration features.
  *
- * Register all required implementations before passing the registry to
- * `TreeLoader.fromYAML` or `TreeLoader.fromConfig`. Registrations can be
- * done in any order. All `get*` methods throw a descriptive error if the
- * requested name has not been registered.
- *
- * The three registries and their corresponding YAML fields:
- *
- * | Registry | YAML field | Node types |
- * |---|---|---|
- * | Actions | `ref` | `action` nodes |
- * | Conditions | `ref` | `condition` nodes; `conditionRef` on `guard` nodes |
- * | Strategies | `strategy.ref` | `selector`, `sequence`, `parallel` nodes |
+ * All `get*` methods throw a descriptive error if the requested name has not
+ * been registered.
  *
  * @example
  * ```ts
  * const registry = new TreeRegistry();
  *
- * // Register actions and conditions
  * registry.registerAction('fetch-user', async (ctx) => {
  *   const user = await getUser(ctx.blackboard.get<string>('userId'));
  *   ctx.blackboard.set('user', user);
@@ -42,13 +31,9 @@ type AnyStrategy = SelectionStrategy | ExecutionStrategy | ParallelStrategy;
  *   ctx.blackboard.has('authToken'),
  * );
  *
- * // Register a strategy
  * registry.registerStrategy('adaptive-order', new AgentExecutionStrategy({
  *   prompt: 'Order these steps for optimal execution',
  * }));
- *
- * // Build the tree from YAML
- * const tree = TreeLoader.fromYAML(yamlString, registry);
  * ```
  */
 export class TreeRegistry {
@@ -59,7 +44,6 @@ export class TreeRegistry {
   /**
    * Register an action function under the given name.
    *
-   * Referenced in YAML by `ref: <name>` on `action` node definitions.
    * Overwrites any previously registered action with the same name.
    */
   registerAction(name: string, fn: ActionFn): void {
@@ -69,8 +53,6 @@ export class TreeRegistry {
   /**
    * Register a condition function under the given name.
    *
-   * Referenced in YAML by `ref: <name>` on `condition` nodes, and by
-   * `conditionRef: <name>` on `guard` nodes.
    * Overwrites any previously registered condition with the same name.
    */
   registerCondition(name: string, fn: ConditionFn): void {
@@ -81,10 +63,8 @@ export class TreeRegistry {
    * Register a strategy under the given name.
    *
    * Accepts any of {@link SelectionStrategy}, {@link ExecutionStrategy}, or
-   * {@link ParallelStrategy}. Referenced in YAML by `strategy.ref: <name>`
-   * on `selector`, `sequence`, and `parallel` node definitions respectively.
-   * The caller is responsible for registering the correct strategy type for
-   * the composite node that will consume it.
+   * {@link ParallelStrategy}. The caller is responsible for registering the
+   * correct strategy type for the composite node that will consume it.
    * Overwrites any previously registered strategy with the same name.
    */
   registerStrategy(name: string, strategy: AnyStrategy): void {
