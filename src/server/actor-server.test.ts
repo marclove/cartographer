@@ -188,11 +188,15 @@ describe('ActorServer write endpoints', () => {
     // Wait for processing
     await new Promise(r => setTimeout(r, 50));
 
-    // Check events in store
+    // Check events in store — tree events now precede lifecycle events
     const events: Array<{ type: string }> = [];
     const iter = store.readEvents('default')[Symbol.asyncIterator]();
-    const { value } = await iter.next();
-    events.push(value);
-    expect(events[0].type).toBe('message:processed');
+    let next = await iter.next();
+    while (!next.done) {
+      events.push(next.value);
+      if (next.value.type === 'message:processed') break;
+      next = await iter.next();
+    }
+    expect(events.some(e => e.type === 'message:processed')).toBe(true);
   });
 });

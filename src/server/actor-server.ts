@@ -8,6 +8,7 @@ import { TreeActor } from '../actor/tree-actor.js';
 import { generateMessageId } from '../actor/types.js';
 import type { ActorMessage } from '../actor/types.js';
 import { jsonResponse, jsonError } from './http-utils.js';
+import { EventBridge } from './event-bridge.js';
 
 export interface ActorServerOptions {
   createTree: () => BehaviorTree;
@@ -185,48 +186,27 @@ export class ActorServer {
       try { await this.stateStore.acquireLock('default', requestId, 30000); } catch {}
     }, 10000);
 
+    const bridge = new EventBridge(this.stateStore, 'default');
+
     try {
       const actor = new TreeActor({
         createTree: this.createTree,
         stateStore: this.stateStore,
         stateKey: 'default',
         topologyPolicy: this.topologyPolicy,
+        eventBridge: bridge,
       });
       this.activeActor = actor;
       this.activeMessageId = messageId;
       const result = await actor.process(msg);
 
-      if (result.clientEvents && result.clientEvents.length > 0) {
-        await this.stateStore.appendEvents('default', result.clientEvents.map((ce) => ({
-          id: generateMessageId(),
-          type: 'client:event',
-          data: { name: ce.name, data: ce.data },
-          timestamp: Date.now(),
-        })));
-      }
-
       if (result.interrupted) {
-        await this.stateStore.appendEvents('default', [{
-          id: generateMessageId(),
-          type: 'message:interrupted',
-          data: { messageId },
-          timestamp: Date.now(),
-        }]);
+        await bridge.emitInterrupted(messageId);
       }
 
-      await this.stateStore.appendEvents('default', [{
-        id: generateMessageId(),
-        type: 'message:processed',
-        data: { messageId, treeStatus: String(result.treeStatus) },
-        timestamp: Date.now(),
-      }]);
+      await bridge.emitProcessed(messageId, String(result.treeStatus));
     } catch (error) {
-      await this.stateStore.appendEvents('default', [{
-        id: generateMessageId(),
-        type: 'message:failed',
-        data: { messageId, error: error instanceof Error ? error.message : String(error) },
-        timestamp: Date.now(),
-      }]);
+      await bridge.emitFailed(messageId, error instanceof Error ? error.message : String(error));
     } finally {
       this.activeActor = null;
       this.activeMessageId = null;

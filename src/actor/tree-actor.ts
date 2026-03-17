@@ -3,12 +3,14 @@ import { NodeStatus } from '../types.js';
 import { serializeTree, restoreTree } from '../core/serialization.js';
 import type { StateStore } from '../state/state-store.js';
 import type { ActorMessage } from './types.js';
+import type { EventBridge } from '../server/event-bridge.js';
 
 export interface TreeActorOptions {
   createTree: () => BehaviorTree;
   stateStore: StateStore;
   stateKey: string;
   topologyPolicy?: 'fail' | 'reset';
+  eventBridge?: EventBridge;
 }
 
 export interface ProcessResult {
@@ -17,8 +19,6 @@ export interface ProcessResult {
   interrupted?: boolean;
   /** Returned when the tree is held and a tick was skipped. */
   held?: boolean;
-  /** Client events emitted by emitToClient nodes during processing. */
-  clientEvents?: Array<{ name: string; data: unknown }>;
 }
 
 /**
@@ -31,6 +31,7 @@ export class TreeActor {
   private stateStore: StateStore;
   private stateKey: string;
   private topologyPolicy: 'fail' | 'reset';
+  private eventBridge?: EventBridge;
   private interruptController: AbortController | null = null;
 
   constructor(options: TreeActorOptions) {
@@ -38,6 +39,7 @@ export class TreeActor {
     this.stateStore = options.stateStore;
     this.stateKey = options.stateKey;
     this.topologyPolicy = options.topologyPolicy ?? 'fail';
+    this.eventBridge = options.eventBridge;
   }
 
   /** Signal the in-progress processing loop to interrupt. Safe to call at any time. */
@@ -47,11 +49,7 @@ export class TreeActor {
 
   async process(msg: ActorMessage): Promise<ProcessResult> {
     const tree = this.createTree();
-
-    const clientEvents: Array<{ name: string; data: unknown }> = [];
-    tree.events.on('client:event', (event) => {
-      clientEvents.push(event as { name: string; data: unknown });
-    });
+    this.eventBridge?.bridgeTree(tree);
 
     // Load and restore state
     const stored = await this.stateStore.getState(this.stateKey);
@@ -114,7 +112,7 @@ export class TreeActor {
       ...(interrupted && { held: true }),
     });
 
-    return { treeStatus, ...(interrupted && { interrupted: true }), clientEvents };
+    return { treeStatus, ...(interrupted && { interrupted: true }) };
   }
 
   private async runToCompletion(tree: BehaviorTree): Promise<NodeStatus> {

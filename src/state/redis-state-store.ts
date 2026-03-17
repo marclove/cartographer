@@ -20,7 +20,7 @@ import type { StateStore, TreeSessionState, TreeEvent } from './state-store.js';
 export interface RedisStateStoreOptions {
   /** An existing ioredis instance. */
   redis: any;
-  /** Maximum events to retain per stream. Defaults to 1000. */
+  /** Maximum events to retain per stream. Defaults to 10000. */
   maxEvents?: number;
   /** Key prefix for all Redis keys. Defaults to 'cartographer:'. */
   keyPrefix?: string;
@@ -33,7 +33,7 @@ export class RedisStateStore implements StateStore {
 
   constructor(options: RedisStateStoreOptions) {
     this.redis = options.redis;
-    this.maxEvents = options.maxEvents ?? 1000;
+    this.maxEvents = options.maxEvents ?? 10000;
     this.keyPrefix = options.keyPrefix ?? 'cartographer:';
   }
 

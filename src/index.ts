@@ -109,6 +109,7 @@ export type { RedisStateStoreOptions } from './state/redis-state-store.js';
 // ActorServer
 export { ActorServer } from './server/actor-server.js';
 export type { ActorServerOptions } from './server/actor-server.js';
+export { EventBridge } from './server/event-bridge.js';
 
 // Client
 export { createCartographerClient, ConflictError } from './client/index.js';
