@@ -93,7 +93,7 @@ export class ActorServer {
 
   /**
    * Subscribe to a tree's events and forward them through the SSE pipeline.
-   * Used by the serve command to bridge TreeScheduler events to dashboard clients.
+   * Used to bridge TreeScheduler events to dashboard clients.
    */
   bridgeTree(tree: BehaviorTree): void {
     tree.events.onAny((type, data) => {
