@@ -145,10 +145,11 @@ async function runDaemon(
   }
 
   let scheduler: TreeScheduler | undefined;
+  let stopTickFormatter: (() => void) | undefined;
 
   if (!options.noTick && options.tickInterval) {
     const tickTree = factory(runContext).tree;
-    createFormatter(tickTree.events, { json, verbose, quiet });
+    stopTickFormatter = createFormatter(tickTree.events, { json, verbose, quiet });
     server.bridgeTree(tickTree);
     scheduler = new TreeScheduler({
       tree: tickTree,
@@ -164,6 +165,7 @@ async function runDaemon(
         process.stderr.write('\nShutting down...\n');
       }
       if (scheduler) await scheduler.stop();
+      if (stopTickFormatter) stopTickFormatter();
       if (dashHandle) await dashHandle.close();
       await server.stop();
       resolve();
