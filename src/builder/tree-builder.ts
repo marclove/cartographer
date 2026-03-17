@@ -19,9 +19,32 @@ import type {
   AgentNodeConfig,
 } from '../types.js';
 import { BaseNode } from '../nodes/base.js';
+import type { TreeRegistry } from '../config/registry.js';
 
 type ActionFn = (context: TreeContext) => Promise<NodeStatus> | NodeStatus;
 type ConditionFn = (context: TreeContext) => Promise<boolean> | boolean;
+type AnyStrategy = SelectionStrategy | ExecutionStrategy | ParallelStrategy;
+
+function resolveAction(registry: TreeRegistry | undefined, ref: string): ActionFn {
+  if (!registry) {
+    throw new Error(`Cannot resolve registry reference "${ref}": no registry provided to TreeBuilder`);
+  }
+  return registry.getAction(ref);
+}
+
+function resolveCondition(registry: TreeRegistry | undefined, ref: string): ConditionFn {
+  if (!registry) {
+    throw new Error(`Cannot resolve registry reference "${ref}": no registry provided to TreeBuilder`);
+  }
+  return registry.getCondition(ref);
+}
+
+function resolveStrategy(registry: TreeRegistry | undefined, ref: string): AnyStrategy {
+  if (!registry) {
+    throw new Error(`Cannot resolve registry reference "${ref}": no registry provided to TreeBuilder`);
+  }
+  return registry.getStrategy(ref);
+}
 
 /**
  * Fluent builder for constructing the children of a composite node.
@@ -71,24 +94,28 @@ type ConditionFn = (context: TreeContext) => Promise<boolean> | boolean;
 export class CompositeBuilder {
   private children: BTreeNode[] = [];
 
+  constructor(protected registry?: TreeRegistry) {}
+
   /**
    * Add an {@link ActionNode} that executes `fn` when ticked.
    *
-   * `fn` receives the {@link TreeContext} and must return `SUCCESS`,
-   * `FAILURE`, or `RUNNING`.
+   * Accepts either an inline function or a string registry reference.
    */
-  action(name: string, fn: ActionFn): this {
+  action(name: string, fnOrRef: ActionFn | string): this {
+    const fn = typeof fnOrRef === 'string' ? resolveAction(this.registry, fnOrRef) : fnOrRef;
     this.children.push(new ActionNode({ name, action: fn }));
     return this;
   }
 
   /**
-   * Add a {@link ConditionNode} that evaluates `fn` when ticked.
+   * Add a {@link ConditionNode} that evaluates a predicate when ticked.
    *
-   * `fn` returns a boolean; `true` maps to `SUCCESS`, `false` to `FAILURE`.
-   * Conditions never return `RUNNING`.
+   * Accepts either an inline function or a string registry reference.
+   * `true` maps to `SUCCESS`, `false` to `FAILURE`. Conditions never
+   * return `RUNNING`.
    */
-  condition(name: string, fn: ConditionFn): this {
+  condition(name: string, fnOrRef: ConditionFn | string): this {
+    const fn = typeof fnOrRef === 'string' ? resolveCondition(this.registry, fnOrRef) : fnOrRef;
     this.children.push(new ConditionNode({ name, condition: fn }));
     return this;
   }
@@ -121,9 +148,10 @@ export class CompositeBuilder {
    * b.selector('adaptive', { strategy: myStrategy }, (b) => { ... });
    * ```
    */
-  selector(name: string, optionsOrConfigure?: { strategy?: SelectionStrategy; context?: Partial<TreeContext> } | ((b: CompositeBuilder) => void), configure?: (b: CompositeBuilder) => void): this {
-    const { strategy, context, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
-    const builder = new CompositeBuilder();
+  selector(name: string, optionsOrConfigure?: { strategy?: SelectionStrategy | string; context?: Partial<TreeContext> } | ((b: CompositeBuilder) => void), configure?: (b: CompositeBuilder) => void): this {
+    const { strategy: raw, context, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
+    const strategy = typeof raw === 'string' ? resolveStrategy(this.registry, raw) : raw;
+    const builder = new CompositeBuilder(this.registry);
     configureFn?.(builder);
     const node = new SelectorNode({ name, children: builder.getChildren(), strategy: strategy as SelectionStrategy | undefined });
     applyContextOverrides(node, context);
@@ -149,9 +177,10 @@ export class CompositeBuilder {
    * b.sequence('adaptive', { strategy: myStrategy }, (b) => { ... });
    * ```
    */
-  sequence(name: string, optionsOrConfigure?: { strategy?: ExecutionStrategy; context?: Partial<TreeContext> } | ((b: CompositeBuilder) => void), configure?: (b: CompositeBuilder) => void): this {
-    const { strategy, context, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
-    const builder = new CompositeBuilder();
+  sequence(name: string, optionsOrConfigure?: { strategy?: ExecutionStrategy | string; context?: Partial<TreeContext> } | ((b: CompositeBuilder) => void), configure?: (b: CompositeBuilder) => void): this {
+    const { strategy: raw, context, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
+    const strategy = typeof raw === 'string' ? resolveStrategy(this.registry, raw) : raw;
+    const builder = new CompositeBuilder(this.registry);
     configureFn?.(builder);
     const node = new SequenceNode({ name, children: builder.getChildren(), strategy: strategy as ExecutionStrategy | undefined });
     applyContextOverrides(node, context);
@@ -176,9 +205,10 @@ export class CompositeBuilder {
    * b.parallel('adaptive', { strategy: myStrategy }, (b) => { ... });
    * ```
    */
-  parallel(name: string, optionsOrConfigure?: { strategy?: ParallelStrategy; context?: Partial<TreeContext> } | ((b: CompositeBuilder) => void), configure?: (b: CompositeBuilder) => void): this {
-    const { strategy, context, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
-    const builder = new CompositeBuilder();
+  parallel(name: string, optionsOrConfigure?: { strategy?: ParallelStrategy | string; context?: Partial<TreeContext> } | ((b: CompositeBuilder) => void), configure?: (b: CompositeBuilder) => void): this {
+    const { strategy: raw, context, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
+    const strategy = typeof raw === 'string' ? resolveStrategy(this.registry, raw) : raw;
+    const builder = new CompositeBuilder(this.registry);
     configureFn?.(builder);
     const node = new ParallelNode({ name, children: builder.getChildren(), strategy: strategy as ParallelStrategy | undefined });
     applyContextOverrides(node, context);
@@ -191,7 +221,7 @@ export class CompositeBuilder {
    * `RUNNING` is passed through unchanged.
    */
   inverter(name: string, configure: (b: SingleChildBuilder) => void): this {
-    const builder = new SingleChildBuilder();
+    const builder = new SingleChildBuilder(this.registry);
     configure(builder);
     this.children.push(new InverterNode({ name, child: builder.getChild() }));
     return this;
@@ -211,7 +241,7 @@ export class CompositeBuilder {
    */
   repeat(name: string, options: { count?: number; untilStatus?: NodeStatus; context?: Partial<TreeContext> }, configure: (b: SingleChildBuilder) => void): this {
     const { context, ...nodeOptions } = options;
-    const builder = new SingleChildBuilder();
+    const builder = new SingleChildBuilder(this.registry);
     configure(builder);
     const node = new RepeatNode({ name, child: builder.getChild(), ...nodeOptions });
     applyContextOverrides(node, context);
@@ -233,7 +263,7 @@ export class CompositeBuilder {
    */
   retry(name: string, options: { maxAttempts: number; delayMs?: number; context?: Partial<TreeContext> }, configure: (b: SingleChildBuilder) => void): this {
     const { context, ...nodeOptions } = options;
-    const builder = new SingleChildBuilder();
+    const builder = new SingleChildBuilder(this.registry);
     configure(builder);
     const node = new RetryNode({ name, child: builder.getChild(), ...nodeOptions });
     applyContextOverrides(node, context);
@@ -246,7 +276,7 @@ export class CompositeBuilder {
    * what its child returns.
    */
   alwaysSucceed(name: string, configure: (b: SingleChildBuilder) => void): this {
-    const builder = new SingleChildBuilder();
+    const builder = new SingleChildBuilder(this.registry);
     configure(builder);
     this.children.push(new AlwaysSucceedNode({ name, child: builder.getChild() }));
     return this;
@@ -257,7 +287,7 @@ export class CompositeBuilder {
    * what its child returns.
    */
   alwaysFail(name: string, configure: (b: SingleChildBuilder) => void): this {
-    const builder = new SingleChildBuilder();
+    const builder = new SingleChildBuilder(this.registry);
     configure(builder);
     this.children.push(new AlwaysFailNode({ name, child: builder.getChild() }));
     return this;
@@ -273,7 +303,7 @@ export class CompositeBuilder {
    */
   timeout(name: string, options: { timeoutMs: number; context?: Partial<TreeContext> }, configure: (b: SingleChildBuilder) => void): this {
     const { context, ...nodeOptions } = options;
-    const builder = new SingleChildBuilder();
+    const builder = new SingleChildBuilder(this.registry);
     configure(builder);
     const node = new TimeoutNode({ name, child: builder.getChild(), ...nodeOptions });
     applyContextOverrides(node, context);
@@ -285,21 +315,23 @@ export class CompositeBuilder {
    * Add a {@link GuardNode} that only ticks its child when a condition passes.
    *
    * Returns `FAILURE` without ticking the child when `condition` returns
-   * `false`.
-   *
-   * @param options.condition - The predicate to evaluate before ticking.
+   * `false`. Accepts either an inline function or a string registry reference
+   * for the condition.
    *
    * ```ts
    * b.guard('require-auth', { condition: (ctx) => ctx.blackboard.has('token') }, (b) => {
    *   b.action('fetch-profile', fetchFn);
    * });
+   * // Or with a registry reference:
+   * b.guard('require-auth', { condition: 'has-token' }, (b) => { ... });
    * ```
    */
-  guard(name: string, options: { condition: ConditionFn; context?: Partial<TreeContext> }, configure: (b: SingleChildBuilder) => void): this {
-    const { context, ...nodeOptions } = options;
-    const builder = new SingleChildBuilder();
+  guard(name: string, options: { condition: ConditionFn | string; context?: Partial<TreeContext> }, configure: (b: SingleChildBuilder) => void): this {
+    const { context, condition: condOrRef } = options;
+    const condition = typeof condOrRef === 'string' ? resolveCondition(this.registry, condOrRef) : condOrRef;
+    const builder = new SingleChildBuilder(this.registry);
     configure(builder);
-    const node = new GuardNode({ name, child: builder.getChild(), condition: nodeOptions.condition });
+    const node = new GuardNode({ name, child: builder.getChild(), condition });
     applyContextOverrides(node, context);
     this.children.push(node);
     return this;
@@ -339,14 +371,18 @@ export class CompositeBuilder {
 export class SingleChildBuilder {
   private child: BTreeNode | null = null;
 
-  /** Add an {@link ActionNode} as the single child. */
-  action(name: string, fn: ActionFn): this {
+  constructor(private registry?: TreeRegistry) {}
+
+  /** Add an {@link ActionNode} as the single child. Accepts a function or registry ref. */
+  action(name: string, fnOrRef: ActionFn | string): this {
+    const fn = typeof fnOrRef === 'string' ? resolveAction(this.registry, fnOrRef) : fnOrRef;
     this.child = new ActionNode({ name, action: fn });
     return this;
   }
 
-  /** Add a {@link ConditionNode} as the single child. */
-  condition(name: string, fn: ConditionFn): this {
+  /** Add a {@link ConditionNode} as the single child. Accepts a function or registry ref. */
+  condition(name: string, fnOrRef: ConditionFn | string): this {
+    const fn = typeof fnOrRef === 'string' ? resolveCondition(this.registry, fnOrRef) : fnOrRef;
     this.child = new ConditionNode({ name, condition: fn });
     return this;
   }
@@ -358,9 +394,10 @@ export class SingleChildBuilder {
   }
 
   /** Add a {@link SelectorNode} as the single child. */
-  selector(name: string, optionsOrConfigure?: { strategy?: SelectionStrategy; context?: Partial<TreeContext> } | ((b: CompositeBuilder) => void), configure?: (b: CompositeBuilder) => void): this {
-    const { strategy, context, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
-    const builder = new CompositeBuilder();
+  selector(name: string, optionsOrConfigure?: { strategy?: SelectionStrategy | string; context?: Partial<TreeContext> } | ((b: CompositeBuilder) => void), configure?: (b: CompositeBuilder) => void): this {
+    const { strategy: raw, context, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
+    const strategy = typeof raw === 'string' ? resolveStrategy(this.registry, raw) : raw;
+    const builder = new CompositeBuilder(this.registry);
     configureFn?.(builder);
     const node = new SelectorNode({ name, children: builder.getChildren(), strategy: strategy as SelectionStrategy | undefined });
     applyContextOverrides(node, context);
@@ -369,9 +406,10 @@ export class SingleChildBuilder {
   }
 
   /** Add a {@link SequenceNode} as the single child. */
-  sequence(name: string, optionsOrConfigure?: { strategy?: ExecutionStrategy; context?: Partial<TreeContext> } | ((b: CompositeBuilder) => void), configure?: (b: CompositeBuilder) => void): this {
-    const { strategy, context, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
-    const builder = new CompositeBuilder();
+  sequence(name: string, optionsOrConfigure?: { strategy?: ExecutionStrategy | string; context?: Partial<TreeContext> } | ((b: CompositeBuilder) => void), configure?: (b: CompositeBuilder) => void): this {
+    const { strategy: raw, context, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
+    const strategy = typeof raw === 'string' ? resolveStrategy(this.registry, raw) : raw;
+    const builder = new CompositeBuilder(this.registry);
     configureFn?.(builder);
     const node = new SequenceNode({ name, children: builder.getChildren(), strategy: strategy as ExecutionStrategy | undefined });
     applyContextOverrides(node, context);
@@ -380,9 +418,10 @@ export class SingleChildBuilder {
   }
 
   /** Add a {@link ParallelNode} as the single child. */
-  parallel(name: string, optionsOrConfigure?: { strategy?: ParallelStrategy; context?: Partial<TreeContext> } | ((b: CompositeBuilder) => void), configure?: (b: CompositeBuilder) => void): this {
-    const { strategy, context, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
-    const builder = new CompositeBuilder();
+  parallel(name: string, optionsOrConfigure?: { strategy?: ParallelStrategy | string; context?: Partial<TreeContext> } | ((b: CompositeBuilder) => void), configure?: (b: CompositeBuilder) => void): this {
+    const { strategy: raw, context, configureFn } = parseCompositeArgs(optionsOrConfigure, configure);
+    const strategy = typeof raw === 'string' ? resolveStrategy(this.registry, raw) : raw;
+    const builder = new CompositeBuilder(this.registry);
     configureFn?.(builder);
     const node = new ParallelNode({ name, children: builder.getChildren(), strategy: strategy as ParallelStrategy | undefined });
     applyContextOverrides(node, context);
@@ -392,7 +431,7 @@ export class SingleChildBuilder {
 
   /** Add an {@link InverterNode} as the single child. */
   inverter(name: string, configure: (b: SingleChildBuilder) => void): this {
-    const builder = new SingleChildBuilder();
+    const builder = new SingleChildBuilder(this.registry);
     configure(builder);
     this.child = new InverterNode({ name, child: builder.getChild() });
     return this;
@@ -401,7 +440,7 @@ export class SingleChildBuilder {
   /** Add a {@link RepeatNode} as the single child. */
   repeat(name: string, options: { count?: number; untilStatus?: NodeStatus; context?: Partial<TreeContext> }, configure: (b: SingleChildBuilder) => void): this {
     const { context, ...nodeOptions } = options;
-    const builder = new SingleChildBuilder();
+    const builder = new SingleChildBuilder(this.registry);
     configure(builder);
     const node = new RepeatNode({ name, child: builder.getChild(), ...nodeOptions });
     applyContextOverrides(node, context);
@@ -412,7 +451,7 @@ export class SingleChildBuilder {
   /** Add a {@link RetryNode} as the single child. */
   retry(name: string, options: { maxAttempts: number; delayMs?: number; context?: Partial<TreeContext> }, configure: (b: SingleChildBuilder) => void): this {
     const { context, ...nodeOptions } = options;
-    const builder = new SingleChildBuilder();
+    const builder = new SingleChildBuilder(this.registry);
     configure(builder);
     const node = new RetryNode({ name, child: builder.getChild(), ...nodeOptions });
     applyContextOverrides(node, context);
@@ -422,7 +461,7 @@ export class SingleChildBuilder {
 
   /** Add an {@link AlwaysSucceedNode} as the single child. */
   alwaysSucceed(name: string, configure: (b: SingleChildBuilder) => void): this {
-    const builder = new SingleChildBuilder();
+    const builder = new SingleChildBuilder(this.registry);
     configure(builder);
     this.child = new AlwaysSucceedNode({ name, child: builder.getChild() });
     return this;
@@ -430,7 +469,7 @@ export class SingleChildBuilder {
 
   /** Add an {@link AlwaysFailNode} as the single child. */
   alwaysFail(name: string, configure: (b: SingleChildBuilder) => void): this {
-    const builder = new SingleChildBuilder();
+    const builder = new SingleChildBuilder(this.registry);
     configure(builder);
     this.child = new AlwaysFailNode({ name, child: builder.getChild() });
     return this;
@@ -439,7 +478,7 @@ export class SingleChildBuilder {
   /** Add a {@link TimeoutNode} as the single child. */
   timeout(name: string, options: { timeoutMs: number; context?: Partial<TreeContext> }, configure: (b: SingleChildBuilder) => void): this {
     const { context, ...nodeOptions } = options;
-    const builder = new SingleChildBuilder();
+    const builder = new SingleChildBuilder(this.registry);
     configure(builder);
     const node = new TimeoutNode({ name, child: builder.getChild(), ...nodeOptions });
     applyContextOverrides(node, context);
@@ -447,12 +486,13 @@ export class SingleChildBuilder {
     return this;
   }
 
-  /** Add a {@link GuardNode} as the single child. */
-  guard(name: string, options: { condition: ConditionFn; context?: Partial<TreeContext> }, configure: (b: SingleChildBuilder) => void): this {
-    const { context, ...nodeOptions } = options;
-    const builder = new SingleChildBuilder();
+  /** Add a {@link GuardNode} as the single child. Condition accepts a function or registry ref. */
+  guard(name: string, options: { condition: ConditionFn | string; context?: Partial<TreeContext> }, configure: (b: SingleChildBuilder) => void): this {
+    const { context, condition: condOrRef } = options;
+    const condition = typeof condOrRef === 'string' ? resolveCondition(this.registry, condOrRef) : condOrRef;
+    const builder = new SingleChildBuilder(this.registry);
     configure(builder);
-    const node = new GuardNode({ name, child: builder.getChild(), condition: nodeOptions.condition });
+    const node = new GuardNode({ name, child: builder.getChild(), condition });
     applyContextOverrides(node, context);
     this.child = node;
     return this;
@@ -555,8 +595,8 @@ export class TreeBuilder extends CompositeBuilder {
   private treeName: string;
   private treeOnElicitation?: OnElicitation;
 
-  constructor(name: string) {
-    super();
+  constructor(name: string, registry?: TreeRegistry) {
+    super(registry);
     this.treeName = name;
   }
 

@@ -7,18 +7,13 @@ import { SelectorNode } from '../composites/selector.js';
 import { ParallelNode } from '../composites/parallel.js';
 import { RetryNode } from '../decorators/retry.js';
 import { TimeoutNode } from '../decorators/timeout.js';
-import { GuardNode } from '../decorators/guard.js';
 import { TreeBuilder } from '../builder/tree-builder.js';
-import { TreeRegistry } from '../config/registry.js';
-import { TreeLoader } from '../config/loader.js';
 import { TreeScheduler } from '../scheduler/tree-scheduler.js';
-import { BehaviorTree } from '../core/behavior-tree.js';
 import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
 import {
   createContext,
   sequentialAction,
   blackboardWriter,
-  slowAction,
   collectEvents,
 } from './helpers.js';
 
@@ -210,64 +205,6 @@ describe('Deterministic Integration Tests', () => {
       NodeStatus.SUCCESS,
       NodeStatus.SUCCESS,
     ]);
-  });
-
-  it('Config-driven tree via Loader + Registry', async () => {
-    const registry = new TreeRegistry();
-
-    registry.registerAction('increment', (ctx) => {
-      const count = (ctx.blackboard.get<number>('count') ?? 0) + 1;
-      ctx.blackboard.set('count', count);
-      return NodeStatus.SUCCESS;
-    });
-
-    registry.registerAction('double', (ctx) => {
-      const count = ctx.blackboard.get<number>('count') ?? 0;
-      ctx.blackboard.set('count', count * 2);
-      return NodeStatus.SUCCESS;
-    });
-
-    registry.registerCondition('isPositive', (ctx) => {
-      return (ctx.blackboard.get<number>('count') ?? 0) > 0;
-    });
-
-    const yaml = `
-name: config-test
-root:
-  type: sequence
-  name: main
-  children:
-    - type: action
-      name: step1
-      ref: increment
-    - type: action
-      name: step2
-      ref: double
-    - type: condition
-      name: check
-      ref: isPositive
-`;
-
-    const tree = TreeLoader.fromYAML(yaml, registry);
-
-    // ActionNodes use the inflight pattern (RUNNING on first tick, result on
-    // second). ConditionNode ('check') is reactive and resolves immediately.
-    // Tick until the tree reaches a terminal status.
-    //
-    //  Tick 1: increment starts inflight                → RUNNING
-    //  Tick 2: increment polls SUCCESS (count=1, cached);
-    //          double starts inflight                   → RUNNING
-    //  Tick 3: increment cached; double polls SUCCESS (count=2, cached);
-    //          condition check (ConditionNode) → true   → SUCCESS
-    let status = await tree.tick();
-    while (status === NodeStatus.RUNNING) {
-      await flush();
-      status = await tree.tick();
-    }
-
-    const snapshot = (tree.blackboard as { toRecord(): Record<string, unknown> }).toRecord();
-    expect(status).toBe(NodeStatus.SUCCESS);
-    expect(snapshot['count']).toBe(2); // increment to 1, double to 2
   });
 
   it('Parallel with RUNNING children and successCount policy', async () => {

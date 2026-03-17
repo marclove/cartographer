@@ -70,7 +70,6 @@ export { TreeBuilder, CompositeBuilder, SingleChildBuilder } from './builder/tre
 
 // Config
 export { TreeRegistry } from './config/registry.js';
-export { TreeLoader } from './config/loader.js';
 
 // Scheduler
 export { TreeScheduler } from './scheduler/tree-scheduler.js';

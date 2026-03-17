@@ -4,6 +4,8 @@ import { NodeStatus } from '../types.js';
 import type { TreeContext } from '../types.js';
 import { AgentSelectionStrategy } from '../strategies/agent-selection.js';
 import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
+import { TreeRegistry } from '../config/registry.js';
+import { DefaultExecutionStrategy } from '../strategies/default-execution.js';
 
 const flush = () => new Promise(r => setTimeout(r, 0));
 
@@ -310,5 +312,147 @@ describe('TreeBuilder', () => {
       await tree.tick();
       expect(receivedCtx!.onElicitation).toBe(handler);
     });
+  });
+});
+
+describe('registry integration', () => {
+  const flush = () => new Promise(r => setTimeout(r, 0));
+
+  function makeRegistry() {
+    const registry = new TreeRegistry();
+    registry.registerAction('succeed', () => NodeStatus.SUCCESS);
+    registry.registerAction('write-result', (ctx) => {
+      ctx.blackboard.set('result', 'done');
+      return NodeStatus.SUCCESS;
+    });
+    registry.registerCondition('always-true', () => true);
+    registry.registerCondition('always-false', () => false);
+    registry.registerStrategy('exec-strategy', new DefaultExecutionStrategy());
+    return registry;
+  }
+
+  it('resolves action from registry', async () => {
+    const registry = makeRegistry();
+    const tree = new TreeBuilder('test', registry)
+      .action('root', 'succeed')
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
+  });
+
+  it('resolves condition from registry', async () => {
+    const registry = makeRegistry();
+    const tree = new TreeBuilder('test', registry)
+      .condition('root', 'always-true')
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
+  });
+
+  it('resolves strategy from registry on sequence', async () => {
+    const registry = makeRegistry();
+    const tree = new TreeBuilder('test', registry)
+      .sequence('root', { strategy: 'exec-strategy' }, (b) => {
+        b.action('step', 'succeed');
+      })
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
+  });
+
+  it('resolves strategy from registry on selector', async () => {
+    const registry = makeRegistry();
+    const tree = new TreeBuilder('test', registry)
+      .selector('root', { strategy: 'exec-strategy' }, (b) => {
+        b.action('step', 'succeed');
+      })
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
+  });
+
+  it('resolves strategy from registry on parallel', async () => {
+    const registry = makeRegistry();
+    registry.registerStrategy('par-strategy', new DefaultParallelStrategy({ successCount: 1 }));
+    const tree = new TreeBuilder('test', registry)
+      .parallel('root', { strategy: 'par-strategy' }, (b) => {
+        b.action('step', 'succeed');
+      })
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
+  });
+
+  it('resolves guard condition from registry', async () => {
+    const registry = makeRegistry();
+    const tree = new TreeBuilder('test', registry)
+      .guard('root', { condition: 'always-true' }, (b) => {
+        b.action('child', 'succeed');
+      })
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
+  });
+
+  it('mixes inline and registry refs in same composite', async () => {
+    const registry = makeRegistry();
+    const tree = new TreeBuilder('test', registry)
+      .sequence('root', (b) => {
+        b.condition('check', 'always-true');
+        b.action('step', () => NodeStatus.SUCCESS);
+      })
+      .build();
+    // condition resolves immediately; inline action goes through inflight
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
+  });
+
+  it('resolves refs in SingleChildBuilder context (inside decorator)', async () => {
+    const registry = makeRegistry();
+    const tree = new TreeBuilder('test', registry)
+      .retry('root', { maxAttempts: 2 }, (b) => {
+        b.action('child', 'succeed');
+      })
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
+  });
+
+  it('resolves deeply nested ref (guard condition inside inverter inside sequence)', async () => {
+    const registry = makeRegistry();
+    const tree = new TreeBuilder('test', registry)
+      .sequence('root', (b) => {
+        b.inverter('inv', (b) => {
+          b.guard('gate', { condition: 'always-false' }, (b) => {
+            b.action('never-reached', 'succeed');
+          });
+        });
+      })
+      .build();
+    // guard condition is false → FAILURE, inverter flips to SUCCESS
+    expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
+  });
+
+  it('throws when using string ref without a registry', () => {
+    expect(() => {
+      new TreeBuilder('test')
+        .action('root', 'some-ref')
+        .build();
+    }).toThrow('Cannot resolve registry reference "some-ref": no registry provided to TreeBuilder');
+  });
+
+  it('throws when registry key does not exist', () => {
+    const registry = makeRegistry();
+    expect(() => {
+      new TreeBuilder('test', registry)
+        .action('root', 'nonexistent')
+        .build();
+    }).toThrow('Action "nonexistent" not found in registry');
   });
 });
