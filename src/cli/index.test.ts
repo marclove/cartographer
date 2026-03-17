@@ -89,7 +89,7 @@ describe('parseArgs', () => {
   });
 
   it('parses --no-dashboard flag', () => {
-    const result = parseArgs(['node', 'cli', 'run', 'tree.ts', '--no-dashboard']);
+    const result = parseArgs(['node', 'cli', 'run', 'tree.ts', '--serve', '--no-tick', '--no-dashboard']);
     expect(result.flags.noDashboard).toBe(true);
   });
 
@@ -99,13 +99,78 @@ describe('parseArgs', () => {
   });
 
   it('parses --dashboard-port flag', () => {
-    const result = parseArgs(['node', 'cli', 'run', 'tree.ts', '--dashboard-port', '4000']);
+    const result = parseArgs(['node', 'cli', 'run', 'tree.ts', '--serve', '--no-tick', '--dashboard-port', '4000']);
     expect(result.flags.dashboardPort).toBe(4000);
   });
 
-  it('parseArgs recognizes serve command', () => {
+  it('does not recognize serve as a special command', () => {
     const result = parseArgs(['node', 'cli', 'serve', 'my-tree.ts']);
     expect(result.command).toBe('serve');
-    expect(result.file).toBe('my-tree.ts');
+  });
+
+  it('parses --serve flag', () => {
+    const result = parse('run', 'tree.ts', '--serve', '--tick-interval', '1000');
+    expect(result.flags.serve).toBe(true);
+  });
+
+  it('serve defaults to false', () => {
+    const result = parse('run', 'tree.ts');
+    expect(result.flags.serve).toBe(false);
+  });
+
+  describe('--serve validation', () => {
+    it('errors when --serve used without --tick-interval or --no-tick', () => {
+      expect(() => parse('run', 'tree.ts', '--serve')).toThrow(
+        '--serve requires either --tick-interval or --no-tick',
+      );
+    });
+
+    it('errors when --no-tick used without --serve', () => {
+      expect(() => parse('run', 'tree.ts', '--no-tick')).toThrow(
+        '--no-tick requires --serve',
+      );
+    });
+
+    it('errors when --tick-interval used without --serve', () => {
+      expect(() => parse('run', 'tree.ts', '--tick-interval', '1000')).toThrow(
+        '--tick-interval requires --serve',
+      );
+    });
+
+    it('errors when --no-tick and --tick-interval both set', () => {
+      expect(() =>
+        parse('run', 'tree.ts', '--serve', '--no-tick', '--tick-interval', '1000'),
+      ).toThrow('--no-tick and --tick-interval cannot be used together');
+    });
+
+    it('errors when --port used without --serve', () => {
+      expect(() => parse('run', 'tree.ts', '--port', '3000')).toThrow(
+        '--port requires --serve',
+      );
+    });
+
+    it('errors when --no-dashboard used without --serve', () => {
+      expect(() => parse('run', 'tree.ts', '--no-dashboard')).toThrow(
+        '--no-dashboard requires --serve',
+      );
+    });
+
+    it('errors when --dashboard-port used without --serve', () => {
+      expect(() => parse('run', 'tree.ts', '--dashboard-port', '4000')).toThrow(
+        '--dashboard-port requires --serve',
+      );
+    });
+
+    it('accepts --serve with --tick-interval', () => {
+      const result = parse('run', 'tree.ts', '--serve', '--tick-interval', '500');
+      expect(result.flags.serve).toBe(true);
+      expect(result.flags.tickInterval).toBe(500);
+    });
+
+    it('accepts --serve with --no-tick', () => {
+      const result = parse('run', 'tree.ts', '--serve', '--no-tick');
+      expect(result.flags.serve).toBe(true);
+      expect(result.flags.noTick).toBe(true);
+    });
   });
 });

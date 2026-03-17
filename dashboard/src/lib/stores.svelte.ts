@@ -277,7 +277,6 @@ export function connect(): void {
       }
       lastStatus = data.status;
       lastDurationMs = data.durationMs;
-      lastDurationMs = data.durationMs;
       pushEvent('tree:tick', data, id);
     },
 

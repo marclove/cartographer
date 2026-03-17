@@ -3,9 +3,10 @@
 The `cartographer` binary runs, inspects, and scaffolds behavior trees from the command line.
 
 ```bash
-cartographer run my-tree.ts       # execute a tree
-cartographer inspect my-tree.ts   # visualize its structure
-cartographer init my-tree         # scaffold a new tree file
+cartographer run my-tree.ts                              # execute a tree
+cartographer run my-tree.ts --serve --tick-interval 1000 # run as a persistent server
+cartographer inspect my-tree.ts                          # visualize its structure
+cartographer init my-tree                                # scaffold a new tree file
 ```
 
 ---
@@ -278,15 +279,21 @@ SECRET='my-secret-value'
 
 ## Signal Handling and Exit Codes
 
-The CLI handles `SIGINT` (Ctrl-C) and `SIGTERM` gracefully. On the first signal, `tree.abort()` is called, giving nodes a chance to clean up. In scheduled mode, the scheduler is also stopped.
+The CLI handles `SIGINT` (Ctrl-C) and `SIGTERM` gracefully.
 
-### Exit codes
+In **batch mode** (default), the first signal calls `tree.abort()`, giving nodes a chance to clean up. In scheduled mode, the scheduler is also stopped.
+
+In **serve mode** (`--serve`), the signal triggers a clean shutdown: the tick-loop scheduler (if running) is stopped, the dashboard server is closed, and the ActorServer is shut down. The process exits with code 0.
+
+### Exit codes (batch mode)
 
 | Code | Meaning |
 |------|---------|
 | `0` | Tree returned `SUCCESS`. |
 | `1` | Tree returned `FAILURE`, or a runtime error occurred. |
 | `2` | Tree returned `RUNNING`, or execution was interrupted by a signal. |
+
+In serve mode, the process exits with code `0` on clean shutdown.
 
 ---
 
@@ -309,8 +316,71 @@ For full details on schedule types and behavior, see the [Scheduler guide](guide
 
 ---
 
+## Serve Mode
+
+The `--serve` flag starts an ActorServer alongside tree execution, turning your tree into a persistent service that accepts messages over HTTP. This is the bridge between batch tree execution and the [Actor Framework](guide-actor-framework.md).
+
+```bash
+# Tick every 2 seconds + accept HTTP messages + dashboard
+cartographer run my-tree.ts --serve --tick-interval 2000
+
+# Message-driven only (no auto-ticking)
+cartographer run my-tree.ts --serve --no-tick
+```
+
+When `--serve` is active, the CLI starts an ActorServer that:
+
+- Exposes HTTP endpoints for sending messages, reading blackboard state, and observing the tree
+- Streams real-time events via SSE (consumed by the dashboard)
+- Persists tree state across message processing
+
+### Serve mode flags
+
+| Flag | Description |
+|------|-------------|
+| `--serve` | Enable serve mode. Requires `--tick-interval` or `--no-tick`. |
+| `--tick-interval <ms>` | Auto-tick the tree on this interval. |
+| `--no-tick` | Disable auto-ticking; the tree only runs when messages arrive. |
+| `--port <number>` | Port for the ActorServer (default: 3147). |
+| `--no-dashboard` | Disable the dashboard server. |
+| `--dashboard-port <number>` | Port for the dashboard (default: 3148). |
+
+The `--tick-interval` or `--no-tick` flag is required with `--serve` -- the tick rate must be explicit. All other serve flags (`--port`, `--no-dashboard`, `--dashboard-port`) also require `--serve`.
+
+### Auto-tick mode vs message-driven mode
+
+**Auto-tick** (`--serve --tick-interval 1000`): A local tree ticks on the specified interval, with events streamed to the dashboard. The ActorServer also accepts messages via HTTP. Use this when the tree has autonomous behavior that should run continuously alongside external input.
+
+**Message-driven** (`--serve --no-tick`): The tree only runs when messages arrive via the ActorServer's HTTP API. No local tree ticks. Use this when the tree should be purely reactive to external events.
+
+In both modes, output formatting flags (`--json`, `--verbose`, `--quiet`) work as normal. In auto-tick mode, the formatter shows tick-loop events. In message-driven mode, the formatter shows events from each message-processing tree.
+
+### Example: serve with auto-tick and dashboard
+
+```bash
+cartographer run health-monitor.ts --serve --tick-interval 5000 --env-file .env
+```
+
+```
+Actor server: http://localhost:3147
+Dashboard: http://localhost:3148
+▶ [sequence] check
+  ▶ [action] ping
+  ✓ [action] ping (45ms)
+✓ [sequence] check (46ms)
+
+Tree: health-monitor — SUCCESS (47ms)
+```
+
+Open `http://localhost:3148` for a real-time dashboard view of tree execution, blackboard state, and event timeline.
+
+For full details on the ActorServer HTTP API and message types, see the [Actor Framework guide](guide-actor-framework.md).
+
+---
+
 ## Where to go next
 
 - [API Reference: CLI](api/cli.md) -- full type signatures for `RunContext`, `TreeRunConfig`, `FormatterOptions`, and `createFormatter`.
+- [Actor Framework](guide-actor-framework.md) -- message-driven tree execution, state persistence, and the HTTP API exposed by `--serve`.
 - [Scheduler](guide-scheduler.md) -- interval, cron, and one-shot scheduling in depth.
 - [Blackboard and Events](guide-blackboard-and-events.md) -- the event system that the CLI formatter consumes.

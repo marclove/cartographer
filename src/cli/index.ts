@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { runCommand } from './commands/run.js';
-import { serveCommand } from './commands/serve.js';
 import { inspectCommand } from './commands/inspect.js';
 import { initCommand } from './commands/init.js';
 import { parseArgs, USAGE } from './parse-args.js';
@@ -28,25 +27,7 @@ async function main(): Promise<void> {
         verbose: parsed.flags.verbose,
         quiet: parsed.flags.quiet,
         envFile: parsed.flags.envFile,
-        port: parsed.flags.port,
-        noServe: parsed.flags.noServe,
-        noDashboard: parsed.flags.noDashboard,
-        dashboardPort: parsed.flags.dashboardPort,
-      });
-      break;
-    }
-
-    case 'serve': {
-      if (!parsed.file) {
-        process.stderr.write('Error: serve requires a file argument\n\n');
-        process.stdout.write(USAGE);
-        process.exit(1);
-      }
-      await serveCommand({
-        file: parsed.file,
-        args: parsed.positional,
-        quiet: parsed.flags.quiet,
-        envFile: parsed.flags.envFile,
+        serve: parsed.flags.serve,
         port: parsed.flags.port,
         noDashboard: parsed.flags.noDashboard,
         dashboardPort: parsed.flags.dashboardPort,

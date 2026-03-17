@@ -9,7 +9,7 @@ export interface ParsedArgs {
     envFile?: string;
     help: boolean;
     port?: number;
-    noServe: boolean;
+    serve: boolean;
     noDashboard: boolean;
     dashboardPort?: number;
     noTick: boolean;
@@ -28,7 +28,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     envFile: undefined as string | undefined,
     help: false,
     port: undefined as number | undefined,
-    noServe: false,
+    serve: false,
     noDashboard: false,
     dashboardPort: undefined as number | undefined,
     noTick: false,
@@ -60,8 +60,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
         process.exit(1);
       }
       flags.port = parsed;
-    } else if (arg === '--no-serve') {
-      flags.noServe = true;
+    } else if (arg === '--serve') {
+      flags.serve = true;
     } else if (arg === '--no-dashboard') {
       flags.noDashboard = true;
     } else if (arg === '--dashboard-port') {
@@ -102,33 +102,55 @@ export function parseArgs(argv: string[]): ParsedArgs {
   const file = positional[1] ?? '';
   const rest = positional.slice(2);
 
+  validateFlags(flags);
+
   return { command, file, positional: rest, flags };
+}
+
+function validateFlags(flags: ParsedArgs['flags']): void {
+  if (flags.serve) {
+    if (!flags.noTick && flags.tickInterval === undefined) {
+      throw new Error('--serve requires either --tick-interval or --no-tick');
+    }
+  }
+  if (flags.noTick && !flags.serve) {
+    throw new Error('--no-tick requires --serve');
+  }
+  if (flags.tickInterval !== undefined && !flags.serve) {
+    throw new Error('--tick-interval requires --serve');
+  }
+  if (flags.noTick && flags.tickInterval !== undefined) {
+    throw new Error('--no-tick and --tick-interval cannot be used together');
+  }
+  if (flags.port !== undefined && !flags.serve) {
+    throw new Error('--port requires --serve');
+  }
+  if (flags.noDashboard && !flags.serve) {
+    throw new Error('--no-dashboard requires --serve');
+  }
+  if (flags.dashboardPort !== undefined && !flags.serve) {
+    throw new Error('--dashboard-port requires --serve');
+  }
 }
 
 export const USAGE = `Usage: cartographer <command> [options]
 
 Commands:
   run <file> [args...]     Execute a behavior tree
-  serve <file> [args...]   Start actor server with dashboard
   inspect <file>           Visualize tree structure
   init <name>              Scaffold a new tree file
 
-Run options:
+Options:
   --json                   Output events as JSON lines (NDJSON)
   --verbose                Include agent:thinking and agent:tool_use events
-  --quiet                  Suppress all output except errors and final status
-  --env-file <path>        Load environment variables from a file
-  --port <number>          Port for the tree server (default: 3147)
-  --no-serve               Disable the tree server
-  --dashboard-port <num>   Port for the dashboard server (default: 3148)
-  --no-dashboard           Disable the dashboard server
-
-Serve options:
   --quiet                  Suppress all output except errors
   --env-file <path>        Load environment variables from a file
+
+Serve mode (--serve):
+  --serve                  Start actor server, stay alive for messages
+  --tick-interval <ms>     Delay between tick cycles (required unless --no-tick)
+  --no-tick                Disable auto-ticking (message-driven only)
   --port <number>          Port for the actor server (default: 3147)
   --dashboard-port <num>   Port for the dashboard server (default: 3148)
   --no-dashboard           Disable the dashboard server
-  --tick-interval <ms>     Delay between tick cycles (default: 1000)
-  --no-tick                Disable automatic ticking (message-driven only)
 `;
