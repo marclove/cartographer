@@ -348,19 +348,18 @@ export class ActorServer {
     };
 
     // Send snapshot
-    const snapshotId = this.eventBuffer.latestId;
-    res.write(`id: ${snapshotId}\nevent: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
+    res.write(`id: 0\nevent: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
 
-    // Replay missed events on reconnect
+    // Replay buffered events — on reconnect, replay since last-event-id;
+    // on initial connect, replay the entire buffer so the dashboard
+    // shows events that occurred before the client connected.
     const lastEventId = req.headers['last-event-id'];
-    if (lastEventId) {
-      const lastId = parseInt(lastEventId as string, 10);
-      if (!isNaN(lastId)) {
-        const missed = this.eventBuffer.getEventsSince(lastId);
-        if (missed !== null) {
-          for (const event of missed) {
-            res.write(`id: ${event.id}\nevent: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`);
-          }
+    const sinceId = lastEventId ? parseInt(lastEventId as string, 10) : 0;
+    if (!isNaN(sinceId)) {
+      const events = this.eventBuffer.getEventsSince(sinceId);
+      if (events !== null) {
+        for (const event of events) {
+          res.write(`id: ${event.id}\nevent: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`);
         }
       }
     }
