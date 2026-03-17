@@ -8,9 +8,19 @@ import { TreeActor } from '../actor/tree-actor.js';
 import type { ActorMessage } from '../actor/types.js';
 import { jsonResponse, jsonError } from './http-utils.js';
 import { EventBridge } from './event-bridge.js';
+import { serializeTree as serializeTreeForApi, serializeNodeRef } from './serializers.js';
+import { findNodeById } from './api-handlers.js';
+import { AgentNode } from '../nodes/agent.js';
 
 function generateRequestId(): string {
   return `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+interface ActorStatusState {
+  tickCount: number;
+  cycleCount: number;
+  lastStatus: string | null;
+  lastDurationMs: number | null;
 }
 
 export interface ActorServerOptions {
@@ -31,6 +41,16 @@ export class ActorServer {
   private startTime = 0;
   private activeActor: TreeActor | null = null;
   private activeMessageId: string | null = null;
+  private readonly stats: ActorStatusState = { tickCount: 0, cycleCount: 0, lastStatus: null, lastDurationMs: null };
+  private _readTree: BehaviorTree | null = null;
+
+  /** Returns a stable tree instance used for read-only introspection (consistent node IDs). */
+  private get readTree(): BehaviorTree {
+    if (!this._readTree) {
+      this._readTree = this.createTree();
+    }
+    return this._readTree;
+  }
 
   constructor(options: ActorServerOptions) {
     this.createTree = options.createTree;
@@ -106,16 +126,45 @@ export class ActorServer {
     }
 
     if (method === 'GET' && url.pathname === '/api/status') {
-      const state = await this.stateStore.getState('default');
+      const tree = this.readTree;
       return jsonResponse(res, 200, {
-        lastMessageAt: state?.lastMessageAt ?? null,
-        treeRootHash: state?.treeState.rootHash ?? null,
+        tree: tree.name,
+        tickCount: this.stats.tickCount,
+        cycleCount: this.stats.cycleCount,
+        lastStatus: this.stats.lastStatus,
+        lastDurationMs: this.stats.lastDurationMs,
+        uptime: Date.now() - this.startTime,
       });
     }
 
     if (method === 'GET' && url.pathname === '/api/tree') {
-      const tree = this.createTree();
-      return jsonResponse(res, 200, { name: tree.name, rootHash: tree.rootHash });
+      const tree = this.readTree;
+      return jsonResponse(res, 200, { tree: tree.name, root: serializeTreeForApi(tree.root) });
+    }
+
+    const nodeMatch = url.pathname.match(/^\/api\/nodes\/(.+)$/);
+    if (method === 'GET' && nodeMatch) {
+      const tree = this.readTree;
+      const nodeId = decodeURIComponent(nodeMatch[1]);
+      const node = findNodeById(tree.root, nodeId);
+      if (!node) {
+        return jsonError(res, 404, 'Not found');
+      }
+      const detail: Record<string, unknown> = { ...serializeNodeRef(node) };
+      if (node instanceof AgentNode) {
+        const config = (node as any).config;
+        if (config) {
+          const opts = config.options ?? {};
+          if (opts.model) detail.model = opts.model;
+          detail.tools = opts.allowedTools ?? [];
+          const mcpServers = opts.mcpServers ? Object.keys(opts.mcpServers) : [];
+          detail.mcpServers = mcpServers;
+        }
+      }
+      if (node.children.length > 0) {
+        detail.children = node.children.map(serializeNodeRef);
+      }
+      return jsonResponse(res, 200, detail);
     }
 
     if (method === 'GET' && url.pathname === '/api/events') {
@@ -277,6 +326,17 @@ export class ActorServer {
         catch { resolve(null); }
       });
     });
+  }
+
+  trackEvent(event: { type: string; data: Record<string, unknown> }): void {
+    if (event.type === 'tree:tick') {
+      this.stats.tickCount++;
+      this.stats.lastStatus = event.data.status as string;
+      this.stats.lastDurationMs = event.data.durationMs as number;
+      if (event.data.status !== 'running') {
+        this.stats.cycleCount++;
+      }
+    }
   }
 
   private serializeBlackboard(tree: BehaviorTree): Record<string, unknown> {

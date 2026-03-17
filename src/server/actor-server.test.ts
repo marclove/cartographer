@@ -57,24 +57,58 @@ describe('ActorServer', () => {
     expect(body).toBeDefined();
   });
 
-  it('GET /api/status returns tree metadata', async () => {
+  it('GET /api/status returns tick stats', async () => {
     server = new ActorServer({ createTree: makeTree, port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/status`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.treeRootHash).toBeDefined();
+    expect(body.tree).toBe('test');
+    expect(body.tickCount).toBe(0);
+    expect(body.cycleCount).toBe(0);
+    expect(body.lastStatus).toBeNull();
+    expect(body.lastDurationMs).toBeNull();
+    expect(body.uptime).toBeGreaterThanOrEqual(0);
   });
 
-  it('GET /api/tree returns tree structure', async () => {
+  it('GET /api/tree returns full tree structure', async () => {
     server = new ActorServer({ createTree: makeTree, port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/tree`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.name).toBe('test');
+    expect(body.tree).toBe('test');
+    expect(body.root).toBeDefined();
+    expect(body.root.id).toBeDefined();
+    expect(body.root.name).toBe('noop');
+    expect(body.root.type).toBe('action');
+    expect(Array.isArray(body.root.children)).toBe(true);
+  });
+
+  it('GET /api/nodes/:id returns node detail', async () => {
+    server = new ActorServer({ createTree: makeTree, port: 0 });
+    port = (await server.start()).port;
+
+    const treeRes = await fetch(`http://localhost:${port}/api/tree`);
+    const treeBody = await treeRes.json();
+    const nodeId = treeBody.root.id;
+
+    const res = await fetch(`http://localhost:${port}/api/nodes/${encodeURIComponent(nodeId)}`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.id).toBe(nodeId);
+    expect(body.name).toBe('noop');
+    expect(body.type).toBe('action');
+  });
+
+  it('GET /api/nodes/nonexistent returns 404', async () => {
+    server = new ActorServer({ createTree: makeTree, port: 0 });
+    port = (await server.start()).port;
+
+    const res = await fetch(`http://localhost:${port}/api/nodes/nonexistent-id`);
+    expect(res.status).toBe(404);
   });
 
   it('returns 404 for unknown routes', async () => {
