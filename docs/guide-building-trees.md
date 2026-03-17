@@ -1,6 +1,6 @@
-# Two Construction Approaches
+# Building Trees
 
-Cartographer provides two ways to build behavior trees. This guide constructs the same tree using each approach so you can compare them directly.
+Cartographer provides multiple ways to build behavior trees: direct instantiation, the fluent builder with inline functions, and the builder with registry references. This guide constructs the same tree using each approach so you can compare them directly.
 
 **Target tree:**
 
@@ -130,12 +130,70 @@ const tree = new TreeBuilder('my-tree')
 
 ---
 
+## Approach 3: Builder with Registry References
+
+Define actions, conditions, and strategies in separate files and register them by name. Then compose the tree using the fluent builder with string references instead of inline functions. Pass the registry as the second argument to `TreeBuilder`.
+
+```typescript
+// actions/process-input.ts
+import { NodeStatus } from 'cartographer';
+import type { TreeContext } from 'cartographer';
+
+export const processInput = async (ctx: TreeContext) => {
+  const input = ctx.blackboard.get<string>('input');
+  ctx.blackboard.set('result', `Processed: ${input}`);
+  return NodeStatus.SUCCESS;
+};
+
+// registry.ts
+import { TreeRegistry, NodeStatus } from 'cartographer';
+import { processInput } from './actions/process-input.js';
+
+const registry = new TreeRegistry();
+registry.registerCondition('hasInput', (ctx) => ctx.blackboard.has('input'));
+registry.registerAction('processInput', processInput);
+registry.registerCondition('hasCache', (ctx) => ctx.blackboard.has('cache'));
+registry.registerAction('useCache', (ctx) => {
+  ctx.blackboard.set('result', ctx.blackboard.get('cache'));
+  return NodeStatus.SUCCESS;
+});
+export { registry };
+
+// tree.ts
+import { TreeBuilder } from 'cartographer';
+import { registry } from './registry.js';
+
+const tree = new TreeBuilder('content-pipeline', registry)
+  .selector('content-pipeline', (b) => {
+    b.sequence('primary-path', (b) => {
+      b.condition('has-input', 'hasInput');
+      b.action('process-input', 'processInput');
+    });
+    b.sequence('fallback-path', (b) => {
+      b.condition('has-cache', 'hasCache');
+      b.action('use-cache', 'useCache');
+    });
+  })
+  .build();
+```
+
+Registry references work for:
+- **Actions**: `b.action('name', 'registry-key')` instead of `b.action('name', fn)`
+- **Conditions**: `b.condition('name', 'registry-key')` instead of `b.condition('name', fn)`
+- **Strategies**: `b.selector('name', { strategy: 'registry-key' }, ...)` instead of `{ strategy: instance }`
+- **Guard conditions**: `b.guard('name', { condition: 'registry-key' }, ...)` instead of `{ condition: fn }`
+
+Inline functions and registry references can be mixed freely within the same tree.
+
+---
+
 ## Trade-offs
 
 | Approach | Best for | Trade-offs |
 |----------|----------|------------|
 | Programmatic | Full type safety, complex logic | Verbose, harder to visualize structure |
-| Builder | Readability, rapid prototyping | Slightly less flexible than programmatic |
+| Builder (inline) | Readability, rapid prototyping | Slightly less flexible than programmatic |
+| Builder (registry) | Modular codebases, reusable components | Requires registry setup, string keys not type-checked |
 
 ---
 

@@ -6,7 +6,7 @@
 import { TreeRegistry } from 'cartographer';
 ```
 
-A general-purpose named registry for actions, conditions, and strategies.
+A general-purpose named registry for actions, conditions, and strategies. When passed to `TreeBuilder` as the second constructor argument, registered entries can be referenced by name in the builder's `action`, `condition`, `guard`, and composite strategy options.
 
 ### Constructor
 
@@ -75,4 +75,12 @@ registry.registerAction('fetchData', async (ctx) => {
   return NodeStatus.SUCCESS;
 });
 registry.registerCondition('hasData', (ctx) => ctx.blackboard.has('data'));
+
+// Use with TreeBuilder
+const tree = new TreeBuilder('my-tree', registry)
+  .sequence('root', (b) => {
+    b.condition('check', 'hasData');
+    b.action('fetch', 'fetchData');
+  })
+  .build();
 ```

@@ -175,6 +175,9 @@ export class AgentNode extends BaseNode {
    * directly. Instead, listen for the unhandled rejection, match it by
    * message + stack, and retroactively handle the promise. This triggers
    * Node's 'rejectionHandled' event, which tells test runners to disregard it.
+   *
+   * The listener stays active for 500ms to cover rejections that arrive
+   * after multiple event-loop ticks (e.g. when the SDK is mid-network-call).
    */
   private static catchSdkAbortRejections(): void {
     const handler = (reason: unknown, promise: Promise<unknown>) => {
@@ -187,7 +190,7 @@ export class AgentNode extends BaseNode {
       }
     };
     process.on('unhandledRejection', handler);
-    setTimeout(() => process.removeListener('unhandledRejection', handler), 0);
+    setTimeout(() => process.removeListener('unhandledRejection', handler), 500);
   }
 
   override serialize(): NodeState {
