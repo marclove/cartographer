@@ -149,6 +149,7 @@ export class AgentNode extends BaseNode {
    */
   abort(): void {
     const pending = this._inflightState?.promise;
+    AgentNode.catchSdkAbortRejections();
     this.activeAbortController?.abort();
     this._inflightState = null;
     // The abort causes the SDK child process to reject. Catch the orphaned
@@ -158,6 +159,7 @@ export class AgentNode extends BaseNode {
 
   override interrupt(): void {
     const pending = this._inflightState?.promise;
+    AgentNode.catchSdkAbortRejections();
     this.activeAbortController?.abort();
     this._inflightState = null;
     // The abort causes the SDK child process to reject. Catch the orphaned
@@ -165,6 +167,27 @@ export class AgentNode extends BaseNode {
     pending?.catch(() => {});
     // Deliberately does NOT clear cachedStatus — previously completed
     // cached results survive interrupt.
+  }
+
+  /**
+   * The SDK's handleControlRequest fires an internal write() to the child
+   * process during abort. That promise is detached — we can't .catch() it
+   * directly. Instead, listen for the unhandled rejection, match it by
+   * message + stack, and retroactively handle the promise. This triggers
+   * Node's 'rejectionHandled' event, which tells test runners to disregard it.
+   */
+  private static catchSdkAbortRejections(): void {
+    const handler = (reason: unknown, promise: Promise<unknown>) => {
+      if (
+        reason instanceof Error &&
+        reason.message === 'Operation aborted' &&
+        reason.stack?.includes('handleControlRequest')
+      ) {
+        promise.catch(() => {});
+      }
+    };
+    process.on('unhandledRejection', handler);
+    setTimeout(() => process.removeListener('unhandledRejection', handler), 0);
   }
 
   override serialize(): NodeState {

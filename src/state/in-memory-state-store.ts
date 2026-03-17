@@ -8,7 +8,7 @@ export class InMemoryStateStore implements StateStore {
   private maxEvents: number;
 
   constructor(options?: { maxEvents?: number }) {
-    this.maxEvents = options?.maxEvents ?? 1000;
+    this.maxEvents = options?.maxEvents ?? 10000;
   }
 
   // --- State ---
