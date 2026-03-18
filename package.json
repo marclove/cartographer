@@ -1,22 +1,18 @@
 {
   "name": "cartographer-monorepo",
   "private": true,
+  "packageManager": "pnpm@10.26.0",
   "type": "module",
-"bin": {
+  "bin": {
     "cartographer": "./dist/cli/index.js"
   },
   "scripts": {
-    "build": "tsc && tsc -p packages/client/tsconfig.json && tsc -p packages/react/tsconfig.json && npm run dashboard:build && tsc -p dashboard/tsconfig.server.json",
-    "dashboard:build": "vite build --config dashboard/vite.config.ts",
-    "dashboard:dev": "vite dev --config dashboard/vite.config.ts",
+    "build": "turbo build",
     "test": "NODE_OPTIONS=--experimental-eventsource vitest run --project unit --project client --project react",
+    "typecheck": "turbo typecheck",
     "test:integration": "NODE_OPTIONS=--experimental-eventsource vitest run --project integration",
     "test:live": "NODE_OPTIONS=--experimental-eventsource vitest run --project live",
-    "test:dashboard": "NODE_OPTIONS=--experimental-eventsource vitest run --project dashboard",
-    "test:examples": "NODE_OPTIONS=--experimental-eventsource vitest run --project examples --passWithNoTests",
-    "test:all": "NODE_OPTIONS=--experimental-eventsource vitest run",
-    "test:watch": "NODE_OPTIONS=--experimental-eventsource vitest --project unit",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p packages/client/tsconfig.json && tsc --noEmit -p packages/react/tsconfig.json && tsc --noEmit -p examples/tsconfig.json && tsc --noEmit -p dashboard/tsconfig.server.json"
+    "test:all": "NODE_OPTIONS=--experimental-eventsource vitest run"
   },
   "license": "Apache-2.0",
   "engines": {
@@ -40,6 +36,7 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "svelte": "^5.53.11",
+    "turbo": "^2.8.17",
     "typescript": "^5.9.3",
     "vite": "^6.4.1",
     "vitest": "^3.2.4"

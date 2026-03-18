@@ -14,7 +14,8 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "echo 'Tests run from root via vitest projects'"
   },
   "license": "Apache-2.0"
 }
