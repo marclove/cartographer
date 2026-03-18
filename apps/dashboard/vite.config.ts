@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [svelte()],
   root: import.meta.dirname,
   build: {
-    outDir: path.resolve(import.meta.dirname, '../dist/dashboard'),
+    outDir: path.resolve(import.meta.dirname, 'dist/client'),
     emptyOutDir: true,
   },
 });
