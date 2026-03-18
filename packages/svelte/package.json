@@ -1,0 +1,34 @@
+{
+  "name": "@cartographer/svelte",
+  "version": "0.1.0",
+  "description": "Svelte 5 runes for Cartographer behavior trees",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "svelte": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "svelte": "./dist/index.js",
+  "peerDependencies": {
+    "svelte": "^5.0.0",
+    "@cartographer/client": ">=0.1.0"
+  },
+  "devDependencies": {
+    "@cartographer/client": "workspace:*",
+    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "@testing-library/svelte": "^5.2.7",
+    "jsdom": "^27.0.1",
+    "svelte": "^5.53.11"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "license": "Apache-2.0"
+}
