@@ -60,6 +60,14 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
     for (const handler of anyListeners) handler(type, data);
   }
 
+  function requireConnection(): void {
+    if (!eventSource) {
+      throw new Error(
+        'SSE connection required: call connect() before using actionAndWait or interruptAndAction'
+      );
+    }
+  }
+
   return {
     async action(name, payload) {
       return post('/api/actions/' + encodeURIComponent(name), payload ?? {});
@@ -74,6 +82,7 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
     },
 
     async actionAndWait(name, payload) {
+      requireConnection();
       const { id } = await post('/api/actions/' + encodeURIComponent(name), payload ?? {});
       return new Promise((resolve, reject) => {
         const onProcessed = (data: unknown) => {
@@ -120,6 +129,7 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
       }
 
       // Wait for the interrupted message's processing to finish (lock release)
+      requireConnection();
       await new Promise<void>((resolve) => {
         const onProcessed = (data: unknown) => {
           const d = data as { messageId: string };

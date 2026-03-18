@@ -40,6 +40,12 @@ export default defineConfig({
         },
       },
       {
+        test: {
+          name: 'client',
+          include: ['packages/client/src/**/*.test.ts'],
+        },
+      },
+      {
         plugins: [svelte()],
         test: {
           name: 'dashboard',
