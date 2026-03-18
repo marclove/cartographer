@@ -218,6 +218,49 @@ describe('useAction', () => {
     expect(result.current.pending).toBe(true);
   });
 
+  it('pending stays true until all concurrent sends are resolved', async () => {
+    const client = createMockClient();
+    (client.action as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ id: 'msg-1' })
+      .mockResolvedValueOnce({ id: 'msg-2' });
+
+    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+
+    await act(async () => {
+      await Promise.all([result.current.send(), result.current.send()]);
+    });
+
+    act(() => {
+      client.emit('message:processed', { messageId: 'msg-1', treeStatus: 'success' });
+    });
+    expect(result.current.pending).toBe(true);
+
+    act(() => {
+      client.emit('message:processed', { messageId: 'msg-2', treeStatus: 'success' });
+    });
+    expect(result.current.pending).toBe(false);
+  });
+
+  it('pending clears correctly when one of two concurrent sends fails via HTTP', async () => {
+    const client = createMockClient();
+    (client.action as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('500'))
+      .mockResolvedValueOnce({ id: 'msg-2' });
+
+    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+
+    await act(async () => {
+      await Promise.allSettled([result.current.send(), result.current.send()]);
+    });
+
+    expect(result.current.pending).toBe(true);
+
+    act(() => {
+      client.emit('message:processed', { messageId: 'msg-2', treeStatus: 'success' });
+    });
+    expect(result.current.pending).toBe(false);
+  });
+
   it('send() resets pending on HTTP error', async () => {
     const client = createMockClient();
     (client.action as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('409'));

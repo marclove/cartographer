@@ -69,21 +69,30 @@ interface UseActionReturn {
 export function useAction(name: string): UseActionReturn {
   const { client } = useCartographerContext();
   const [pending, setPending] = useState(false);
-  const pendingIdRef = useRef<string | null>(null);
+  // IDs of sends that reached the server and are awaiting SSE completion events.
+  const pendingIdsRef = useRef<Set<string>>(new Set());
+  // Count of send() calls whose HTTP request hasn't returned yet (no ID assigned).
+  const inflightRef = useRef<number>(0);
+
+  const clearIfDone = useCallback(() => {
+    if (inflightRef.current === 0 && pendingIdsRef.current.size === 0) {
+      setPending(false);
+    }
+  }, []);
 
   useEffect(() => {
     const onProcessed = (data: unknown) => {
       const d = data as { messageId: string };
-      if (d.messageId === pendingIdRef.current) {
-        pendingIdRef.current = null;
-        setPending(false);
+      if (pendingIdsRef.current.has(d.messageId)) {
+        pendingIdsRef.current.delete(d.messageId);
+        clearIfDone();
       }
     };
     const onFailed = (data: unknown) => {
       const d = data as { messageId: string };
-      if (d.messageId === pendingIdRef.current) {
-        pendingIdRef.current = null;
-        setPending(false);
+      if (pendingIdsRef.current.has(d.messageId)) {
+        pendingIdsRef.current.delete(d.messageId);
+        clearIfDone();
       }
     };
     client.on('message:processed', onProcessed);
@@ -92,21 +101,24 @@ export function useAction(name: string): UseActionReturn {
       client.off('message:processed', onProcessed);
       client.off('message:failed', onFailed);
     };
-  }, [client]);
+  }, [client, clearIfDone]);
 
   const send = useCallback(
     async (payload?: unknown): Promise<{ id: string }> => {
+      inflightRef.current += 1;
       setPending(true);
       try {
         const result = await client.action(name, payload);
-        pendingIdRef.current = result.id;
+        inflightRef.current -= 1;
+        pendingIdsRef.current.add(result.id);
         return result;
       } catch (err) {
-        setPending(false);
+        inflightRef.current -= 1;
+        clearIfDone();
         throw err;
       }
     },
-    [client, name],
+    [client, name, clearIfDone],
   );
 
   const sendAndWait = useCallback(
@@ -115,7 +127,6 @@ export function useAction(name: string): UseActionReturn {
       try {
         return await client.actionAndWait(name, payload);
       } finally {
-        pendingIdRef.current = null;
         setPending(false);
       }
     },
