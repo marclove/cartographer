@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.26.0",
   "type": "module",
-"scripts": {
+  "scripts": {
     "build": "turbo build",
     "test": "turbo test",
     "typecheck": "turbo typecheck",
