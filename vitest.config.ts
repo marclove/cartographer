@@ -8,21 +8,21 @@ export default defineConfig({
       {
         test: {
           name: 'unit',
-          include: ['src/**/*.test.ts'],
-          exclude: ['src/__integration__/**'],
+          include: ['packages/cartographer/src/**/*.test.ts'],
+          exclude: ['packages/cartographer/src/__integration__/**'],
         },
       },
       {
         test: {
           name: 'integration',
-          include: ['src/__integration__/**/*.test.ts'],
-          exclude: ['src/__integration__/live/**'],
+          include: ['packages/cartographer/src/__integration__/**/*.test.ts'],
+          exclude: ['packages/cartographer/src/__integration__/live/**'],
         },
       },
       {
         test: {
           name: 'live',
-          include: ['src/__integration__/live/**/*.test.ts'],
+          include: ['packages/cartographer/src/__integration__/live/**/*.test.ts'],
         },
       },
       {

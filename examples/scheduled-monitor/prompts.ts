@@ -1,4 +1,4 @@
-import type { TreeContext } from '../../src/index.js';
+import type { TreeContext } from '../../packages/cartographer/src/index.js';
 import type { HealthRecord } from './schemas.js';
 
 const SERVICES = ['api', 'database', 'queue'];

@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import { TreeBuilder, NodeStatus } from '../../src/index.js';
+import { TreeBuilder, NodeStatus } from '../../packages/cartographer/src/index.js';
 import {
   HealthAssessmentSchema,
   IncidentReportSchema,
