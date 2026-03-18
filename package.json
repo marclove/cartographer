@@ -3,10 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.26.0",
   "type": "module",
-  "bin": {
-    "cartographer": "./dist/cli/index.js"
-  },
-  "scripts": {
+"scripts": {
     "build": "turbo build",
     "test": "NODE_OPTIONS=--experimental-eventsource vitest run --project unit --project client --project react",
     "typecheck": "turbo typecheck",

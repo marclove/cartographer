@@ -1,9 +1,0 @@
-{
-  "extends": "./tsconfig.base.json",
-  "compilerOptions": {
-    "outDir": "./dist",
-    "rootDir": "./packages/cartographer/src"
-  },
-  "include": ["packages/cartographer/src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts"]
-}
