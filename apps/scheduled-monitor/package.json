@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test:live": "vitest run"
   },
   "dependencies": {
     "cartographer": "workspace:*",

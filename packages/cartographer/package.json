@@ -32,10 +32,7 @@
     "uuid": "^13.0.0",
     "zod": "^4.3.6"
   },
-  "optionalDependencies": {
-    "@cartographer/dashboard": "workspace:*"
-  },
-  "devDependencies": {
+"devDependencies": {
     "@cartographer/client": "workspace:*"
   }
 }

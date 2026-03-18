@@ -88,4 +88,4 @@ Both approaches produce identical trees. The builder is convenient for most case
 - [Building Trees](guide-building-trees.md) -- deeper coverage of `TreeBuilder`, nesting, and composition patterns.
 - [Node Reference](guide-nodes.md) -- catalog of built-in node types (actions, conditions, sequences, selectors, decorators).
 - [CLI Runner](guide-cli.md) -- run, inspect, and scaffold trees from the command line.
-- [Examples](../examples/README.md) -- two complete, runnable programs that exercise the framework end-to-end with real Claude API calls.
+- [Content Pipeline](../apps/content-pipeline/) and [Scheduled Monitor](../apps/scheduled-monitor/) -- two complete, runnable programs that exercise the framework end-to-end with real Claude API calls.

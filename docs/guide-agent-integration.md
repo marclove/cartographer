@@ -255,7 +255,7 @@ tree.events.on("agent:error", ({ node, subtype, cost }) => {
 
 ## Worked Example: Classification Pipeline
 
-This example combines structured and unstructured agent calls in a single tree. A cheap structured call classifies a support ticket, then conditional routing decides whether to escalate to a more thorough handler. For a complete, runnable version of this pattern with Zod schemas, billing analysis, and escalation handling, see the [content pipeline example](../examples/README.md#content-pipeline).
+This example combines structured and unstructured agent calls in a single tree. A cheap structured call classifies a support ticket, then conditional routing decides whether to escalate to a more thorough handler. For a complete, runnable version of this pattern with Zod schemas, billing analysis, and escalation handling, see the [content pipeline example](../apps/content-pipeline/).
 
 ```typescript
 import { z } from "zod/v4";
@@ -321,4 +321,4 @@ const tree = new TreeBuilder("classification-pipeline")
 - [Composites and Strategies](guide-composites.md) -- Selector, sequence, parallel, and the strategy pattern.
 - [Decorator Nodes](guide-decorators.md) -- Inverter, retry, guard, timeout, and more.
 - [Building Trees](guide-building-trees.md) -- TreeBuilder, nesting, and construction patterns.
-- [Examples](../examples/README.md) -- complete runnable programs demonstrating agent nodes in realistic scenarios.
+- [Content Pipeline](../apps/content-pipeline/) and [Scheduled Monitor](../apps/scheduled-monitor/) -- complete runnable programs demonstrating agent nodes in realistic scenarios.

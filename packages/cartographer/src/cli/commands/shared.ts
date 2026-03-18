@@ -72,8 +72,13 @@ export async function startDashboard(options: {
   quiet?: boolean;
 }): Promise<DashboardHandle | null> {
   try {
-    const { DashboardServer } = await import('@cartographer/dashboard/server');
-    const { staticDir } = await import('@cartographer/dashboard/static-dir');
+    // Variable specifiers prevent TypeScript from resolving these optional
+    // imports at compile time. The dashboard is a separate app that may or
+    // may not be built; the catch block handles its absence at runtime.
+    const serverPkg = '@cartographer/dashboard/server';
+    const staticDirPkg = '@cartographer/dashboard/static-dir';
+    const { DashboardServer } = await import(serverPkg);
+    const { staticDir } = await import(staticDirPkg);
     const server = new DashboardServer({
       port: options.dashboardPort,
       staticDir,

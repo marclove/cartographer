@@ -45,8 +45,8 @@ Both side panels are collapsible and resizable via drag handles. Below 900px vie
 ## Development
 
 ```bash
-npm run dashboard:dev    # Vite dev server with hot reload
-npm run dashboard:build  # Production build to dist/dashboard/
+pnpm --filter @cartographer/dashboard dev    # Vite dev server with hot reload
+pnpm --filter @cartographer/dashboard build  # Production build to dist/dashboard/
 ```
 
 The dev server proxies API requests to a running Cartographer instance, so start your tree in a separate terminal first.

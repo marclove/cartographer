@@ -99,41 +99,35 @@ Full documentation is available in the [`docs/`](docs/) directory:
 ```bash
 git clone https://github.com/marclove/cartographer-ts
 cd cartographer
-npm install
+pnpm install
 ```
 
 ### Development Commands
 
 ```bash
-npm run build            # Compile TypeScript to dist/
-npm run test             # Run unit tests
-npm run test:integration # Run integration tests
-npm run test:all         # Run all tests (unit + integration)
-npm run test:watch       # Watch unit tests
-npm run typecheck        # Type-check without emitting
+pnpm run build            # Build all packages (via turbo)
+pnpm run test             # Run unit tests across all packages
+pnpm run test:integration # Run integration tests (cartographer package)
+pnpm run typecheck        # Type-check all packages
 ```
 
 To run a single test file:
 
 ```bash
-npx vitest run src/nodes/action.test.ts
+pnpm --filter cartographer exec vitest run src/nodes/action.test.ts
 ```
 
 ### Project Structure
 
 ```
-src/
-  nodes/         # Leaf nodes: ActionNode, ConditionNode, AgentNode
-  composites/    # SequenceNode, SelectorNode, ParallelNode
-  decorators/    # Inverter, Repeat, Retry, Timeout, Guard, AlwaysSucceed, AlwaysFail
-  strategies/    # Default and agent-backed strategies for composites
-  builder/       # Fluent TreeBuilder API
-  config/        # TreeRegistry + TreeLoader (YAML config)
-  scheduler/     # TreeScheduler (interval, cron, one-shot)
-  agent/         # Blackboard MCP server and SDK helpers
-  core/          # BehaviorTree, InMemoryBlackboard, EventEmitter
-  types.ts       # All shared types
-  index.ts       # Public API re-exports
+packages/
+  cartographer/    # Core behavior tree framework
+  client/          # Browser/Node client SDK (@cartographer/client)
+  react/           # React hooks (@cartographer/react)
+apps/
+  dashboard/       # Svelte dashboard app (@cartographer/dashboard)
+  content-pipeline/   # Example: support ticket triage pipeline
+  scheduled-monitor/  # Example: scheduled health monitor
 ```
 
 ### Testing
@@ -145,7 +139,7 @@ Unit tests live alongside their source files (`src/**/*.test.ts`). Integration t
 
 ```bash
 # Run agent SDK integration tests
-ANTHROPIC_API_KEY=sk-... npm run test:integration
+ANTHROPIC_API_KEY=sk-... pnpm run test:integration
 ```
 
 ### Tech Stack
