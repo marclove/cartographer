@@ -19,7 +19,7 @@
   "devDependencies": {
     "react": "^19.0.0",
     "@types/react": "^19.0.0",
-    "@cartographer/client": "*",
+    "@cartographer/client": "workspace:*",
     "@testing-library/react": "^16.0.0"
   },
   "scripts": {

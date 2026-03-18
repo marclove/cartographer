@@ -20,7 +20,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@cartographer/client": "*",
+    "@cartographer/client": "workspace:*",
     "@anthropic-ai/claude-agent-sdk": "^0.2.71",
     "cron-parser": "^5.5.0",
     "tsx": "^4.21.0",

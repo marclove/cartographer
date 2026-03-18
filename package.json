@@ -2,10 +2,7 @@
   "name": "cartographer-monorepo",
   "private": true,
   "type": "module",
-  "workspaces": [
-    "packages/*"
-  ],
-  "bin": {
+"bin": {
     "cartographer": "./dist/cli/index.js"
   },
   "scripts": {
