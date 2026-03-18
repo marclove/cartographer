@@ -8,13 +8,13 @@ Two new packages that give React applications a hooks-based interface to Cartogr
 
 Three packages in a monorepo layout:
 
-| Package | Role | Dependencies |
-|---------|------|-------------|
-| `cartographer` | Server-side behavior tree framework (existing) | `@anthropic-ai/claude-agent-sdk`, `zod`, `yaml`, `cron-parser` |
-| `@cartographer/client` | Browser/Node client SDK (extracted from `src/client/`) | None (uses `fetch` + `EventSource`) |
-| `@cartographer/react` | React hooks wrapping the client | Peer: `react >=18`, `@cartographer/client` |
+| Package                | Role                                                   | Dependencies                                                   |
+| ---------------------- | ------------------------------------------------------ | -------------------------------------------------------------- |
+| `cartographer`         | Server-side behavior tree framework (existing)         | `@anthropic-ai/claude-agent-sdk`, `zod`, `yaml`, `cron-parser` |
+| `@cartographer/client` | Browser/Node client SDK (extracted from `src/client/`) | None (uses `fetch` + `EventSource`)                            |
+| `@cartographer/react`  | React hooks wrapping the client                        | Peer: `react >=18`, `@cartographer/client`                     |
 
-The main `cartographer` package re-exports `@cartographer/client` for backward compatibility.
+The main `cartographer` package does not need to re-export `@cartographer/client` for backward compatibility. We have no existing users, so we have flexibility to break backward compatability in favor of keeping things cleaner and easier.
 
 ## @cartographer/client
 
@@ -29,6 +29,7 @@ Extracted from the existing `src/client/index.ts` and `src/client/types.ts`. No 
 ### API Surface
 
 HTTP methods (work without SSE):
+
 - `action(name, payload?)` — send an action message
 - `write(key, value)` — write a blackboard value
 - `send(msg)` — send any message type
@@ -36,15 +37,18 @@ HTTP methods (work without SSE):
 - `resume()` — clear held state
 
 SSE-dependent methods:
+
 - `actionAndWait(name, payload?)` — send action, wait for processing to complete
-- `interruptAndAction(name, payload?)` — interrupt, wait for lock release, send action
+- `interruptAndAction(name, payload?)` — interrupt, wait for lock release, send action, wait for processing to complete
 
 Query methods:
+
 - `blackboard()` — GET current blackboard state
 - `tree()` — GET tree structure
 - `status()` — GET tree status
 
 Event methods:
+
 - `on(event, handler)` — subscribe to SSE event type (also supports `client:event` name dispatch)
 - `onAny(handler)` — subscribe to all events
 - `off(event, handler)` — unsubscribe
@@ -62,6 +66,7 @@ Event methods:
 ```
 
 On mount:
+
 1. Creates a `CartographerClient` via `createCartographerClient(url)`
 2. Registers a `snapshot` event listener on the client
 3. Calls `client.connect()` to open SSE
@@ -69,6 +74,7 @@ On mount:
 5. Subsequent SSE events update the store incrementally
 
 On unmount:
+
 1. Calls `client.disconnect()`
 
 The provider renders no UI — it only provides context.
@@ -85,7 +91,7 @@ Subscribes to a single blackboard key. Returns a `[value, setter]` tuple.
 - Uses `useSyncExternalStore` with per-key subscription granularity
 
 ```tsx
-const [name, setName] = useBlackboard<string>('user:name');
+const [name, setName] = useBlackboard<string>("user:name");
 ```
 
 #### `useBlackboardSnapshot(): Record<string, unknown>`
@@ -98,9 +104,9 @@ Subscribes to `tree:tick` SSE events. Returns the latest tick result:
 
 ```ts
 interface TreeStatusInfo {
-  status: string;      // 'success' | 'failure' | 'running'
+  status: string; // 'success' | 'failure' | 'running'
   durationMs: number;
-  localTickCount: number;  // client-side counter, incremented on each tree:tick event
+  localTickCount: number; // client-side counter, incremented on each tree:tick event
 }
 ```
 
@@ -117,11 +123,11 @@ Provides functions to send actions to the tree, with pending state tracking.
 - `pending: boolean` — `true` while a sent action is being processed. Cleared by SSE events, not the HTTP response.
 
 ```tsx
-const review = useAction('submit_review');
+const review = useAction("submit_review");
 
 <button onClick={() => review.send({ rating: 5 })} disabled={review.pending}>
   Submit
-</button>
+</button>;
 ```
 
 #### `useClientEvent(name: string, handler: (data: unknown) => void): void`
@@ -129,7 +135,7 @@ const review = useAction('submit_review');
 Subscribes to named events from `EmitToClientNode` (delivered via `client:event` SSE events). The handler is ref-stable (no stale closure issues). For side effects, not state.
 
 ```tsx
-useClientEvent('ui:show_confirmation', (data) => {
+useClientEvent("ui:show_confirmation", (data) => {
   setConfirmation(data as ConfirmationRequest);
 });
 ```
@@ -155,9 +161,9 @@ An internal (not exported) store that bridges SSE events to React's `useSyncExte
 ```ts
 interface SyncStoreState {
   blackboard: Record<string, unknown>;
-  blackboardVersions: Record<string, number>;  // per-key change counter
+  blackboardVersions: Record<string, number>; // per-key change counter
   treeStatus: TreeStatusInfo | null;
-  connectionStatus: 'connecting' | 'connected' | 'disconnected';
+  connectionStatus: "connecting" | "connected" | "disconnected";
 }
 ```
 
@@ -176,12 +182,12 @@ interface SyncStoreState {
 
 ## Data Flow Summary
 
-| Pattern | Flow |
-|---------|------|
-| **Read** | ActorServer → SSE `blackboard:write` → SyncStore → `useSyncExternalStore` → Component |
-| **Write** | Component → `useBlackboard` setter → `client.write()` → HTTP POST → ActorServer → SSE echo → SyncStore |
-| **Event** | `EmitToClientNode` → SSE `client:event` → `useClientEvent` handler → Component |
-| **Action** | Component → `useAction.send()` → HTTP POST → ActorServer → `ActionReceivedNode` receives |
+| Pattern    | Flow                                                                                                   |
+| ---------- | ------------------------------------------------------------------------------------------------------ |
+| **Read**   | ActorServer → SSE `blackboard:write` → SyncStore → `useSyncExternalStore` → Component                  |
+| **Write**  | Component → `useBlackboard` setter → `client.write()` → HTTP POST → ActorServer → SSE echo → SyncStore |
+| **Event**  | `EmitToClientNode` → SSE `client:event` → `useClientEvent` handler → Component                         |
+| **Action** | Component → `useAction.send()` → HTTP POST → ActorServer → `ActionReceivedNode` receives               |
 
 ## Non-Goals
 
