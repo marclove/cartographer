@@ -28,7 +28,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "echo 'Tests run from root via vitest projects'"
+    "test": "vitest run"
   },
   "license": "Apache-2.0"
 }
