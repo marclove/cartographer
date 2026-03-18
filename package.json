@@ -1,23 +1,24 @@
 {
-  "name": "cartographer-monorepo",
-  "private": true,
-  "packageManager": "pnpm@10.26.0",
-  "type": "module",
-  "scripts": {
-    "build": "turbo build",
-    "test": "turbo test",
-    "typecheck": "turbo typecheck",
-    "test:integration": "pnpm --filter cartographer test:integration",
-    "test:live": "pnpm --filter cartographer test:live"
-  },
-  "license": "Apache-2.0",
-  "engines": {
-    "node": ">=18"
-  },
-  "devDependencies": {
-    "@vitest/coverage-v8": "^3.2.4",
-    "turbo": "^2.8.17",
-    "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
-  }
+	"name": "cartographer-monorepo",
+	"private": true,
+	"packageManager": "pnpm@10.26.0",
+	"type": "module",
+	"scripts": {
+		"build": "turbo build",
+		"test": "turbo test",
+		"typecheck": "turbo typecheck",
+		"test:integration": "pnpm --filter cartographer test:integration",
+		"test:live": "pnpm --filter cartographer test:live && pnpm --filter @cartographer/example-content-pipeline test:live && pnpm --filter @cartographer/example-scheduled-monitor test:live",
+		"test:all": "pnpm run test && pnpm run test:integration && pnpm run test:live"
+	},
+	"license": "Apache-2.0",
+	"engines": {
+		"node": ">=18"
+	},
+	"devDependencies": {
+		"@vitest/coverage-v8": "^3.2.4",
+		"turbo": "^2.8.17",
+		"typescript": "^5.9.3",
+		"vitest": "^3.2.4"
+	}
 }
