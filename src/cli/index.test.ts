@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { parseArgs } from './parse-args.js';
 
 describe('parseArgs', () => {
@@ -171,6 +171,68 @@ describe('parseArgs', () => {
       const result = parse('run', 'tree.ts', '--serve', '--no-tick');
       expect(result.flags.serve).toBe(true);
       expect(result.flags.noTick).toBe(true);
+    });
+  });
+
+  describe('parseArgs error paths', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    function mockProcessExit() {
+      vi.spyOn(process, 'exit').mockImplementation(() => {
+        throw new Error('exit');
+      });
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    }
+
+    it('exits on invalid --port (NaN)', () => {
+      mockProcessExit();
+      expect(() => parse('run', 'file.ts', '--serve', '--port', 'abc')).toThrow('exit');
+      expect(process.stderr.write).toHaveBeenCalledWith(
+        expect.stringContaining('--port requires a valid port number'),
+      );
+    });
+
+    it('exits on --port out of range', () => {
+      mockProcessExit();
+      expect(() => parse('run', 'file.ts', '--serve', '--port', '99999')).toThrow('exit');
+      expect(process.stderr.write).toHaveBeenCalledWith(
+        expect.stringContaining('--port requires a valid port number'),
+      );
+    });
+
+    it('exits on invalid --dashboard-port (NaN)', () => {
+      mockProcessExit();
+      expect(() => parse('run', 'file.ts', '--serve', '--dashboard-port', 'abc')).toThrow('exit');
+      expect(process.stderr.write).toHaveBeenCalledWith(
+        expect.stringContaining('--dashboard-port requires a valid port number'),
+      );
+    });
+
+    it('exits on invalid --tick-interval (NaN)', () => {
+      mockProcessExit();
+      expect(() => parse('run', 'file.ts', '--serve', '--tick-interval', 'abc')).toThrow('exit');
+      expect(process.stderr.write).toHaveBeenCalledWith(
+        expect.stringContaining('--tick-interval requires a positive number'),
+      );
+    });
+
+    it('exits on --tick-interval zero or negative', () => {
+      mockProcessExit();
+      expect(() => parse('run', 'file.ts', '--serve', '--tick-interval', '0')).toThrow('exit');
+      expect(process.stderr.write).toHaveBeenCalledWith(
+        expect.stringContaining('--tick-interval requires a positive number'),
+      );
+    });
+
+    it('exits on unknown flag', () => {
+      mockProcessExit();
+      expect(() => parse('run', 'file.ts', '--unknown-flag')).toThrow('exit');
+      expect(process.stderr.write).toHaveBeenCalledWith(
+        expect.stringContaining('Unknown flag: --unknown-flag'),
+      );
     });
   });
 });

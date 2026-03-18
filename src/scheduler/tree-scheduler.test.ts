@@ -321,6 +321,151 @@ describe('TreeScheduler', () => {
       expect.objectContaining({ reason: 'error' }),
     );
   });
+
+  it('onError function returning "continue" keeps scheduler running', async () => {
+    const tree = createTree(NodeStatus.SUCCESS);
+    let callCount = 0;
+    vi.spyOn(tree, 'tick').mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) throw new Error('tick-error');
+      return NodeStatus.SUCCESS;
+    });
+
+    const onErrorFn = vi.fn().mockReturnValue('continue');
+
+    const scheduler = new TreeScheduler({
+      tree,
+      schedule: { type: 'interval', delayMs: 50 },
+      maxCycles: 1,
+      onError: onErrorFn,
+    });
+
+    const errorSpy = vi.fn();
+    scheduler.events.on('tick:error', errorSpy);
+
+    const startPromise = scheduler.start();
+    // Tick 1: throws, onError returns 'continue'
+    await vi.advanceTimersByTimeAsync(50);
+    // Tick 2: SUCCESS, cycle 1 complete -> maxCycles reached
+    await vi.advanceTimersByTimeAsync(50);
+    await startPromise;
+
+    expect(onErrorFn).toHaveBeenCalledOnce();
+    expect(onErrorFn).toHaveBeenCalledWith(expect.any(Error), 1);
+    expect((onErrorFn.mock.calls[0][0] as Error).message).toBe('tick-error');
+    expect(errorSpy).toHaveBeenCalledOnce();
+    expect(scheduler.runCount).toBe(2);
+    expect(scheduler.cycleCount).toBe(1);
+    expect(scheduler.isRunning).toBe(false);
+  });
+
+  it('onError function returning "stop" halts the scheduler', async () => {
+    const tree = createTree(NodeStatus.SUCCESS);
+    vi.spyOn(tree, 'tick').mockImplementation(async () => {
+      throw new Error('fatal');
+    });
+
+    const onErrorFn = vi.fn().mockReturnValue('stop');
+
+    const scheduler = new TreeScheduler({
+      tree,
+      schedule: { type: 'interval', delayMs: 50 },
+      onError: onErrorFn,
+    });
+
+    const stopSpy = vi.fn();
+    scheduler.events.on('scheduler:stop', stopSpy);
+
+    const startPromise = scheduler.start();
+    await vi.advanceTimersByTimeAsync(50);
+    await startPromise;
+
+    expect(onErrorFn).toHaveBeenCalledOnce();
+    expect(onErrorFn).toHaveBeenCalledWith(expect.any(Error), 1);
+    expect(stopSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'error' }),
+    );
+    expect(scheduler.isRunning).toBe(false);
+  });
+
+  it('cron schedule executes tick at next occurrence', async () => {
+    // Set fake timers to 30 seconds before the minute boundary.
+    // Cron '* * * * *' fires every minute, so next occurrence is 30s away.
+    vi.setSystemTime(new Date('2025-01-01T00:00:30Z'));
+
+    let callCount = 0;
+    const root = {
+      id: 'root', name: 'root', children: [] as any[],
+      tick: vi.fn(async () => {
+        callCount++;
+        return NodeStatus.SUCCESS;
+      }),
+      reset: vi.fn(),
+      abort: vi.fn(),
+    };
+    const tree = new BehaviorTree({ name: 'test-tree', root });
+
+    const scheduler = new TreeScheduler({
+      tree,
+      schedule: { type: 'cron', expression: '* * * * *' },
+      stopOnStatus: NodeStatus.SUCCESS,
+    });
+
+    const startPromise = scheduler.start();
+
+    // Advance 30s to the next minute boundary — tick should fire
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    await startPromise;
+
+    expect(root.tick).toHaveBeenCalledTimes(1);
+    expect(scheduler.lastStatus).toBe(NodeStatus.SUCCESS);
+    expect(scheduler.isRunning).toBe(false);
+  });
+
+  it('start() when already running is a no-op', async () => {
+    const tree = createTree(NodeStatus.RUNNING);
+    const tickSpy = vi.spyOn(tree, 'tick');
+
+    const scheduler = new TreeScheduler({
+      tree,
+      schedule: { type: 'interval', delayMs: 100 },
+    });
+
+    const startPromise1 = scheduler.start();
+
+    // First tick fires
+    await vi.advanceTimersByTimeAsync(100);
+    expect(tickSpy).toHaveBeenCalledTimes(1);
+
+    // Calling start() again should be a no-op
+    const startPromise2 = scheduler.start();
+    // The second start() returns immediately (undefined-ish), not a new loop
+    await vi.advanceTimersByTimeAsync(100);
+    expect(tickSpy).toHaveBeenCalledTimes(2); // only one scheduler loop running
+
+    await scheduler.stop();
+    await startPromise1;
+    await startPromise2;
+
+    expect(scheduler.isRunning).toBe(false);
+  });
+
+  it('stop() when not running resolves immediately', async () => {
+    const tree = createTree(NodeStatus.SUCCESS);
+
+    const scheduler = new TreeScheduler({
+      tree,
+      schedule: { type: 'interval', delayMs: 100 },
+    });
+
+    expect(scheduler.isRunning).toBe(false);
+
+    // stop() on a non-running scheduler should resolve without error
+    await scheduler.stop();
+
+    expect(scheduler.isRunning).toBe(false);
+  });
 });
 
 function createSlowTree(delayMs?: number) {

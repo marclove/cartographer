@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { TreeBuilder } from './tree-builder.js';
+import { TreeBuilder, SingleChildBuilder } from './tree-builder.js';
 import { NodeStatus } from '../types.js';
 import type { TreeContext } from '../types.js';
 import { AgentSelectionStrategy } from '../strategies/agent-selection.js';
@@ -454,5 +454,209 @@ describe('registry integration', () => {
         .action('root', 'nonexistent')
         .build();
     }).toThrow('Action "nonexistent" not found in registry');
+  });
+
+  it('throws when using condition string ref without a registry', () => {
+    expect(() => {
+      new TreeBuilder('test')
+        .condition('root', 'some-ref')
+        .build();
+    }).toThrow('Cannot resolve registry reference "some-ref": no registry provided to TreeBuilder');
+  });
+
+  it('throws when using strategy string ref without a registry', () => {
+    expect(() => {
+      new TreeBuilder('test')
+        .sequence('root', { strategy: 'some-ref' }, (b) => {
+          b.action('child', () => NodeStatus.SUCCESS);
+        })
+        .build();
+    }).toThrow('Cannot resolve registry reference "some-ref": no registry provided to TreeBuilder');
+  });
+});
+
+describe('CompositeBuilder decorator methods', () => {
+  it('supports alwaysSucceed wrapping a failing action', async () => {
+    const tree = new TreeBuilder('test')
+      .alwaysSucceed('root', (b) => {
+        b.action('child', () => NodeStatus.FAILURE);
+      })
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
+  });
+
+  it('supports alwaysFail wrapping a succeeding action', async () => {
+    const tree = new TreeBuilder('test')
+      .alwaysFail('root', (b) => {
+        b.action('child', () => NodeStatus.SUCCESS);
+      })
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.FAILURE);
+  });
+});
+
+describe('SingleChildBuilder methods', () => {
+  it('condition() inside a decorator', async () => {
+    const tree = new TreeBuilder('test')
+      .inverter('root', (b) => {
+        b.condition('check', () => true);
+      })
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.FAILURE);
+  });
+
+  it('agent() inside a decorator', () => {
+    const tree = new TreeBuilder('test')
+      .inverter('root', (b) => {
+        b.agent('ai', { prompt: 'test' });
+      })
+      .build();
+    expect(tree).toBeDefined();
+  });
+
+  it('selector() inside a decorator', async () => {
+    const tree = new TreeBuilder('test')
+      .inverter('root', (b) => {
+        b.selector('sel', (b) => {
+          b.action('a', () => NodeStatus.FAILURE);
+        });
+      })
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.SUCCESS); // inverter flips FAILURE
+  });
+
+  it('parallel() inside a decorator', async () => {
+    const tree = new TreeBuilder('test')
+      .inverter('root', (b) => {
+        b.parallel('par', (b) => {
+          b.action('a', () => NodeStatus.SUCCESS);
+        });
+      })
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.FAILURE); // inverter flips SUCCESS
+  });
+
+  it('inverter() inside a decorator', async () => {
+    const tree = new TreeBuilder('test')
+      .inverter('outer', (b) => {
+        b.inverter('inner', (b) => {
+          b.action('a', () => NodeStatus.SUCCESS);
+        });
+      })
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.SUCCESS); // double inversion
+  });
+
+  it('repeat() inside a decorator', async () => {
+    let count = 0;
+    const tree = new TreeBuilder('test')
+      .alwaysSucceed('root', (b) => {
+        b.repeat('rep', { count: 2 }, (b) => {
+          b.action('a', () => { count++; return NodeStatus.SUCCESS; });
+        });
+      })
+      .build();
+    // tick through both repetitions
+    for (let i = 0; i < 6; i++) {
+      await tree.tick();
+      await flush();
+    }
+    expect(count).toBeGreaterThanOrEqual(2);
+  });
+
+  it('retry() inside a decorator', async () => {
+    let attempts = 0;
+    const tree = new TreeBuilder('test')
+      .alwaysSucceed('root', (b) => {
+        b.retry('ret', { maxAttempts: 2 }, (b) => {
+          b.action('a', () => { attempts++; return NodeStatus.FAILURE; });
+        });
+      })
+      .build();
+    for (let i = 0; i < 6; i++) {
+      await tree.tick();
+      await flush();
+    }
+    expect(attempts).toBeGreaterThanOrEqual(2);
+  });
+
+  it('alwaysSucceed() inside a decorator', async () => {
+    const tree = new TreeBuilder('test')
+      .inverter('root', (b) => {
+        b.alwaysSucceed('as', (b) => {
+          b.action('a', () => NodeStatus.FAILURE);
+        });
+      })
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.FAILURE); // inverter flips alwaysSucceed's SUCCESS
+  });
+
+  it('alwaysFail() inside a decorator', async () => {
+    const tree = new TreeBuilder('test')
+      .inverter('root', (b) => {
+        b.alwaysFail('af', (b) => {
+          b.action('a', () => NodeStatus.SUCCESS);
+        });
+      })
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.SUCCESS); // inverter flips alwaysFail's FAILURE
+  });
+
+  it('timeout() inside a decorator', async () => {
+    const tree = new TreeBuilder('test')
+      .inverter('root', (b) => {
+        b.timeout('t', { timeoutMs: 5000 }, (b) => {
+          b.action('a', () => NodeStatus.SUCCESS);
+        });
+      })
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await tree.tick()).toBe(NodeStatus.FAILURE); // inverter flips SUCCESS
+  });
+
+  it('guard() inside a decorator', async () => {
+    const tree = new TreeBuilder('test')
+      .inverter('root', (b) => {
+        b.guard('g', { condition: () => false }, (b) => {
+          b.action('a', () => NodeStatus.SUCCESS);
+        });
+      })
+      .build();
+    expect(await tree.tick()).toBe(NodeStatus.SUCCESS); // guard fails, inverter flips
+  });
+
+  it('getChild() throws when no child was added', () => {
+    const builder = new SingleChildBuilder();
+    expect(() => builder.getChild()).toThrow('Decorator must have exactly one child node');
+  });
+});
+
+describe('TreeBuilder.build() validation', () => {
+  it('throws when no root node was added', () => {
+    expect(() => new TreeBuilder('empty').build()).toThrow('Tree must have exactly one root node, got 0');
+  });
+
+  it('throws when more than one root node was added', () => {
+    expect(() => {
+      new TreeBuilder('multi')
+        .action('a', () => NodeStatus.SUCCESS)
+        .action('b', () => NodeStatus.SUCCESS)
+        .build();
+    }).toThrow('Tree must have exactly one root node, got 2');
   });
 });

@@ -623,3 +623,184 @@ describe('SelectorNode (reactive)', () => {
     expect(actionStartCount).toBe(1);
   });
 });
+
+describe('SelectorNode serialize/restore', () => {
+  function createCtx(): TreeContext {
+    return {
+      blackboard: new InMemoryBlackboard(),
+      events: new EventEmitter<TreeEvents>(),
+    };
+  }
+
+  /** Helper: create a mock BTreeNode with a stable contentHash and spied tick. */
+  function mockNode(
+    name: string,
+    hash: string,
+    tickFn: () => Promise<NodeStatus>,
+  ): BTreeNode {
+    return {
+      id: name,
+      name,
+      children: [],
+      tick: vi.fn(tickFn),
+      reset: vi.fn(),
+      abort: vi.fn(),
+      interrupt: vi.fn(),
+      hasInflightWork: () => false,
+      inflightPromise: () => null,
+      contentHash: () => hash,
+      serialize: () => ({}),
+      restore: () => {},
+    };
+  }
+
+  it('serialize() returns committedOrder and completedMap after a partial tick', async () => {
+    let bCalls = 0;
+    const a = mockNode('a', 'hash-a', async () => NodeStatus.FAILURE);
+    const b = mockNode('b', 'hash-b', async () => {
+      bCalls++;
+      return bCalls >= 3 ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
+    });
+
+    const sel = new SelectorNode({ name: 'sel', children: [a, b] });
+    const ctx = createCtx();
+
+    // Tick 1: a FAILURE (cached), b RUNNING
+    await sel.tick(ctx);
+
+    const state = sel.serialize();
+    // committedOrder should contain content hashes of both children
+    expect(state.committedOrder).toEqual(['hash-a', 'hash-b']);
+    // completedMap should have a's FAILURE cached
+    expect(state.completedMap).toEqual({ 'hash-a': NodeStatus.FAILURE });
+  });
+
+  it('restore() rebuilds state and subsequent tick resumes correctly', async () => {
+    let bCalls = 0;
+    const a = mockNode('a', 'hash-a', async () => NodeStatus.FAILURE);
+    const b = mockNode('b', 'hash-b', async () => {
+      bCalls++;
+      return bCalls >= 2 ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
+    });
+
+    // Create a fresh selector (no prior ticks)
+    const sel = new SelectorNode({ name: 'sel', children: [a, b] });
+    const ctx = createCtx();
+
+    // Build the hashToNode map that restore() needs
+    const hashToNode = new Map<string, BTreeNode>([
+      ['hash-a', a],
+      ['hash-b', b],
+    ]);
+
+    // Restore state as if a previous run had a committed with [a, b] and a completed with FAILURE
+    sel.restore(
+      {
+        committedOrder: ['hash-a', 'hash-b'],
+        completedMap: { 'hash-a': NodeStatus.FAILURE },
+      },
+      hashToNode,
+    );
+
+    // Tick 1: a should use cached FAILURE (not re-ticked), b is RUNNING
+    const status1 = await sel.tick(ctx);
+    expect(status1).toBe(NodeStatus.RUNNING);
+    // a.tick should NOT have been called because it's in completedMap
+    expect(a.tick).not.toHaveBeenCalled();
+
+    // Tick 2: a cached, b SUCCESS
+    const status2 = await sel.tick(ctx);
+    expect(status2).toBe(NodeStatus.SUCCESS);
+  });
+
+  it('restore() silently skips unknown hashes (partial restore)', async () => {
+    const a = mockNode('a', 'hash-a', async () => NodeStatus.FAILURE);
+
+    const sel = new SelectorNode({ name: 'sel', children: [a] });
+
+    const hashToNode = new Map<string, BTreeNode>([['hash-a', a]]);
+
+    // Restore with an unknown hash in committedOrder and completedMap
+    sel.restore(
+      {
+        committedOrder: ['hash-a', 'hash-unknown'],
+        completedMap: { 'hash-a': NodeStatus.FAILURE, 'hash-gone': NodeStatus.SUCCESS },
+      },
+      hashToNode,
+    );
+
+    // Should not throw, and the unknown entries are simply dropped
+    const state = sel.serialize();
+    // committedOrder should only contain the known hash
+    expect(state.committedOrder).toEqual(['hash-a']);
+    // completedMap should only contain the known hash
+    expect(state.completedMap).toEqual({ 'hash-a': NodeStatus.FAILURE });
+  });
+
+  it('serialize() returns empty object when no cycle is active', () => {
+    const a = mockNode('a', 'hash-a', async () => NodeStatus.SUCCESS);
+    const sel = new SelectorNode({ name: 'sel', children: [a] });
+
+    const state = sel.serialize();
+    expect(state).toEqual({});
+  });
+});
+
+describe('SelectorNode edge cases', () => {
+  function createCtx(): TreeContext {
+    return {
+      blackboard: new InMemoryBlackboard(),
+      events: new EventEmitter<TreeEvents>(),
+    };
+  }
+
+  it('empty children array returns FAILURE immediately', async () => {
+    const sel = new SelectorNode({ name: 'sel', children: [] });
+    const ctx = createCtx();
+    const status = await sel.tick(ctx);
+    expect(status).toBe(NodeStatus.FAILURE);
+  });
+
+  it('abort() propagates to all children and clears internal state', async () => {
+    const abortSpy1 = vi.fn();
+    const abortSpy2 = vi.fn();
+
+    const child1: BTreeNode = {
+      id: 'c1', name: 'c1', children: [],
+      tick: async () => NodeStatus.FAILURE,
+      reset: vi.fn(), abort: abortSpy1,
+      interrupt: vi.fn(),
+      hasInflightWork: () => false,
+      inflightPromise: () => null,
+      contentHash: () => 'h1',
+      serialize: () => ({}),
+      restore: () => {},
+    };
+    const child2: BTreeNode = {
+      id: 'c2', name: 'c2', children: [],
+      tick: async () => NodeStatus.RUNNING,
+      reset: vi.fn(), abort: abortSpy2,
+      interrupt: vi.fn(),
+      hasInflightWork: () => false,
+      inflightPromise: () => null,
+      contentHash: () => 'h2',
+      serialize: () => ({}),
+      restore: () => {},
+    };
+
+    const sel = new SelectorNode({ name: 'sel', children: [child1, child2] });
+    const ctx = createCtx();
+
+    // Tick to build up internal state (committedOrder, completedMap, childControllers)
+    await sel.tick(ctx); // c1 FAILURE (cached), c2 RUNNING
+
+    // abort() should propagate to both children
+    sel.abort();
+    expect(abortSpy1).toHaveBeenCalled();
+    expect(abortSpy2).toHaveBeenCalled();
+
+    // Internal state should be cleared — serialize returns empty
+    const state = sel.serialize();
+    expect(state).toEqual({});
+  });
+});

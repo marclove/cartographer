@@ -156,6 +156,12 @@ describe('ParallelNode — reactive tick model', () => {
       },
       reset: () => {},
       abort: () => {},
+      interrupt: () => {},
+      hasInflightWork: () => false,
+      inflightPromise: () => null,
+      contentHash: () => `stub-${name}`,
+      serialize: () => ({}),
+      restore: () => {},
     };
     return node;
   }
@@ -430,6 +436,191 @@ describe('ParallelNode — reactive tick model', () => {
 
     // Tick 2: child1 cached, child2 SUCCESS. 100% >= 50% → SUCCESS
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+  });
+
+  it('serialize() returns completedMap as hash-to-status mapping after partial tick', async () => {
+    // action1 completes SUCCESS, action2 stays RUNNING across multiple ticks
+    const action1 = new ActionNode({ name: 'a1', action: () => NodeStatus.SUCCESS });
+    const action2 = new ActionNode({ name: 'a2', action: () => NodeStatus.RUNNING });
+
+    const node = new ParallelNode({
+      name: 'par',
+      children: [action1, action2],
+    });
+
+    const ctx = createContext();
+
+    // Tick 1: both actions launch inflight → RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Tick 2: action1 resolves SUCCESS (cached), action2 resolves RUNNING
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+
+    const state = node.serialize();
+    expect(state.completedMap).toBeDefined();
+    // The completedMap should contain action1's hash → SUCCESS
+    expect(state.completedMap![action1.contentHash()]).toBe(NodeStatus.SUCCESS);
+    // action2 returned RUNNING, not in completedMap
+    expect(state.completedMap![action2.contentHash()]).toBeUndefined();
+  });
+
+  it('restore() rebuilds completedMap, subsequent tick skips already-completed non-reactive children', async () => {
+    // Use stub nodes (not ActionNode) to avoid inflight async overhead
+    let a1Calls = 0;
+    const action1 = stubNode('a1', () => {
+      a1Calls++;
+      return NodeStatus.SUCCESS;
+    });
+    let a2Calls = 0;
+    const action2 = stubNode('a2', () => {
+      a2Calls++;
+      return a2Calls >= 2 ? NodeStatus.SUCCESS : NodeStatus.RUNNING;
+    });
+
+    const node = new ParallelNode({
+      name: 'par',
+      children: [action1, action2],
+    });
+
+    // Build a hashToNode map using the child references themselves
+    // (restore matches by BTreeNode identity via hashToNode lookup)
+    const hashToNode = new Map<string, BTreeNode>();
+    hashToNode.set('stub-a1', action1);
+    hashToNode.set('stub-a2', action2);
+
+    // Restore state as if action1 already completed with SUCCESS
+    const savedState = {
+      completedMap: {
+        'stub-a1': NodeStatus.SUCCESS as NodeStatus,
+      },
+    };
+    node.restore(savedState, hashToNode);
+
+    const ctx = createContext();
+
+    // Tick: action1 should be skipped (already completed), action2 ticked
+    // action2 returns RUNNING on first call
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    expect(a1Calls).toBe(0); // skipped because restored into completedMap
+    expect(a2Calls).toBe(1);
+
+    // Tick again: action2 returns SUCCESS
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(a1Calls).toBe(0); // still skipped
+    expect(a2Calls).toBe(2);
+  });
+
+  it('restore() skips unknown hashes gracefully', () => {
+    const action1 = new ActionNode({ name: 'a1', action: () => NodeStatus.SUCCESS });
+
+    const node = new ParallelNode({
+      name: 'par',
+      children: [action1],
+    });
+
+    const hashToNode = new Map<string, BTreeNode>();
+    hashToNode.set(action1.contentHash(), action1);
+
+    // State contains an unknown hash that doesn't map to any child
+    const savedState = {
+      completedMap: {
+        'unknown-hash-abc123': NodeStatus.SUCCESS,
+        [action1.contentHash()]: NodeStatus.FAILURE,
+      },
+    };
+
+    // Should not throw
+    node.restore(savedState, hashToNode);
+
+    // Verify the known hash was restored by serializing back
+    const reserialized = node.serialize();
+    expect(reserialized.completedMap).toBeDefined();
+    expect(reserialized.completedMap![action1.contentHash()]).toBe(NodeStatus.FAILURE);
+    // Unknown hash should NOT be in the restored state
+    expect(reserialized.completedMap!['unknown-hash-abc123']).toBeUndefined();
+  });
+
+  it('parent signal already aborted before tick — child controllers aborted immediately', async () => {
+    const receivedSignals: AbortSignal[] = [];
+
+    const child1: BTreeNode = {
+      id: 'c1', name: 'c1', children: [],
+      tick: async (ctx: TreeContext) => {
+        receivedSignals.push(ctx.signal!);
+        return NodeStatus.RUNNING;
+      },
+      reset: () => {}, abort: () => {},
+      interrupt: () => {},
+      hasInflightWork: () => false,
+      inflightPromise: () => null,
+      contentHash: () => 'c1-hash',
+      serialize: () => ({}),
+      restore: () => {},
+    };
+
+    const parentController = new AbortController();
+    parentController.abort(); // Already aborted before tick
+
+    const ctx: TreeContext = {
+      blackboard: new InMemoryBlackboard(),
+      events: new EventEmitter<TreeEvents>(),
+      signal: parentController.signal,
+    };
+
+    const node = new ParallelNode({
+      name: 'par',
+      children: [child1],
+    });
+
+    await node.tick(ctx);
+
+    // Child should have received an already-aborted signal
+    expect(receivedSignals).toHaveLength(1);
+    expect(receivedSignals[0].aborted).toBe(true);
+  });
+
+  it('abort() propagates to all child AbortControllers and calls child.abort()', async () => {
+    const abortSpies = [vi.fn(), vi.fn()];
+    const receivedSignals: AbortSignal[] = [];
+
+    function makeChild(idx: number): BTreeNode {
+      return {
+        id: `c${idx}`, name: `c${idx}`, children: [],
+        tick: async (ctx: TreeContext) => {
+          receivedSignals.push(ctx.signal!);
+          return NodeStatus.RUNNING;
+        },
+        reset: () => {},
+        abort: abortSpies[idx],
+        interrupt: () => {},
+        hasInflightWork: () => false,
+        inflightPromise: () => null,
+        contentHash: () => `c${idx}-hash`,
+        serialize: () => ({}),
+        restore: () => {},
+      };
+    }
+
+    const node = new ParallelNode({
+      name: 'par',
+      children: [makeChild(0), makeChild(1)],
+    });
+
+    const ctx = createContext();
+    await node.tick(ctx);
+
+    // Both children are RUNNING, signals not yet aborted
+    expect(receivedSignals).toHaveLength(2);
+    expect(receivedSignals[0].aborted).toBe(false);
+    expect(receivedSignals[1].aborted).toBe(false);
+
+    // abort() should abort all child controllers and call child.abort()
+    node.abort();
+
+    expect(receivedSignals[0].aborted).toBe(true);
+    expect(receivedSignals[1].aborted).toBe(true);
+    expect(abortSpies[0]).toHaveBeenCalled();
+    expect(abortSpies[1]).toHaveBeenCalled();
   });
 
   it('scoped abort controllers per child cascade from parent signal', async () => {

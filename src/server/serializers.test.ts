@@ -143,4 +143,217 @@ describe('serializeEvent', () => {
       source: 'test',
     });
   });
+
+  it('serializes node:error — extracts error message', () => {
+    const result = serializeEvent('node:error', {
+      node: dummyAction,
+      error: new Error('something broke'),
+      context: {} as any,
+    });
+    expect(result).toEqual({
+      node: { id: 'do-stuff', name: 'DoStuff', type: 'action' },
+      error: 'something broke',
+    });
+  });
+
+  it('serializes agent:text — returns nodeId and text', () => {
+    const result = serializeEvent('agent:text', {
+      node: dummyAction,
+      text: 'Hello world',
+    });
+    expect(result).toEqual({
+      nodeId: 'do-stuff',
+      text: 'Hello world',
+    });
+  });
+
+  it('serializes agent:tool_use — returns nodeId, tool, and input', () => {
+    const result = serializeEvent('agent:tool_use', {
+      node: dummyAction,
+      tool: 'bash',
+      input: { command: 'ls' },
+    });
+    expect(result).toEqual({
+      nodeId: 'do-stuff',
+      tool: 'bash',
+      input: { command: 'ls' },
+    });
+  });
+
+  it('serializes agent:response — returns nodeId, result, cost, and modelUsage', () => {
+    const result = serializeEvent('agent:response', {
+      node: dummyAction,
+      result: 'done',
+      cost: 0.05,
+      modelUsage: { input_tokens: 100, output_tokens: 50 },
+    });
+    expect(result).toEqual({
+      nodeId: 'do-stuff',
+      result: 'done',
+      cost: 0.05,
+      modelUsage: { input_tokens: 100, output_tokens: 50 },
+    });
+  });
+
+  it('serializes agent:error — returns nodeId, subtype, errors, permissionDenials, cost, modelUsage', () => {
+    const result = serializeEvent('agent:error', {
+      node: dummyAction,
+      subtype: 'tool_error',
+      errors: ['bad input'],
+      permissionDenials: [],
+      cost: 0.01,
+      modelUsage: { input_tokens: 10, output_tokens: 5 },
+    });
+    expect(result).toEqual({
+      nodeId: 'do-stuff',
+      subtype: 'tool_error',
+      errors: ['bad input'],
+      permissionDenials: [],
+      cost: 0.01,
+      modelUsage: { input_tokens: 10, output_tokens: 5 },
+    });
+  });
+
+  it('serializes agent:message — returns nodeId and message', () => {
+    const result = serializeEvent('agent:message', {
+      node: dummyAction,
+      message: { role: 'assistant', content: 'hi' },
+    });
+    expect(result).toEqual({
+      nodeId: 'do-stuff',
+      message: { role: 'assistant', content: 'hi' },
+    });
+  });
+
+  it('serializes agent:tool_progress — returns nodeId, toolUseId, toolName, elapsedSeconds', () => {
+    const result = serializeEvent('agent:tool_progress', {
+      node: dummyAction,
+      toolUseId: 'tu-123',
+      toolName: 'bash',
+      elapsedSeconds: 3.5,
+    });
+    expect(result).toEqual({
+      nodeId: 'do-stuff',
+      toolUseId: 'tu-123',
+      toolName: 'bash',
+      elapsedSeconds: 3.5,
+    });
+  });
+
+  it('serializes agent:init — returns nodeId, sessionId, model, tools, mcpServers', () => {
+    const result = serializeEvent('agent:init', {
+      node: dummyAction,
+      sessionId: 'sess-1',
+      model: 'claude-sonnet-4-20250514',
+      tools: ['bash', 'read'],
+      mcpServers: ['mcp-1'],
+    });
+    expect(result).toEqual({
+      nodeId: 'do-stuff',
+      sessionId: 'sess-1',
+      model: 'claude-sonnet-4-20250514',
+      tools: ['bash', 'read'],
+      mcpServers: ['mcp-1'],
+    });
+  });
+
+  it('serializes agent:status — returns nodeId and status', () => {
+    const result = serializeEvent('agent:status', {
+      node: dummyAction,
+      status: 'running',
+    });
+    expect(result).toEqual({
+      nodeId: 'do-stuff',
+      status: 'running',
+    });
+  });
+
+  it('serializes agent:rate_limit — returns nodeId and info', () => {
+    const result = serializeEvent('agent:rate_limit', {
+      node: dummyAction,
+      info: { retryAfter: 30 },
+    });
+    expect(result).toEqual({
+      nodeId: 'do-stuff',
+      info: { retryAfter: 30 },
+    });
+  });
+
+  it('serializes agent:stream — returns nodeId and event', () => {
+    const result = serializeEvent('agent:stream', {
+      node: dummyAction,
+      event: { type: 'content_block_delta', delta: { text: 'hi' } },
+    });
+    expect(result).toEqual({
+      nodeId: 'do-stuff',
+      event: { type: 'content_block_delta', delta: { text: 'hi' } },
+    });
+  });
+
+  it('serializes agent:elicitation_declined — returns nodeId and request', () => {
+    const result = serializeEvent('agent:elicitation_declined', {
+      node: dummyAction,
+      request: { question: 'proceed?' },
+    });
+    expect(result).toEqual({
+      nodeId: 'do-stuff',
+      request: { question: 'proceed?' },
+    });
+  });
+
+  it('serializes agent:prompt — returns nodeId and prompt', () => {
+    const result = serializeEvent('agent:prompt', {
+      node: dummyAction,
+      prompt: 'Do the thing',
+    });
+    expect(result).toEqual({
+      nodeId: 'do-stuff',
+      prompt: 'Do the thing',
+    });
+  });
+
+  it('serializes tree:tick:skipped — returns timestamp', () => {
+    const result = serializeEvent('tree:tick:skipped', {
+      timestamp: 1234567890,
+    });
+    expect(result).toEqual({
+      timestamp: 1234567890,
+    });
+  });
+
+  it('serializes strategy:decision — returns compositeId, strategy, and decision', () => {
+    const seq = new SequenceNode({ name: 'Seq', id: 'seq-1', children: [] });
+    const result = serializeEvent('strategy:decision', {
+      composite: seq,
+      strategy: 'agent-priority',
+      decision: { order: [0, 1, 2] },
+    });
+    expect(result).toEqual({
+      compositeId: 'seq-1',
+      strategy: 'agent-priority',
+      decision: { order: [0, 1, 2] },
+    });
+  });
+
+  it('falls through to spread pass-through for unknown event types', () => {
+    const result = serializeEvent('some:unknown:event' as any, {
+      foo: 'bar',
+      num: 99,
+    });
+    expect(result).toEqual({ foo: 'bar', num: 99 });
+  });
+});
+
+describe('getNodeType — unknown', () => {
+  it('returns unknown for an unrecognized node type', () => {
+    const fakeNode = {
+      id: 'fake-1',
+      name: 'FakeNode',
+      children: [] as any[],
+      tick: async () => NodeStatus.SUCCESS,
+      reset: () => {},
+      abort: () => {},
+    };
+    expect(getNodeType(fakeNode as any)).toBe('unknown');
+  });
 });

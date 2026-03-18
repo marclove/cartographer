@@ -349,6 +349,91 @@ describe('AgentExecutionStrategy', () => {
 
     expect(capturedOptions.abortController).toBeInstanceOf(AbortController);
   });
+
+  it('returns cached order on second call without hitting SDK', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'result',
+        subtype: 'success',
+        structured_output: { ordering: ['b', 'a'], reasoning: 'b first' },
+        total_cost_usd: 0.01,
+      },
+    ]) as any);
+
+    const strategy = new AgentExecutionStrategy({ prompt: 'Order steps', cache: true });
+    const children = [mockNode('a'), mockNode('b')];
+    const ctx = createContext();
+
+    const first = await strategy.order(children, ctx);
+    expect(first.map((n) => n.name)).toEqual(['b', 'a']);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+
+    const second = await strategy.order(children, ctx);
+    expect(second.map((n) => n.name)).toEqual(['b', 'a']);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('reset() clears cache so SDK is called again', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'result',
+        subtype: 'success',
+        structured_output: { ordering: ['b', 'a'], reasoning: 'b first' },
+        total_cost_usd: 0.01,
+      },
+    ]) as any);
+
+    const strategy = new AgentExecutionStrategy({ prompt: 'Order steps', cache: true });
+    const children = [mockNode('a'), mockNode('b')];
+    const ctx = createContext();
+
+    await strategy.order(children, ctx);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+
+    strategy.reset();
+
+    await strategy.order(children, ctx);
+    expect(mockQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back to original order when Claude returns unrecognised names', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'result',
+        subtype: 'success',
+        structured_output: { ordering: ['nonexistent', 'also_missing'], reasoning: 'wrong names' },
+        total_cost_usd: 0.01,
+      },
+    ]) as any);
+
+    const strategy = new AgentExecutionStrategy({ prompt: 'Order steps' });
+    const children = [mockNode('a'), mockNode('b')];
+    const result = await strategy.order(children, createContext());
+    expect(result.map((n) => n.name)).toEqual(['a', 'b']);
+  });
+
+  it('caches fallback result when Claude returns unrecognised names with cache enabled', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'result',
+        subtype: 'success',
+        structured_output: { ordering: ['nonexistent'], reasoning: 'wrong' },
+        total_cost_usd: 0.01,
+      },
+    ]) as any);
+
+    const strategy = new AgentExecutionStrategy({ prompt: 'Order steps', cache: true });
+    const children = [mockNode('a'), mockNode('b')];
+    const ctx = createContext();
+
+    const first = await strategy.order(children, ctx);
+    expect(first.map((n) => n.name)).toEqual(['a', 'b']);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+
+    const second = await strategy.order(children, ctx);
+    expect(second.map((n) => n.name)).toEqual(['a', 'b']);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('AgentParallelStrategy', () => {

@@ -930,3 +930,163 @@ describe('AgentNode - inflight state management', () => {
     expect(mockQuery).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('AgentNode - serialize/restore', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('serialize() returns { lastStatus } after a terminal tick', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 },
+    ]) as any);
+
+    const node = new AgentNode({ name: 'ser-success', prompt: 'Do work' });
+    const ctx = createContext();
+
+    // Tick to start, then flush + tick to complete
+    await node.tick(ctx);
+    await flush();
+    await node.tick(ctx);
+
+    expect(node.serialize()).toEqual({ lastStatus: NodeStatus.SUCCESS });
+  });
+
+  it('serialize() returns {} when no terminal status has been recorded', () => {
+    const node = new AgentNode({ name: 'ser-empty', prompt: 'Do work' });
+    expect(node.serialize()).toEqual({});
+  });
+
+  it('restore({ lastStatus: failure }) sets internal _lastTerminalStatus', () => {
+    const node = new AgentNode({ name: 'restore-test', prompt: 'Do work' });
+    node.restore({ lastStatus: NodeStatus.FAILURE }, new Map());
+    expect(node.serialize()).toEqual({ lastStatus: NodeStatus.FAILURE });
+  });
+});
+
+describe('AgentNode - $schema stripping', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('strips $schema property from outputFormat.schema before SDK call', async () => {
+    let capturedOptions: any;
+
+    mockQuery.mockImplementation(async function* (args: any) {
+      capturedOptions = args.options;
+      yield { type: 'result', subtype: 'success', structured_output: { answer: 'yes' }, total_cost_usd: 0.01 };
+    } as any);
+
+    const node = new AgentNode({
+      name: 'schema-strip',
+      prompt: 'Classify',
+      options: {
+        outputFormat: {
+          type: 'json_schema',
+          schema: {
+            $schema: 'https://json-schema.org/draft/2020-12/schema',
+            type: 'object',
+            properties: { answer: { type: 'string' } },
+          },
+        },
+      },
+    });
+
+    const ctx = createContext();
+    await node.tick(ctx);
+    await flush();
+    await node.tick(ctx);
+
+    // The $schema property should have been stripped
+    expect(capturedOptions.outputFormat.schema).toEqual({
+      type: 'object',
+      properties: { answer: { type: 'string' } },
+    });
+    expect(capturedOptions.outputFormat.schema).not.toHaveProperty('$schema');
+  });
+});
+
+describe('AgentNode - structured output fallback', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('falls back to JSON-parsing msg.result when structured_output is undefined', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'result',
+        subtype: 'success',
+        structured_output: undefined,
+        result: '{"parsed":true}',
+        total_cost_usd: 0.01,
+      },
+    ]) as any);
+
+    const node = new AgentNode({
+      name: 'fallback-json',
+      prompt: 'Classify',
+      options: {
+        outputFormat: {
+          type: 'json_schema',
+          schema: { type: 'object', properties: { parsed: { type: 'boolean' } } },
+        },
+      },
+    });
+
+    const ctx = createContext();
+    await node.tick(ctx);
+    await flush();
+    await node.tick(ctx);
+
+    expect(ctx.blackboard.get('fallback-json:output')).toEqual({ parsed: true });
+  });
+
+  it('falls back to raw string when msg.result is not valid JSON', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      {
+        type: 'result',
+        subtype: 'success',
+        structured_output: undefined,
+        result: 'not valid json',
+        total_cost_usd: 0.01,
+      },
+    ]) as any);
+
+    const node = new AgentNode({
+      name: 'fallback-raw',
+      prompt: 'Classify',
+      options: {
+        outputFormat: {
+          type: 'json_schema',
+          schema: { type: 'object', properties: { answer: { type: 'string' } } },
+        },
+      },
+    });
+
+    const ctx = createContext();
+    await node.tick(ctx);
+    await flush();
+    await node.tick(ctx);
+
+    expect(ctx.blackboard.get('fallback-raw:output')).toBe('not valid json');
+  });
+});
+
+describe('AgentNode - stream EOF', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns FAILURE when stream ends without a result message', async () => {
+    mockQuery.mockReturnValue(mockMessages([]) as any);
+
+    const node = new AgentNode({ name: 'eof-test', prompt: 'Do work' });
+    const ctx = createContext();
+
+    // First tick starts inflight
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    // Second tick polls the completed result — should be FAILURE
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
+  });
+});
