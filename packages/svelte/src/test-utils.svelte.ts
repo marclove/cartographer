@@ -1,4 +1,5 @@
 import type { CartographerClient } from '@cartographer/client';
+import { CartographerState } from './state.svelte.js';
 
 /** Creates a mock CartographerClient that stores listeners and lets tests simulate SSE events. */
 export function createMockClient(): CartographerClient & {
@@ -34,4 +35,18 @@ export function createMockClient(): CartographerClient & {
       }
     },
   };
+}
+
+/** Creates a mock client and CartographerState wired together for unit testing. */
+export function createTestContext(overrides?: Partial<CartographerClient>): {
+  client: CartographerClient & { emit(event: string, data: unknown): void };
+  state: CartographerState;
+} {
+  const client = createMockClient();
+  if (overrides) {
+    Object.assign(client, overrides);
+  }
+  const state = new CartographerState();
+  state.attach(client);
+  return { client, state };
 }
