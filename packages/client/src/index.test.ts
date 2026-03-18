@@ -5,6 +5,45 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('connection:error on EventSource error', () => {
+  function createMockEventSource() {
+    const instance = {
+      readyState: 0,
+      onerror: null as (() => void) | null,
+      addEventListener: vi.fn(),
+      close: vi.fn(),
+    };
+    vi.stubGlobal('EventSource', vi.fn(() => instance));
+    return instance;
+  }
+
+  it('dispatches connection:error with readyState on EventSource error', () => {
+    const mock = createMockEventSource();
+    const client = createCartographerClient('http://localhost:3000');
+    const handler = vi.fn();
+    client.on('connection:error', handler);
+
+    client.connect();
+    mock.readyState = 0; // CONNECTING — transient reconnect
+    mock.onerror!();
+
+    expect(handler).toHaveBeenCalledWith({ readyState: 0 });
+  });
+
+  it('dispatches connection:error with readyState 2 when CLOSED', () => {
+    const mock = createMockEventSource();
+    const client = createCartographerClient('http://localhost:3000');
+    const handler = vi.fn();
+    client.on('connection:error', handler);
+
+    client.connect();
+    mock.readyState = 2; // CLOSED — permanently dead
+    mock.onerror!();
+
+    expect(handler).toHaveBeenCalledWith({ readyState: 2 });
+  });
+});
+
 describe('requireConnection guard', () => {
   it('actionAndWait throws when connect() has not been called', async () => {
     const client = createCartographerClient('http://localhost:3000');

@@ -190,6 +190,10 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
           try { dispatchEvent(type, JSON.parse(e.data)); } catch {}
         });
       }
+      eventSource.onerror = () => {
+        const readyState = eventSource?.readyState ?? 2;
+        dispatchEvent('connection:error', { readyState });
+      };
     },
 
     disconnect() {

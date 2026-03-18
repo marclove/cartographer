@@ -48,6 +48,16 @@ export function createSyncStore(): SyncStore {
     notify();
   }
 
+  function onConnectionError(data: unknown): void {
+    const d = data as { readyState: number };
+    if (d.readyState === 2) {
+      connectionStatus = 'disconnected';
+    } else {
+      connectionStatus = 'connecting';
+    }
+    notify();
+  }
+
   function onTreeTick(data: unknown): void {
     const d = data as { status: string; durationMs: number };
     treeStatus = {
@@ -92,10 +102,12 @@ export function createSyncStore(): SyncStore {
       client.on('snapshot', onSnapshot);
       client.on('blackboard:write', onBlackboardWrite);
       client.on('tree:tick', onTreeTick);
+      client.on('connection:error', onConnectionError);
       return () => {
         client.off('snapshot', onSnapshot);
         client.off('blackboard:write', onBlackboardWrite);
         client.off('tree:tick', onTreeTick);
+        client.off('connection:error', onConnectionError);
         connectionStatus = 'disconnected';
         notify();
       };

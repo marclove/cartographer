@@ -186,6 +186,73 @@ describe('SyncStore', () => {
     expect(store.getBlackboardValue('x')).toBe(1); // value unchanged
   });
 
+  it('sets connectionStatus to connecting on connection:error with readyState 0', () => {
+    const store = createSyncStore();
+    const client = createMockClient();
+    store.attach(client);
+
+    client.emit('snapshot', { blackboard: {} });
+    expect(store.getConnectionStatus()).toBe('connected');
+
+    client.emit('connection:error', { readyState: 0 });
+    expect(store.getConnectionStatus()).toBe('connecting');
+  });
+
+  it('sets connectionStatus to disconnected on connection:error with readyState 2', () => {
+    const store = createSyncStore();
+    const client = createMockClient();
+    store.attach(client);
+
+    client.emit('snapshot', { blackboard: {} });
+    expect(store.getConnectionStatus()).toBe('connected');
+
+    client.emit('connection:error', { readyState: 2 });
+    expect(store.getConnectionStatus()).toBe('disconnected');
+  });
+
+  it('recovers to connected when snapshot arrives after connection:error', () => {
+    const store = createSyncStore();
+    const client = createMockClient();
+    store.attach(client);
+
+    client.emit('snapshot', { blackboard: {} });
+    expect(store.getConnectionStatus()).toBe('connected');
+
+    client.emit('connection:error', { readyState: 0 });
+    expect(store.getConnectionStatus()).toBe('connecting');
+
+    client.emit('snapshot', { blackboard: { x: 1 } });
+    expect(store.getConnectionStatus()).toBe('connected');
+  });
+
+  it('notifies subscribers on connection:error', () => {
+    const store = createSyncStore();
+    const client = createMockClient();
+    store.attach(client);
+
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    client.emit('connection:error', { readyState: 0 });
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('detach removes connection:error listener', () => {
+    const store = createSyncStore();
+    const client = createMockClient();
+    const detach = store.attach(client);
+
+    client.emit('snapshot', { blackboard: {} });
+    expect(store.getConnectionStatus()).toBe('connected');
+
+    detach();
+    expect(store.getConnectionStatus()).toBe('disconnected');
+
+    // After detach, connection:error should not change status
+    client.emit('connection:error', { readyState: 0 });
+    expect(store.getConnectionStatus()).toBe('disconnected');
+  });
+
   it('sets connectionStatus to disconnected on detach', () => {
     const store = createSyncStore();
     const client = createMockClient();
