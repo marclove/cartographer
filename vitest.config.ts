@@ -30,6 +30,7 @@ export default defineConfig({
           name: 'react',
           include: ['packages/react/src/**/*.test.{ts,tsx}'],
           environment: 'jsdom',
+          globals: true,
         },
       },
       {
