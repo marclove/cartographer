@@ -5,8 +5,8 @@ import type { TreeContext, TreeEvents } from '../types.js';
 import { BaseNode } from '../nodes/base.js';
 import { ActorServer } from '../server/actor-server.js';
 import type { ActorServerOptions } from '../server/actor-server.js';
-import { createCartographerClient } from '../client/index.js';
-import type { CartographerClient } from '../client/types.js';
+import { createCartographerClient } from '@cartographer/client';
+import type { CartographerClient } from '@cartographer/client';
 
 export function createContext(initial?: Record<string, unknown>): TreeContext {
   return {

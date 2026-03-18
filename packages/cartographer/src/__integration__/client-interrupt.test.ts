@@ -5,7 +5,7 @@ import { ActionNode } from '../nodes/action.js';
 import { InMemoryStateStore } from '../state/in-memory-state-store.js';
 import { NodeStatus } from '../types.js';
 import { serializeTree } from '../core/serialization.js';
-import { createCartographerClient } from './index.js';
+import { createCartographerClient } from '@cartographer/client';
 
 function makeSlowTree() {
   return new BehaviorTree({

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { createCartographerClient, ConflictError } from './index.js';
+import { createCartographerClient, ConflictError } from '@cartographer/client';
 import { ActorServer } from '../server/actor-server.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { ActionNode } from '../nodes/action.js';
