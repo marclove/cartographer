@@ -63,10 +63,10 @@ Event methods:
 
 On mount:
 1. Creates a `CartographerClient` via `createCartographerClient(url)`
-2. Calls `client.connect()` to open SSE
-3. Fetches initial blackboard snapshot via `client.blackboard()`
-4. Populates the internal sync store
-5. SSE events arriving during the fetch are queued and replayed after
+2. Registers a `snapshot` event listener on the client
+3. Calls `client.connect()` to open SSE
+4. The `/api/events` endpoint sends a `snapshot` event (containing `{ blackboard, treeRootHash, lastMessageAt }`) as its first event on every connection — the store initializes from this snapshot
+5. Subsequent SSE events update the store incrementally
 
 On unmount:
 1. Calls `client.disconnect()`
@@ -99,11 +99,12 @@ Subscribes to `tree:tick` SSE events. Returns the latest tick result:
 ```ts
 interface TreeStatusInfo {
   status: string;      // 'success' | 'failure' | 'running'
-  tickCount: number;
-  cycleCount: number;
   durationMs: number;
+  localTickCount: number;  // client-side counter, incremented on each tree:tick event
 }
 ```
+
+The `tree:tick` SSE event payload contains `{ tree, status, durationMs }`. The store maintains a local tick counter that increments on each event. This counter resets on reconnect. For authoritative tick/cycle counts, use `useClient()` and call `client.status()` directly.
 
 Re-renders after each tick.
 
@@ -111,9 +112,9 @@ Re-renders after each tick.
 
 Provides functions to send actions to the tree, with pending state tracking.
 
-- `send(payload?): Promise<{ id: string }>` — fires the action, resolves with message ID. Sets `pending = true` until the message is processed.
-- `sendAndWait(payload?): Promise<{ messageId: string; treeStatus: string }>` — fires the action and waits for tree processing to complete.
-- `pending: boolean` — `true` while a sent action is being processed.
+- `send(payload?): Promise<{ id: string }>` — fires the action, resolves with message ID. Sets `pending = true` until the message is processed (via `message:processed` or `message:failed` SSE events). Requires an active SSE connection for `pending` to clear — without SSE, `pending` stays `true` indefinitely.
+- `sendAndWait(payload?): Promise<{ messageId: string; treeStatus: string }>` — fires the action and waits for tree processing to complete. Requires SSE.
+- `pending: boolean` — `true` while a sent action is being processed. Cleared by SSE events, not the HTTP response.
 
 ```tsx
 const review = useAction('submit_review');
@@ -162,14 +163,15 @@ interface SyncStoreState {
 
 **Behaviors:**
 
-- **Incremental updates**: `blackboard:write` SSE events update only the affected key and bump its version counter. `tree:tick` events replace the status slice.
+- **Initialization**: On connect, the `snapshot` SSE event populates the blackboard and resets version counters. No separate HTTP fetch is needed.
+- **Incremental updates**: `blackboard:write` SSE events update only the affected key and bump its version counter. `tree:tick` events replace the status slice and increment the local tick counter.
 - **Subscription granularity**: `useBlackboard('user:name')` subscribes with a selector that checks the version counter for that key, so `useSyncExternalStore` can cheaply skip re-renders for unrelated keys.
-- **Reconnection**: `EventSource` auto-reconnects natively. The ActorServer replays missed events via `last-event-id`. If the gap is too large, the server sends a full `snapshot` event and the store replaces its entire state.
+- **Reconnection**: `EventSource` auto-reconnects natively. On each new connection, the `/api/events` endpoint sends a fresh `snapshot` event containing the current blackboard state — the store replaces its entire state from this snapshot. Any incremental SSE events that follow bring it up to date. The `last-event-id` header is passed to the server's `readEvents()` but does not guarantee gap-free replay, so the snapshot is the primary rehydration mechanism.
 
 ### Error Handling
 
 - **Connection loss**: `EventSource` reconnects automatically. Connection state is exposed via `useConnectionStatus()` so the UI can show feedback.
-- **ConflictError (409)**: Propagated to the caller from `useAction.send()` and `useAction.sendAndWait()`. No automatic retry — the component decides how to handle it (show a message, use `interruptAndAction` via `useClient()`, etc.).
+- **ConflictError (409)**: Propagated to the caller from `useAction.send()`, `useAction.sendAndWait()`, and the `useBlackboard` setter. All three call HTTP endpoints that can return 409 when the server is processing another message. No automatic retry — the component decides how to handle it (show a message, use `interruptAndAction` via `useClient()`, etc.).
 - **Provider missing**: Hooks throw a descriptive error if used outside a `CartographerProvider`.
 
 ## Data Flow Summary
