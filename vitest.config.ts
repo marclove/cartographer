@@ -27,6 +27,13 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'react',
+          include: ['packages/react/src/**/*.test.{ts,tsx}'],
+          environment: 'jsdom',
+        },
+      },
+      {
+        test: {
           name: 'examples',
           include: ['examples/**/*.test.ts'],
         },
