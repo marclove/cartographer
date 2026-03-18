@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { NodeStatus, createTreeLogger } from '../../packages/cartographer/src/index.js';
+import { NodeStatus, createTreeLogger } from 'cartographer';
 import { buildContentPipeline } from './tree.js';
 import { SAMPLE_TICKET } from './prompts.js';
 

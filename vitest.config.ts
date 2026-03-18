@@ -32,13 +32,7 @@ export default defineConfig({
           globals: true,
         },
       },
-      {
-        test: {
-          name: 'examples',
-          include: ['examples/**/*.test.ts'],
-        },
-      },
-      {
+{
         test: {
           name: 'client',
           include: ['packages/client/src/**/*.test.ts'],

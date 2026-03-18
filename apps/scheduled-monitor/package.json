@@ -1,0 +1,14 @@
+{
+  "name": "@cartographer/example-scheduled-monitor",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "cartographer": "workspace:*",
+    "zod": "^4.3.6"
+  }
+}

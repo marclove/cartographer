@@ -21,6 +21,15 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(jsdom@27.4.0)(tsx@4.21.0)
 
+  apps/content-pipeline:
+    dependencies:
+      cartographer:
+        specifier: workspace:*
+        version: link:../../packages/cartographer
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+
   apps/dashboard:
     devDependencies:
       '@sveltejs/vite-plugin-svelte':
@@ -38,6 +47,15 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(jsdom@27.4.0)(tsx@4.21.0)
+
+  apps/scheduled-monitor:
+    dependencies:
+      cartographer:
+        specifier: workspace:*
+        version: link:../../packages/cartographer
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
 
   packages/cartographer:
     dependencies:
