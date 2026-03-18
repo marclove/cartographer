@@ -110,9 +110,6 @@ export { ActorServer } from './server/actor-server.js';
 export type { ActorServerOptions } from './server/actor-server.js';
 export { EventBridge } from './server/event-bridge.js';
 
-// Client
-export { createCartographerClient, ConflictError } from './client/index.js';
-export type { CartographerClient } from './client/types.js';
 
 // New nodes
 export { untilSuccess, UntilSuccessNode } from './decorators/until-success.js';

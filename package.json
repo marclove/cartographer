@@ -1,53 +1,50 @@
 {
-	"name": "cartographer",
-	"version": "0.1.0",
-	"description": "Agentic behavior tree framework combining deterministic BT nodes with Claude Agent SDK integration",
-	"type": "module",
-	"main": "./dist/index.js",
-	"types": "./dist/index.d.ts",
-	"bin": {
-		"cartographer": "./dist/cli/index.js"
-	},
-	"files": [
-		"dist"
-	],
-	"exports": {
-		".": {
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js"
-		}
-	},
-	"scripts": {
-		"build": "tsc && npm run dashboard:build && tsc -p dashboard/tsconfig.server.json",
-		"dashboard:build": "vite build --config dashboard/vite.config.ts",
-		"dashboard:dev": "vite dev --config dashboard/vite.config.ts",
-		"test": "NODE_OPTIONS=--experimental-eventsource vitest run --project unit",
-		"test:integration": "NODE_OPTIONS=--experimental-eventsource vitest run --project integration",
-		"test:live": "NODE_OPTIONS=--experimental-eventsource vitest run --project live",
-		"test:dashboard": "NODE_OPTIONS=--experimental-eventsource vitest run --project dashboard",
-		"test:examples": "NODE_OPTIONS=--experimental-eventsource vitest run --project examples --passWithNoTests",
-		"test:all": "NODE_OPTIONS=--experimental-eventsource vitest run",
-		"test:watch": "NODE_OPTIONS=--experimental-eventsource vitest --project unit",
-		"typecheck": "tsc --noEmit && tsc --noEmit -p examples/tsconfig.json && tsc --noEmit -p dashboard/tsconfig.server.json"
-	},
-	"license": "Apache-2.0",
-	"engines": {
-		"node": ">=18"
-	},
-	"dependencies": {
-		"@anthropic-ai/claude-agent-sdk": "^0.2.71",
-		"cron-parser": "^5.5.0",
-		"tsx": "^4.21.0",
-		"uuid": "^13.0.0",
-		"zod": "^4.3.6"
-	},
-	"devDependencies": {
-		"@sveltejs/vite-plugin-svelte": "^5.1.1",
-		"@types/uuid": "^10.0.0",
-		"@vitest/coverage-v8": "^3.2.4",
-		"svelte": "^5.53.11",
-		"typescript": "^5.9.3",
-		"vite": "^6.4.1",
-		"vitest": "^3.2.4"
-	}
+  "name": "cartographer-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "bin": {
+    "cartographer": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc && tsc -p packages/client/tsconfig.json && tsc -p packages/react/tsconfig.json && npm run dashboard:build && tsc -p dashboard/tsconfig.server.json",
+    "dashboard:build": "vite build --config dashboard/vite.config.ts",
+    "dashboard:dev": "vite dev --config dashboard/vite.config.ts",
+    "test": "NODE_OPTIONS=--experimental-eventsource vitest run --project unit --project client --project react",
+    "test:integration": "NODE_OPTIONS=--experimental-eventsource vitest run --project integration",
+    "test:live": "NODE_OPTIONS=--experimental-eventsource vitest run --project live",
+    "test:dashboard": "NODE_OPTIONS=--experimental-eventsource vitest run --project dashboard",
+    "test:examples": "NODE_OPTIONS=--experimental-eventsource vitest run --project examples --passWithNoTests",
+    "test:all": "NODE_OPTIONS=--experimental-eventsource vitest run",
+    "test:watch": "NODE_OPTIONS=--experimental-eventsource vitest --project unit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p packages/client/tsconfig.json && tsc --noEmit -p packages/react/tsconfig.json && tsc --noEmit -p examples/tsconfig.json && tsc --noEmit -p dashboard/tsconfig.server.json"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.71",
+    "cron-parser": "^5.5.0",
+    "tsx": "^4.21.0",
+    "uuid": "^13.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/uuid": "^10.0.0",
+    "@vitest/coverage-v8": "^3.2.4",
+    "jsdom": "^27.0.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "svelte": "^5.53.11",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.1",
+    "vitest": "^3.2.4"
+  }
 }

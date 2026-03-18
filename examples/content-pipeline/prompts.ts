@@ -1,4 +1,4 @@
-import type { TreeContext } from '../../src/index.js';
+import type { TreeContext } from '../../packages/cartographer/src/index.js';
 
 /**
  * The sample support ticket used as input for the pipeline.

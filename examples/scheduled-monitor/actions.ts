@@ -1,5 +1,5 @@
-import { NodeStatus } from '../../src/index.js';
-import type { TreeContext } from '../../src/index.js';
+import { NodeStatus } from '../../packages/cartographer/src/index.js';
+import type { TreeContext } from '../../packages/cartographer/src/index.js';
 import type { HealthAssessment, HealthRecord } from './schemas.js';
 
 const SERVICES = ['api', 'database', 'queue'];

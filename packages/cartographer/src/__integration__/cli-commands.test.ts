@@ -9,7 +9,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const CLI = resolve(__dirname, '../cli/index.ts');
 const FIXTURES = resolve(__dirname, 'fixtures/cli');
-const PROJECT_ROOT = resolve(__dirname, '../..');
+const PROJECT_ROOT = resolve(__dirname, '../../../..');
 
 // Absolute path to tsx ESM loader — needed when spawning from a cwd
 // outside the project tree (e.g. temp directories for init tests).

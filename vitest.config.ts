@@ -8,27 +8,41 @@ export default defineConfig({
       {
         test: {
           name: 'unit',
-          include: ['src/**/*.test.ts'],
-          exclude: ['src/__integration__/**'],
+          include: ['packages/cartographer/src/**/*.test.ts'],
+          exclude: ['packages/cartographer/src/__integration__/**'],
         },
       },
       {
         test: {
           name: 'integration',
-          include: ['src/__integration__/**/*.test.ts'],
-          exclude: ['src/__integration__/live/**'],
+          include: ['packages/cartographer/src/__integration__/**/*.test.ts'],
+          exclude: ['packages/cartographer/src/__integration__/live/**'],
         },
       },
       {
         test: {
           name: 'live',
-          include: ['src/__integration__/live/**/*.test.ts'],
+          include: ['packages/cartographer/src/__integration__/live/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'react',
+          include: ['packages/react/src/**/*.test.{ts,tsx}'],
+          environment: 'jsdom',
+          globals: true,
         },
       },
       {
         test: {
           name: 'examples',
           include: ['examples/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'client',
+          include: ['packages/client/src/**/*.test.ts'],
         },
       },
       {

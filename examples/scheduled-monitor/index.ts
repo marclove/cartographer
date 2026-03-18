@@ -1,4 +1,4 @@
-import type { RunContext, TreeRunConfig } from '../../src/index.js';
+import type { RunContext, TreeRunConfig } from '../../packages/cartographer/src/index.js';
 import { buildHealthMonitor } from './tree.js';
 
 export default function (ctx: RunContext): TreeRunConfig {

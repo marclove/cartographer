@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll, afterEach } from 'vitest';
-import { NodeStatus, createTreeLogger } from '../../src/index.js';
-import type { TreeEvents } from '../../src/index.js';
+import { NodeStatus, createTreeLogger } from '../../packages/cartographer/src/index.js';
+import type { TreeEvents } from '../../packages/cartographer/src/index.js';
 import { createTestServer, type TestServer } from './server.js';
 import { buildHealthMonitor } from './tree.js';
 import type { HealthRecord, HealthAssessment, IncidentReport } from './schemas.js';

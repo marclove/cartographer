@@ -1,4 +1,4 @@
-import type { RunContext, TreeRunConfig } from '../../src/index.js';
+import type { RunContext, TreeRunConfig } from '../../packages/cartographer/src/index.js';
 import { buildContentPipeline } from './tree.js';
 import { SAMPLE_TICKET } from './prompts.js';
 
