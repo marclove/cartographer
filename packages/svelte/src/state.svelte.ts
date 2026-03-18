@@ -1,13 +1,39 @@
 import type { CartographerClient } from '@cartographer/client';
 import type { TreeStatusInfo, ConnectionStatus } from './types.js';
 
+/**
+ * Internal reactive state container that bridges SSE events from a
+ * {@link CartographerClient} into Svelte 5 reactivity via `$state` runes.
+ *
+ * Not intended for direct instantiation in application code — use the
+ * `CartographerProvider` component instead. Exposed publicly only through
+ * {@link createTestContext} for unit-testing scenarios.
+ */
 export class CartographerState {
+  /** Current SSE connection lifecycle status. Starts as `'connecting'`. */
   connectionStatus = $state<ConnectionStatus>('connecting');
+
+  /** Reactive key-value map of the current blackboard state. Replaced (not mutated) on each update. */
   blackboardEntries = $state<Record<string, unknown>>({});
+
+  /** Per-key write counters. Incremented each time a `blackboard:write` event updates a given key. */
   blackboardVersions = $state<Record<string, number>>({});
+
+  /** Monotonically increasing counter bumped on every blackboard change (snapshot or individual write). */
   globalVersion = $state(0);
+
+  /** Latest tree tick result, or `null` before the first `tree:tick` event (and after a snapshot reset). */
   treeStatus = $state<TreeStatusInfo | null>(null);
 
+  /**
+   * Registers SSE event handlers on the given client and begins updating
+   * reactive state in response to `snapshot`, `blackboard:write`,
+   * `tree:tick`, and `connection:error` events.
+   *
+   * @param client - A connected {@link CartographerClient} instance.
+   * @returns A cleanup function that detaches all listeners and sets
+   *          {@link connectionStatus} to `'disconnected'`.
+   */
   attach(client: CartographerClient): () => void {
     const onSnapshot = (data: unknown) => {
       const d = data as { blackboard: Record<string, unknown> };

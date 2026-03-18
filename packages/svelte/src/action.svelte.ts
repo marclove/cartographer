@@ -1,12 +1,62 @@
 import { onDestroy } from 'svelte';
 import { getClient } from './context.js';
 
+/**
+ * Reactive handle for a named behavior-tree action.
+ *
+ * Returned by {@link createAction}. Provides fire-and-forget (`send`) and
+ * awaitable (`sendAndWait`) methods, plus a reactive `pending` flag that
+ * tracks whether any dispatched action is still in flight or awaiting
+ * server-side completion.
+ */
 export interface ActionRef {
+  /**
+   * `true` while at least one HTTP request is in flight **or** a dispatched
+   * message ID has not yet received a `message:processed` / `message:failed`
+   * SSE event. Reactive (Svelte 5 `$state`).
+   */
   readonly pending: boolean;
+
+  /**
+   * Fires the action over HTTP and returns once the server acknowledges it.
+   *
+   * The returned `id` is tracked internally — `pending` remains `true` until
+   * the corresponding `message:processed` or `message:failed` SSE event
+   * arrives.
+   *
+   * @param payload - Optional data forwarded to the server action handler.
+   * @returns The server-assigned message ID.
+   */
   send(payload?: unknown): Promise<{ id: string }>;
+
+  /**
+   * Fires the action and waits for the server to finish processing it.
+   *
+   * Performs the same HTTP call as {@link send}, but the returned promise does
+   * not resolve until the `message:processed` SSE event arrives (or rejects
+   * on `message:failed`). Useful when subsequent UI logic depends on the
+   * tree run completing.
+   *
+   * @param payload - Optional data forwarded to the server action handler.
+   * @returns The message ID and final tree status once processing completes.
+   * @throws If the server reports `message:failed`.
+   */
   sendAndWait(payload?: unknown): Promise<{ messageId: string; treeStatus: string }>;
 }
 
+/**
+ * Creates a reactive {@link ActionRef} for the given named action.
+ *
+ * Registers `message:processed` and `message:failed` SSE listeners at
+ * creation time and tears them down automatically via Svelte's `onDestroy`.
+ *
+ * Must be called during component initialization (i.e. at the top level of a
+ * component's `<script>` block) inside a `<Cartographer>` provider so that
+ * the client context and lifecycle hooks are available.
+ *
+ * @param name - The action name recognized by the server-side tree.
+ * @returns A reactive handle for dispatching and tracking the action.
+ */
 export function createAction(name: string): ActionRef {
   const client = getClient();
 
