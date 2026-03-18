@@ -3,6 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./server": {
+      "types": "./dist/server/server.d.ts",
+      "import": "./dist/server/server.js"
+    },
+    "./static-dir": {
+      "types": "./static-dir.d.ts",
+      "import": "./static-dir.js"
+    }
+  },
   "scripts": {
     "build": "vite build && tsc -p tsconfig.server.json",
     "typecheck": "tsc --noEmit -p tsconfig.server.json",
