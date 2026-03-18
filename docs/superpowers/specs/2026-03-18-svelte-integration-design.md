@@ -101,7 +101,29 @@ On destroy:
 1. Calls the cleanup function returned by `state.attach()` (detaches listeners, sets status to `disconnected`)
 2. Calls `client.disconnect()`
 
-The provider renders no UI — it only provides context and manages lifecycle.
+The provider renders no UI — it only provides context and manages lifecycle. The component template is simply `{@render children()}`.
+
+## `getClient()`
+
+```ts
+function getClient(): CartographerClient
+```
+
+Returns the raw `CartographerClient` instance from context. This is the escape hatch for capabilities the reactive wrappers don't cover — `interrupt()`, `resume()`, `interruptAndAction()`, `blackboard()`, `tree()`, `status()`, `onAny()`, etc.
+
+Throws a descriptive error if called outside a `<Cartographer>` provider. The returned instance is stable for the lifetime of the provider.
+
+```svelte
+<script lang="ts">
+  import { getClient } from '@cartographer/svelte'
+
+  const client = getClient()
+
+  async function handleInterrupt() {
+    await client.interrupt()
+  }
+</script>
+```
 
 ## Internal Reactive State
 
@@ -131,7 +153,7 @@ class CartographerState {
 | `snapshot`          | Replace entire blackboard, reset all version counters, reset `treeStatus` to null  |
 | `blackboard:write`  | Update single key in `blackboardEntries`, bump that key's version + global version |
 | `tree:tick`         | Update `treeStatus` with status/duration, increment `localTickCount`               |
-| `connection:error`  | If reconnect fails, set `connectionStatus` to `disconnected`                       |
+| `connection:error`  | Set `connectionStatus` to `'connecting'` (readyState 0) or `'disconnected'` (readyState 2) |
 | SSE `open`          | Set `connectionStatus` to `connected`                                              |
 
 ## Blackboard Functions
@@ -147,7 +169,7 @@ interface BlackboardRef<T> {
 
 - `value` — `$derived` getter tracking the specific key in `blackboardEntries`. Only triggers reactivity when this key's version changes.
 - `set(newValue)` — calls `client.write(key, newValue)`. No optimistic update; the value updates when the SSE `blackboard:write` event arrives.
-- Per-key version tracking avoids spurious reactive updates when a snapshot re-confirms an unchanged value.
+- Per-key version tracking avoids spurious reactive updates when a snapshot re-confirms an unchanged value. Note: Svelte 5's deep reactivity on `$state` objects may make version maps unnecessary in practice — the explicit tracking is a conservative first approach that can be simplified later if benchmarks show no benefit.
 
 ### `getBlackboardSnapshot(): BlackboardSnapshotRef`
 
@@ -226,7 +248,7 @@ interface ActionRef {
 - `pending` — `$state` backed, reactive. `true` while any send is in flight or awaiting completion.
 - `send(payload?)` — calls `client.action(name, payload)`. Tracks in-flight count + pending message IDs. Cleared when `message:processed` or `message:failed` SSE events arrive for the tracked ID. Handles concurrent sends correctly (same logic as React's `useAction`).
 - `sendAndWait(payload?)` — calls `client.actionAndWait(name, payload)`. Sets pending around the full round-trip.
-- SSE event listeners for completion tracking are registered on creation and cleaned up via `onDestroy`.
+- The `message:processed` and `message:failed` SSE listeners are registered once at creation time and filter incoming events by tracked message IDs. Cleaned up via `onDestroy`.
 
 ### Usage
 
@@ -246,7 +268,7 @@ interface ActionRef {
 
 ### `onClientEvent(name: string, handler: (data: unknown) => void): void`
 
-Subscribes to named events from `EmitToClientNode` (delivered via `client:event` SSE channel). Auto-cleans up on component destroy via `onDestroy`.
+Subscribes to named events from `EmitToClientNode` (delivered via `client:event` SSE channel). The client SDK's `on()` method already dispatches `client:event` payloads by their `name` field, so `onClientEvent('notification', handler)` is implemented as `client.on('notification', handler)` — no additional filtering is needed in the Svelte layer. Auto-cleans up on component destroy via `onDestroy`.
 
 ### `onTreeEvent(type: string, handler: (data: unknown) => void): void`
 
@@ -288,11 +310,11 @@ Same contract as React's mock: all `CartographerClient` methods are `vi.fn()` wi
 ```ts
 function createTestContext(overrides?: Partial<CartographerClient>): {
   client: CartographerClient & { emit(event: string, data: unknown): void }
-  state: CartographerState
+  state: CartographerState  // exposed only through this test utility, not as a general public export
 }
 ```
 
-Creates a mock client and a `CartographerState` instance wired together. For unit-testing reactive functions without rendering a full component tree.
+Creates a mock client and a `CartographerState` instance wired together. For unit-testing reactive functions without rendering a full component tree. `CartographerState` is accessible only through this test utility path — it is not part of the public API.
 
 Tests use `@testing-library/svelte` for component-level tests with a wrapper that provides context, or `createTestContext()` for direct state/function testing.
 
