@@ -218,6 +218,21 @@ describe('useAction', () => {
     expect(result.current.pending).toBe(true);
   });
 
+  it('send() resets pending on HTTP error', async () => {
+    const client = createMockClient();
+    (client.action as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('409'));
+
+    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+
+    await expect(
+      act(async () => {
+        await result.current.send();
+      }),
+    ).rejects.toThrow('409');
+
+    expect(result.current.pending).toBe(false);
+  });
+
   it('sendAndWait calls client.actionAndWait', async () => {
     const client = createMockClient();
     const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });

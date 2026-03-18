@@ -33,9 +33,9 @@ export function CartographerProvider({ url, client: clientProp, children }: Cart
   }, [client, store]);
 
   return (
-    <CartographerContext value={{ client, store }}>
+    <CartographerContext.Provider value={{ client, store }}>
       {children}
-    </CartographerContext>
+    </CartographerContext.Provider>
   );
 }
 

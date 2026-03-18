@@ -96,6 +96,8 @@ export function createSyncStore(): SyncStore {
         client.off('snapshot', onSnapshot);
         client.off('blackboard:write', onBlackboardWrite);
         client.off('tree:tick', onTreeTick);
+        connectionStatus = 'disconnected';
+        notify();
       };
     },
   };

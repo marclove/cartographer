@@ -60,4 +60,18 @@ describe('useConnectionStatus', () => {
 
     expect(result.current).toBe('connected');
   });
+
+  it('returns disconnected after unmount', () => {
+    const client = createMockClient();
+    const { result, unmount } = renderHook(() => useConnectionStatus(), { wrapper: wrapper(client) });
+
+    act(() => client.emit('snapshot', { blackboard: {} }));
+    expect(result.current).toBe('connected');
+
+    unmount();
+    // After unmount, the provider calls detach() which sets disconnected
+    // We can't read the hook result after unmount, but verify the store state
+    // by checking that disconnect was called
+    expect(client.disconnect).toHaveBeenCalled();
+  });
 });

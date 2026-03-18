@@ -182,7 +182,19 @@ describe('SyncStore', () => {
     detach();
 
     client.emit('blackboard:write', { key: 'x', value: 2 });
-    expect(listener).toHaveBeenCalledTimes(1); // not called after detach
+    expect(listener).toHaveBeenCalledTimes(2); // called for detach (disconnected), not for write
     expect(store.getBlackboardValue('x')).toBe(1); // value unchanged
+  });
+
+  it('sets connectionStatus to disconnected on detach', () => {
+    const store = createSyncStore();
+    const client = createMockClient();
+    const detach = store.attach(client);
+
+    client.emit('snapshot', { blackboard: {} });
+    expect(store.getConnectionStatus()).toBe('connected');
+
+    detach();
+    expect(store.getConnectionStatus()).toBe('disconnected');
   });
 });

@@ -96,10 +96,15 @@ export function useAction(name: string): UseActionReturn {
 
   const send = useCallback(
     async (payload?: unknown): Promise<{ id: string }> => {
-      const result = await client.action(name, payload);
-      pendingIdRef.current = result.id;
       setPending(true);
-      return result;
+      try {
+        const result = await client.action(name, payload);
+        pendingIdRef.current = result.id;
+        return result;
+      } catch (err) {
+        setPending(false);
+        throw err;
+      }
     },
     [client, name],
   );
