@@ -12,22 +12,26 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "svelte": "./dist/index.js",
   "peerDependencies": {
-    "svelte": "^5.0.0",
-    "@cartographer/client": ">=0.1.0"
+    "@cartographer/client": ">=0.1.0",
+    "svelte": "^5.0.0"
   },
   "devDependencies": {
     "@cartographer/client": "workspace:*",
+    "@sveltejs/package": "^2.5.7",
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
     "@testing-library/svelte": "^5.2.7",
     "jsdom": "^27.0.1",
-    "svelte": "^5.53.11"
+    "svelte": "^5.53.11",
+    "svelte-check": "^4.4.5"
   },
   "scripts": {
-    "build": "tsc",
-    "typecheck": "tsc --noEmit",
+    "build": "svelte-package -i src && rm -rf dist/__tests__ dist/*.test.*",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run"
   },
   "license": "Apache-2.0"

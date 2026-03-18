@@ -6,5 +6,5 @@
     "declaration": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.test.svelte.ts", "**/test-utils.svelte.ts"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.test.svelte.ts", "**/test-utils.svelte.ts", "src/__tests__"]
 }

@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import type { CartographerClient } from '@cartographer/client';
 import { CartographerState } from './state.svelte.js';
 

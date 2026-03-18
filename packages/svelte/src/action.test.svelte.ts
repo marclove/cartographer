@@ -169,23 +169,83 @@ describe('createAction', () => {
     expect(action.pending).toBe(false);
   });
 
-  it('sendAndWait calls client.actionAndWait', async () => {
+  // sendAndWait tests need two ticks before emitting SSE events.
+  // sendAndWait is async and hits two awaits before the resolver is
+  // registered: `await submitAction()` → `await client.action()`.
+  // Each await yields a microtask. A single `await tick()` only
+  // flushes one, so the resolver wouldn't exist yet when we call
+  // `client.emit(...)`. The second tick ensures the full chain has
+  // settled and the resolver is in place.
+
+  it('sendAndWait calls client.action and resolves on message:processed', async () => {
     const { client, action } = renderAction();
 
-    const result = await action.sendAndWait({ data: 1 });
+    const waitPromise = action.sendAndWait({ data: 1 });
+    await tick();
     await tick();
 
-    expect(client.actionAndWait).toHaveBeenCalledWith('submit', { data: 1 });
-    expect(result.treeStatus).toBe('success');
+    expect(client.action).toHaveBeenCalledWith('submit', { data: 1 });
+    expect(action.pending).toBe(true);
+
+    client.emit('message:processed', { messageId: 'msg-1', treeStatus: 'success' });
+    const result = await waitPromise;
+    await tick();
+
+    expect(result).toEqual({ messageId: 'msg-1', treeStatus: 'success' });
+    expect(action.pending).toBe(false);
   });
 
-  it('sendAndWait sets pending during round-trip', async () => {
-    const { action } = renderAction();
+  it('sendAndWait rejects on message:failed', async () => {
+    const { client, action } = renderAction();
 
-    const result = await action.sendAndWait();
+    const waitPromise = action.sendAndWait();
+    await tick();
     await tick();
 
-    expect(result.messageId).toBe('msg-1');
+    client.emit('message:failed', { messageId: 'msg-1', error: 'boom' });
+    await expect(waitPromise).rejects.toThrow('boom');
+    await tick();
+
+    expect(action.pending).toBe(false);
+  });
+
+  it('sendAndWait does not clear pending while send() is still awaiting completion', async () => {
+    const client = createMockClient();
+    (client.action as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ id: 'msg-send' })
+      .mockResolvedValueOnce({ id: 'msg-wait' });
+
+    let action!: ActionRef;
+    render(ActionTest, {
+      props: {
+        client,
+        actionName: 'submit',
+        onAction: (a: ActionRef) => { action = a; },
+      },
+    });
+
+    // Fire send() — pending because it's awaiting message:processed
+    await action.send();
+    await tick();
+    expect(action.pending).toBe(true);
+
+    // Fire sendAndWait() concurrently — both tracked by ID
+    const waitPromise = action.sendAndWait();
+    await tick();
+    await tick();
+
+    // Resolve sendAndWait via SSE — but send() is still pending
+    client.emit('message:processed', { messageId: 'msg-wait', treeStatus: 'success' });
+    await waitPromise;
+    await tick();
+
+    // pending should still be true because send()'s ID hasn't been resolved
+    expect(action.pending).toBe(true);
+
+    // Now resolve the send()
+    client.emit('message:processed', { messageId: 'msg-send', treeStatus: 'success' });
+    await tick();
+
     expect(action.pending).toBe(false);
   });
 });
