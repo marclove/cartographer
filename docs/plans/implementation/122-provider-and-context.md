@@ -8,11 +8,38 @@
 
 **Spec Reference:** `docs/superpowers/specs/2026-03-18-react-integration-design.md` — CartographerProvider section
 
+**Approach:** TDD — write failing tests first, then minimal implementation.
+
 ---
 
-### Step 1: Implement the provider
+### Step 1: RED — Write failing tests
 
-Update `packages/react/src/provider.tsx`:
+Create `packages/react/src/provider.test.tsx`. Use `createMockClient` and React Testing Library's `renderHook` / `render`.
+
+**Provider lifecycle tests:**
+- Provider calls `client.connect()` on mount
+- Provider calls `client.disconnect()` on unmount
+- Provider creates new client when `url` prop changes (disconnect old, connect new)
+
+**useClient tests:**
+- `useClient()` returns the CartographerClient instance
+- `useClient()` throws when used outside a `CartographerProvider`
+
+**useConnectionStatus tests:**
+- Returns initial connection status (`'connecting'`)
+- Updates when a `snapshot` event arrives (status becomes `'connected'`)
+
+For provider tests, you'll need to inject the mock client. Add an optional `client` prop to the provider for testing (or use a factory injection pattern).
+
+### Step 2: Verify RED
+
+Run: `npx vitest run packages/react/src/provider.test.tsx`
+
+Confirm all tests fail because the provider and hooks don't exist yet.
+
+### Step 3: GREEN — Implement
+
+Create `packages/react/src/provider.tsx`:
 
 ```tsx
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from 'react';
@@ -29,16 +56,16 @@ const CartographerContext = createContext<CartographerContextValue | null>(null)
 
 interface CartographerProviderProps {
   url: string;
+  client?: CartographerClient; // optional override for testing
   children: React.ReactNode;
 }
 
-export function CartographerProvider({ url, children }: CartographerProviderProps) {
-  // Create client and store once per url, stable across re-renders
+export function CartographerProvider({ url, client: clientProp, children }: CartographerProviderProps) {
   const { client, store } = useMemo(() => {
-    const client = createCartographerClient(url);
+    const client = clientProp ?? createCartographerClient(url);
     const store = createSyncStore();
     return { client, store };
-  }, [url]);
+  }, [url, clientProp]);
 
   useEffect(() => {
     const detach = store.attach(client);
@@ -55,56 +82,36 @@ export function CartographerProvider({ url, children }: CartographerProviderProp
     </CartographerContext>
   );
 }
-```
 
-### Step 2: Implement useCartographerContext (internal)
-
-Internal helper used by all hooks:
-
-```ts
 function useCartographerContext(): CartographerContextValue {
   const ctx = useContext(CartographerContext);
-  if (!ctx) {
-    throw new Error('useCartographerContext must be used within a <CartographerProvider>');
-  }
+  if (!ctx) throw new Error('Cartographer hooks must be used within a <CartographerProvider>');
   return ctx;
 }
-```
 
-### Step 3: Implement useClient
-
-```ts
 export function useClient(): CartographerClient {
   return useCartographerContext().client;
 }
-```
 
-### Step 4: Implement useConnectionStatus
-
-```ts
 export function useConnectionStatus(): ConnectionStatus {
   const { store } = useCartographerContext();
-  return useSyncExternalStore(
-    store.subscribe,
-    store.getConnectionStatus,
-  );
+  return useSyncExternalStore(store.subscribe, store.getConnectionStatus);
 }
 ```
 
+Export `useCartographerContext` internally (not from the package) so hook files can import it.
+
+### Step 4: Verify GREEN
+
+Run: `npx vitest run packages/react/src/provider.test.tsx`
+
+All tests pass. Also: `npm run typecheck --workspace=packages/react`
+
 ### Step 5: Update exports
 
-Update `packages/react/src/index.ts` to export:
-- `CartographerProvider`
-- `useClient`
-- `useConnectionStatus`
+Add `CartographerProvider`, `useClient`, `useConnectionStatus` to `packages/react/src/index.ts`.
 
-### Step 6: Verify
-
-Run:
-- `npm run typecheck --workspace=packages/react`
-- `npm run build --workspace=packages/react`
-
-### Step 7: Commit
+### Step 6: Commit
 
 ```bash
 git add packages/react/src/

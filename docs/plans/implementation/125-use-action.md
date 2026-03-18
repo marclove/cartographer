@@ -8,92 +8,52 @@
 
 **Spec Reference:** `docs/superpowers/specs/2026-03-18-react-integration-design.md` — useAction section
 
+**Approach:** TDD — write failing tests first, then minimal implementation.
+
 ---
 
-### Step 1: Implement useAction
+### Step 1: RED — Write failing tests
+
+Add to `packages/react/src/hooks.test.tsx`:
+
+**send() tests:**
+- `send()` calls `client.action(name, payload)` with correct arguments
+- `send()` resolves with `{ id }` from the client
+- `pending` is `false` initially
+- `pending` becomes `true` after `send()` resolves
+- `pending` becomes `false` when `message:processed` SSE event arrives with matching message ID
+- `pending` becomes `false` when `message:failed` SSE event arrives with matching message ID
+- `pending` does NOT change when `message:processed` arrives with a different message ID
+
+**sendAndWait() tests:**
+- `sendAndWait()` calls `client.actionAndWait(name, payload)`
+- `pending` is `true` during `sendAndWait()` and `false` after it resolves
+- `pending` is `false` after `sendAndWait()` rejects
+
+**Error tests:**
+- `send()` propagates `ConflictError` when `client.action()` rejects with 409
+
+### Step 2: Verify RED
+
+Run: `npx vitest run packages/react/src/hooks.test.tsx`
+
+### Step 3: GREEN — Implement useAction
 
 Add to `packages/react/src/hooks.ts`:
 
-```ts
-interface UseActionReturn {
-  send: (payload?: unknown) => Promise<{ id: string }>;
-  sendAndWait: (payload?: unknown) => Promise<{ messageId: string; treeStatus: string }>;
-  pending: boolean;
-}
+- Uses `useState` for `pending`
+- Uses `useRef` to track the pending message ID
+- Uses `useEffect` to register `message:processed` and `message:failed` listeners on the client for clearing `pending`
+- `send()` calls `client.action()`, stores the returned ID, sets `pending = true`
+- `sendAndWait()` sets `pending = true`, calls `client.actionAndWait()`, sets `pending = false` in `finally`
 
-export function useAction(name: string): UseActionReturn {
-  const { client } = useCartographerContext();
-  const [pending, setPending] = useState(false);
-  const pendingIdRef = useRef<string | null>(null);
+### Step 4: Verify GREEN
 
-  // Listen for message:processed and message:failed to clear pending state
-  useEffect(() => {
-    const onProcessed = (data: unknown) => {
-      const d = data as { messageId: string };
-      if (d.messageId === pendingIdRef.current) {
-        pendingIdRef.current = null;
-        setPending(false);
-      }
-    };
-    const onFailed = (data: unknown) => {
-      const d = data as { messageId: string };
-      if (d.messageId === pendingIdRef.current) {
-        pendingIdRef.current = null;
-        setPending(false);
-      }
-    };
-    client.on('message:processed', onProcessed);
-    client.on('message:failed', onFailed);
-    return () => {
-      client.off('message:processed', onProcessed);
-      client.off('message:failed', onFailed);
-    };
-  }, [client]);
+Run: `npx vitest run packages/react/src/hooks.test.tsx` — action tests pass.
 
-  const send = useCallback(
-    async (payload?: unknown): Promise<{ id: string }> => {
-      const result = await client.action(name, payload);
-      pendingIdRef.current = result.id;
-      setPending(true);
-      return result;
-    },
-    [client, name],
-  );
-
-  const sendAndWait = useCallback(
-    async (payload?: unknown): Promise<{ messageId: string; treeStatus: string }> => {
-      setPending(true);
-      try {
-        const result = await client.actionAndWait(name, payload);
-        return result;
-      } finally {
-        pendingIdRef.current = null;
-        setPending(false);
-      }
-    },
-    [client, name],
-  );
-
-  return { send, sendAndWait, pending };
-}
-```
-
-**Key behavior:**
-- `send()` sets `pending = true` immediately after the HTTP response, clears it when `message:processed` or `message:failed` SSE event arrives with the matching message ID
-- `sendAndWait()` sets `pending = true` before the call, clears it when the promise resolves/rejects (it internally waits for the SSE events)
-- `pending` requires an active SSE connection to clear when using `send()` — without SSE, it stays `true` indefinitely
-- Both `send()` and `sendAndWait()` propagate `ConflictError` on 409
-
-### Step 2: Update exports
+### Step 5: Update exports and commit
 
 Add `useAction` to `packages/react/src/index.ts`.
-
-### Step 3: Verify
-
-Run:
-- `npm run typecheck --workspace=packages/react`
-
-### Step 4: Commit
 
 ```bash
 git add packages/react/src/

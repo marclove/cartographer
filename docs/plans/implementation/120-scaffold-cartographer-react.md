@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Create the `@cartographer/react` package scaffold with build tooling, peer dependencies, and the source file layout ready for hook implementation.
+**Goal:** Create the `@cartographer/react` package scaffold with build tooling, peer dependencies, test infrastructure, and the source file layout ready for hook implementation.
 
 **Depends on:** Task 119 (@cartographer/client extracted)
 
@@ -36,7 +36,8 @@ Create `packages/react/` with:
   "devDependencies": {
     "react": "^19.0.0",
     "@types/react": "^19.0.0",
-    "@cartographer/client": "workspace:*"
+    "@cartographer/client": "workspace:*",
+    "@testing-library/react": "^16.0.0"
   },
   "scripts": {
     "build": "tsc",
@@ -59,15 +60,60 @@ Create `packages/react/` with:
 }
 ```
 
-### Step 2: Create source file stubs
+### Step 2: Set up test infrastructure
 
-Create placeholder files that establish the module structure:
+Ensure vitest config for the react package uses `environment: 'jsdom'`.
 
-- `packages/react/src/index.ts` — re-exports everything
-- `packages/react/src/store.ts` — SyncStore (task 121)
-- `packages/react/src/provider.tsx` — CartographerProvider (task 122)
-- `packages/react/src/hooks.ts` — all hooks (tasks 123–126)
-- `packages/react/src/types.ts` — TreeStatusInfo and other React-specific types
+Create the mock client helper that all subsequent TDD tasks will use.
+
+`packages/react/src/test-utils.ts`:
+```ts
+import type { CartographerClient } from '@cartographer/client';
+
+/** Creates a mock CartographerClient that stores listeners and lets tests simulate SSE events. */
+export function createMockClient(): CartographerClient & {
+  emit(event: string, data: unknown): void;
+} {
+  const listeners = new Map<string, Set<(data: unknown) => void>>();
+
+  return {
+    action: vi.fn().mockResolvedValue({ id: 'msg-1' }),
+    write: vi.fn().mockResolvedValue({ id: 'msg-2' }),
+    send: vi.fn().mockResolvedValue({ id: 'msg-3' }),
+    actionAndWait: vi.fn().mockResolvedValue({ messageId: 'msg-1', treeStatus: 'success' }),
+    interrupt: vi.fn().mockResolvedValue({ interrupted: false }),
+    resume: vi.fn().mockResolvedValue({ resumed: true }),
+    interruptAndAction: vi.fn().mockResolvedValue({ id: 'msg-4' }),
+    blackboard: vi.fn().mockResolvedValue({}),
+    tree: vi.fn().mockResolvedValue({}),
+    status: vi.fn().mockResolvedValue({}),
+    on(event, handler) {
+      if (!listeners.has(event)) listeners.set(event, new Set());
+      listeners.get(event)!.add(handler);
+    },
+    onAny: vi.fn(),
+    off(event, handler) {
+      listeners.get(event)?.delete(handler);
+    },
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    emit(event: string, data: unknown) {
+      const handlers = listeners.get(event);
+      if (handlers) {
+        for (const handler of handlers) handler(data);
+      }
+    },
+  };
+}
+```
+
+### Step 3: Create source file stubs and types
+
+- `packages/react/src/types.ts` — TreeStatusInfo and ConnectionStatus
+- `packages/react/src/index.ts` — barrel export (populated incrementally by subsequent tasks)
+- `packages/react/src/store.ts` — stub (task 121)
+- `packages/react/src/provider.tsx` — stub (task 122)
+- `packages/react/src/hooks.ts` — stub (tasks 123–126)
 
 `packages/react/src/types.ts`:
 ```ts
@@ -80,23 +126,16 @@ export interface TreeStatusInfo {
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 ```
 
-`packages/react/src/index.ts`:
-```ts
-export { CartographerProvider } from './provider.js';
-export type { TreeStatusInfo, ConnectionStatus } from './types.js';
-// Hooks will be exported as they're implemented in subsequent tasks
-```
-
-### Step 3: Install dependencies and verify
+### Step 4: Install dependencies and verify
 
 Run:
 - `npm install`
 - `npm run typecheck --workspace=packages/react`
 - `npm run build --workspace=packages/react`
 
-### Step 4: Commit
+### Step 5: Commit
 
 ```bash
 git add packages/react/
-git commit -m "chore: scaffold @cartographer/react package"
+git commit -m "chore: scaffold @cartographer/react package with test infrastructure"
 ```

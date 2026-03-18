@@ -8,89 +8,60 @@
 
 **Spec Reference:** `docs/superpowers/specs/2026-03-18-react-integration-design.md` — useBlackboard and useBlackboardSnapshot sections
 
+**Approach:** TDD — write failing tests first, then minimal implementation.
+
 ---
 
-### Step 1: Implement useBlackboard
+### Step 1: RED — Write failing tests for useBlackboard
 
-Add to `packages/react/src/hooks.ts`:
+Add to `packages/react/src/hooks.test.tsx`. All tests render hooks wrapped in `<CartographerProvider client={mockClient}>`.
 
-```ts
-import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
+- Returns `[undefined, setter]` for an unset key before any snapshot event
+- Returns `['hello', setter]` after a snapshot event with `{ blackboard: { name: 'hello' } }` for `useBlackboard('name')`
+- Updates value when a `blackboard:write` event arrives with matching key
+- Does NOT trigger re-render when a `blackboard:write` event arrives for a different key (use `renderHook` render count or a spy to verify)
+- Setter calls `client.write(key, value)` with the correct arguments
+- Setter returns a promise that resolves on success
+- Setter propagates rejection when `client.write()` rejects
 
-export function useBlackboard<T = unknown>(key: string): [T | undefined, (value: T) => Promise<void>] {
-  const { client, store } = useCartographerContext();
+### Step 2: Verify RED
 
-  // Track the version we last saw for this key, so useSyncExternalStore
-  // can detect changes cheaply via getSnapshot identity.
-  const versionRef = useRef<number>(-1);
-  const valueRef = useRef<T | undefined>(undefined);
+Run: `npx vitest run packages/react/src/hooks.test.tsx`
 
-  const subscribe = store.subscribe;
+### Step 3: GREEN — Implement useBlackboard
 
-  const getSnapshot = useCallback(() => {
-    const currentVersion = store.getBlackboardVersion(key);
-    if (currentVersion !== versionRef.current) {
-      versionRef.current = currentVersion;
-      valueRef.current = store.getBlackboardValue(key) as T | undefined;
-    }
-    return valueRef.current;
-  }, [store, key]);
+Add to `packages/react/src/hooks.ts`. Uses `useSyncExternalStore` with per-key version tracking from SyncStore. Setter wraps `client.write()`.
 
-  const value = useSyncExternalStore(subscribe, getSnapshot);
+### Step 4: Verify GREEN
 
-  const setter = useCallback(
-    async (newValue: T): Promise<void> => {
-      await client.write(key, newValue);
-    },
-    [client, key],
-  );
+Run: `npx vitest run packages/react/src/hooks.test.tsx` — useBlackboard tests pass.
 
-  return [value, setter];
-}
-```
+### Step 5: RED — Write failing tests for useBlackboardSnapshot
 
-**Key behavior:**
-- Uses per-key version counters from SyncStore to skip re-renders when other keys change
-- The setter calls `client.write()` and returns a promise — it rejects with `ConflictError` on 409
-- No optimistic update — value changes when the SSE echo arrives
+- Returns empty object `{}` before snapshot event
+- Returns full blackboard after snapshot event
+- Re-renders when any key changes via `blackboard:write`
+- Returns a new object reference after a change
 
-### Step 2: Implement useBlackboardSnapshot
+### Step 6: Verify RED
 
-```ts
-export function useBlackboardSnapshot(): Record<string, unknown> {
-  const { store } = useCartographerContext();
+Run: `npx vitest run packages/react/src/hooks.test.tsx`
 
-  const versionRef = useRef<number>(-1);
-  const snapshotRef = useRef<Record<string, unknown>>({});
+### Step 7: GREEN — Implement useBlackboardSnapshot
 
-  const getSnapshot = useCallback(() => {
-    const currentVersion = store.getGlobalVersion();
-    if (currentVersion !== versionRef.current) {
-      versionRef.current = currentVersion;
-      snapshotRef.current = store.getBlackboardSnapshot();
-    }
-    return snapshotRef.current;
-  }, [store]);
+Uses `useSyncExternalStore` with global version counter.
 
-  return useSyncExternalStore(store.subscribe, getSnapshot);
-}
-```
+### Step 8: Verify GREEN
 
-**Key behavior:**
-- Re-renders on any blackboard key change (uses global version counter)
-- Returns a new object reference only when something actually changed
+Run: `npx vitest run packages/react/src/hooks.test.tsx` — all blackboard hook tests pass.
 
-### Step 3: Update exports
+### Step 9: REFACTOR
+
+Review both hooks for shared patterns. Extract if warranted. Keep tests green.
+
+### Step 10: Update exports and commit
 
 Add `useBlackboard` and `useBlackboardSnapshot` to `packages/react/src/index.ts`.
-
-### Step 4: Verify
-
-Run:
-- `npm run typecheck --workspace=packages/react`
-- `npm run build --workspace=packages/react`
-
-### Step 5: Commit
 
 ```bash
 git add packages/react/src/

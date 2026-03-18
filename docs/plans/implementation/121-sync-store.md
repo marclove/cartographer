@@ -8,82 +8,78 @@
 
 **Spec Reference:** `docs/superpowers/specs/2026-03-18-react-integration-design.md` — Sync Store section
 
+**Approach:** TDD — write failing tests first, then minimal implementation.
+
 ---
 
 ### Context
 
-The SyncStore is internal (not exported). It:
+The SyncStore is internal (not exported from the package). It:
 - Maintains a local cache of blackboard state and tree status
 - Updates incrementally from SSE events (`blackboard:write`, `tree:tick`, `snapshot`)
 - Exposes `subscribe` + `getSnapshot` functions compatible with `useSyncExternalStore`
 - Tracks per-key version counters so hooks can cheaply detect changes to specific keys
 
-### Step 1: Implement SyncStore
-
-Create `packages/react/src/store.ts`:
+### SyncStore interface (for test authoring)
 
 ```ts
-import type { CartographerClient } from '@cartographer/client';
-import type { TreeStatusInfo, ConnectionStatus } from './types.js';
-
-interface SyncStoreState {
-  blackboard: Record<string, unknown>;
-  blackboardVersions: Record<string, number>;
-  globalVersion: number;
-  treeStatus: TreeStatusInfo | null;
-  connectionStatus: ConnectionStatus;
-}
-
 export interface SyncStore {
-  /** Get the current value of a blackboard key. */
   getBlackboardValue(key: string): unknown;
-  /** Get the version counter for a blackboard key (for change detection). */
   getBlackboardVersion(key: string): number;
-  /** Get the full blackboard snapshot. */
   getBlackboardSnapshot(): Record<string, unknown>;
-  /** Get the global version counter (bumped on any blackboard change). */
   getGlobalVersion(): number;
-  /** Get the latest tree status. */
   getTreeStatus(): TreeStatusInfo | null;
-  /** Get the connection status. */
   getConnectionStatus(): ConnectionStatus;
-  /** Subscribe to store changes. Returns an unsubscribe function. */
   subscribe(listener: () => void): () => void;
-  /** Connect to the client's SSE events. Returns a cleanup function. */
   attach(client: CartographerClient): () => void;
 }
 ```
 
-**Implementation details:**
+### Step 1: RED — Write failing tests
 
-- `subscribe/getSnapshot` follows the `useSyncExternalStore` contract: `subscribe` takes a callback, returns an unsubscribe function; getters return immutable snapshots
+Create `packages/react/src/store.test.ts`. Use `createMockClient()` from `test-utils.ts` to simulate SSE events. Write tests for all store behaviors:
+
+- `createSyncStore()` returns a store with empty initial state
+- Snapshot event populates blackboard from `{ blackboard: { key: 'val' } }`
+- Snapshot event resets version counters and sets connectionStatus to `'connected'`
+- `blackboard:write` event with `{ key: 'foo', value: 'bar' }` updates the correct key
+- `blackboard:write` bumps the version for the written key
+- `blackboard:write` does NOT bump versions for other keys
+- `blackboard:write` bumps the global version
+- `tree:tick` event with `{ status: 'success', durationMs: 42 }` updates tree status
+- `tree:tick` increments `localTickCount` on each event
+- Snapshot event resets `localTickCount` to 0
+- Subscribers are called on each state mutation
+- `subscribe()` returns an unsubscribe function that removes the listener
+- `attach()` returns a cleanup function — after cleanup, events no longer update the store
+
+### Step 2: Verify RED
+
+Run: `npx vitest run packages/react/src/store.test.ts`
+
+Confirm all tests fail because `createSyncStore` doesn't exist yet (or is a stub).
+
+### Step 3: GREEN — Implement SyncStore
+
+Create `packages/react/src/store.ts` with minimal implementation to pass all tests:
+
 - On `snapshot` SSE event: replace `blackboard` entirely, reset all `blackboardVersions`, reset `treeStatus`, bump `globalVersion`, set `connectionStatus` to `'connected'`
 - On `blackboard:write` SSE event: update `blackboard[key]`, bump `blackboardVersions[key]`, bump `globalVersion`
 - On `tree:tick` SSE event: replace `treeStatus` with `{ status, durationMs, localTickCount: prev + 1 }`
 - `attach(client)` registers `client.on(...)` handlers for `snapshot`, `blackboard:write`, `tree:tick` and returns a cleanup function that calls `client.off(...)` for each
 - All mutations notify subscribers by calling every registered listener
 
-### Step 2: Write unit tests
+### Step 4: Verify GREEN
 
-Create `packages/react/src/store.test.ts`:
+Run: `npx vitest run packages/react/src/store.test.ts`
 
-Test the store in isolation by calling `attach()` with a mock client that simulates SSE events:
-- Snapshot event populates blackboard and resets versions
-- `blackboard:write` updates the correct key and bumps its version
-- Other key versions remain unchanged after a single-key write
-- `tree:tick` updates tree status and increments `localTickCount`
-- `globalVersion` increments on every blackboard change
-- Subscribers are called on each state change
-- Unsubscribe removes the listener
-- Cleanup from `attach()` removes all event handlers
+All tests pass. Also run: `npm run typecheck --workspace=packages/react`
 
-### Step 3: Verify
+### Step 5: REFACTOR
 
-Run:
-- `npx vitest run packages/react/src/store.test.ts`
-- `npm run typecheck --workspace=packages/react`
+Review the implementation for any duplication or clarity improvements. Keep tests green.
 
-### Step 4: Commit
+### Step 6: Commit
 
 ```bash
 git add packages/react/src/store.ts packages/react/src/store.test.ts

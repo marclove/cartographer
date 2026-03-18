@@ -1,10 +1,10 @@
-# Task 128: Build Verification and Package Exports
+# Task 127: Build Verification and Package Exports
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Verify all three packages build cleanly, exports are correct, and the full test suite passes.
 
-**Depends on:** Task 127 (all tests written)
+**Depends on:** Tasks 121–126 (all hooks implemented with tests)
 
 **Spec Reference:** `docs/superpowers/specs/2026-03-18-react-integration-design.md`
 
