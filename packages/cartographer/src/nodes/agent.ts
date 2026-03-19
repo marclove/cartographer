@@ -118,8 +118,25 @@ export class AgentNode extends BaseNode {
    */
   private activeAbortController: AbortController | null = null;
 
+  /**
+   * Create a new agent node.
+   *
+   * @param config - The agent configuration including prompt, SDK options,
+   *   optional blackboard namespace, caching behavior, and result mapping.
+   *   See {@link AgentNodeConfig} for full details on each field.
+   */
   constructor(config: AgentNodeConfig) {
     super(config.name, config.id);
+
+    if (config.options?.mcpServers && 'blackboard' in config.options.mcpServers) {
+      throw new Error(
+        `AgentNode "${config.name}": the MCP server name "blackboard" is reserved. ` +
+        'AgentNode automatically injects a built-in blackboard MCP server under this name ' +
+        'to give Claude read/write access to the tree\'s blackboard. ' +
+        'Rename your MCP server to avoid the conflict (e.g. "my-blackboard").',
+      );
+    }
+
     this.config = config;
   }
 
@@ -128,6 +145,13 @@ export class AgentNode extends BaseNode {
     return this.config.options ?? {};
   }
 
+  /**
+   * Compute a deterministic content hash for serialization identity.
+   *
+   * Includes the node name and, for static prompts, the prompt text itself.
+   * Dynamic (function) prompts are excluded because their output varies
+   * across ticks and cannot produce a stable hash.
+   */
   protected override computeHash(): string {
     const prompt = typeof this.config.prompt === 'string' ? this.config.prompt : '';
     return computeContentHash('AgentNode', this.config.name, prompt);
@@ -162,6 +186,18 @@ export class AgentNode extends BaseNode {
     pending?.catch(() => {});
   }
 
+  /**
+   * Cancel the in-flight SDK request without clearing cached results.
+   *
+   * Unlike {@link abort}, `interrupt()` preserves the `cachedStatus` from
+   * any previously completed execution. This means an agent that already
+   * returned a terminal result and was cached will continue to return that
+   * cached result after the interrupt. Only unsettled in-flight work is
+   * cancelled.
+   *
+   * Called by the tree runner when it needs to stop pending work (e.g.,
+   * before processing a new message) without fully resetting the tree.
+   */
   override interrupt(): void {
     const pending = this._inflightState?.promise;
     AgentNode.catchSdkAbortRejections();
@@ -198,18 +234,57 @@ export class AgentNode extends BaseNode {
     setTimeout(() => process.removeListener('unhandledRejection', handler), 500);
   }
 
+  /**
+   * Serialize this node's execution state for persistence.
+   *
+   * Saves the last terminal status (`SUCCESS` or `FAILURE`) so that a
+   * restored tree knows whether this agent had already completed. If
+   * the agent has not yet reached a terminal status, returns an empty
+   * object.
+   *
+   * @returns A {@link NodeState} containing `lastStatus` if a terminal
+   *   result exists, or an empty object otherwise.
+   */
   override serialize(): NodeState {
     return this._lastTerminalStatus !== null
       ? { lastStatus: this._lastTerminalStatus }
       : {};
   }
 
+  /**
+   * Restore this node's execution state from a previously serialized snapshot.
+   *
+   * Rehydrates the last terminal status so the tree can resume correctly
+   * after a process restart. Parent composites use this to know whether
+   * the agent had already completed in a prior run.
+   *
+   * @param state - The serialized state produced by {@link serialize}.
+   * @param _hashToNode - Unused by `AgentNode` (leaf nodes have no children
+   *   to resolve), but required by the {@link BTreeNode} interface.
+   */
   override restore(state: NodeState, _hashToNode: Map<string, BTreeNode>): void {
     if (state.lastStatus !== undefined) {
       this._lastTerminalStatus = state.lastStatus;
     }
   }
 
+  /**
+   * Run the agent's tick logic.
+   *
+   * On the first tick, kicks off the SDK `query()` call in the background
+   * via {@link _executeSDKCall} and immediately returns `RUNNING`. On
+   * subsequent ticks, polls the in-flight state for a completed result or
+   * error. When the SDK call finishes, the resolved status is returned
+   * (and cached if `cache: true`).
+   *
+   * If caching is enabled and a cached result exists from a prior
+   * execution, it is returned immediately without contacting the SDK.
+   *
+   * @param context - The tree context carrying blackboard, events, and
+   *   optional abort signal.
+   * @returns `RUNNING` while the SDK call is in progress, or the terminal
+   *   status (`SUCCESS` / `FAILURE`) once it completes.
+   */
   protected async execute(context: TreeContext): Promise<NodeStatus> {
     // Return the cached result from a previous tick without calling the SDK.
     if (this.config.cache && this.cachedStatus !== null) {
