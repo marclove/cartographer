@@ -25,6 +25,7 @@ Your background determines the fastest path through these docs.
 | **New to behavior trees**                         | Read [Concepts](concepts.md) for BT fundamentals, then [Getting Started](getting-started.md) to build your first tree.                        |
 | **Familiar with BTs but new to Claude Agent SDK** | Skim [Getting Started](getting-started.md), then jump to [Agent Integration](guide-agent-integration.md) for AgentNode modes and MCP tooling. |
 | **Building a message-driven application?**        | Start with [Actor Framework](guide-actor-framework.md) for TreeActor, ActorServer, StateStore, and the client SDK.                             |
+| **Connecting a Svelte frontend?**                 | See [Svelte Integration](guide-svelte.md) for reactive bindings to a running ActorServer.                                                      |
 | **Looking for API details**                       | Go directly to the [API Reference](api/index.md).                                                                                             |
 | **Want to run trees from the CLI?**               | See the [CLI Runner](guide-cli.md) guide for `cartographer run`, `inspect`, and `init`.                                                       |
 
@@ -48,6 +49,7 @@ Your background determines the fastest path through these docs.
 - [Testing Behavior Trees](guide-testing.md) -- Test contexts, helper functions, event verification, and multi-tick test patterns.
 - [Advanced Patterns](guide-advanced-patterns.md) -- Custom nodes, custom strategies, multi-tick resumption internals, parallel policies, advanced blackboard patterns, and advanced YAML.
 - [Actor Framework](guide-actor-framework.md) -- TreeActor, ActorServer, StateStore, client SDK, SSE events, serialization, and content hashing.
+- [Svelte Integration](guide-svelte.md) -- Svelte 5 bindings: reactive blackboard, tree status, actions, and event subscriptions.
 
 ### Examples
 
