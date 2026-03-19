@@ -111,8 +111,7 @@ Re-exported from the internal type definitions. See individual reference pages f
 
 | Export         | Description                                                       |
 | -------------- | ----------------------------------------------------------------- |
-| `TreeRegistry` | Registry of named node factories for declarative tree definitions |
-| `TreeLoader`   | Loads a tree from a YAML string or config object using a registry |
+| `TreeRegistry` | Registry of named node factories for use with the builder API     |
 
 ## [Scheduler](scheduler.md)
 

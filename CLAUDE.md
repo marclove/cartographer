@@ -48,7 +48,7 @@ Every node implements the `BTreeNode` interface (`tick`, `reset`, `abort`). Tick
 - **`src/decorators/`** — Single-child wrappers: Inverter, Repeat, Retry, Timeout, Guard, AlwaysSucceed, AlwaysFail
 - **`src/strategies/`** — Strategy pattern for composites. Default strategies pass through; Agent strategies delegate ordering/policy decisions to Claude.
 - **`src/builder/`** — Fluent `TreeBuilder` API for constructing trees
-- **`src/config/`** — `TreeRegistry` (action/condition registry) + `TreeLoader` (YAML config to tree instances)
+- **`src/config/`** — `TreeRegistry` (action/condition registry for named node factories)
 - **`src/scheduler/`** — `TreeScheduler` for cron, interval, and one-shot execution
 - **`src/agent/`** — `createBlackboardMcpServer` (exposes blackboard to Claude via MCP tools), SDK helpers for agent strategies
 - **`src/core/`** — `BehaviorTree` (root runner), `InMemoryBlackboard`/`ScopedBlackboard`, `EventEmitter`

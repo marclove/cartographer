@@ -13,7 +13,7 @@ Cartographer also includes an **actor framework** that turns behavior trees into
 - **Agent strategies** — Swap static child ordering or parallel policies for AI-driven decisions at runtime.
 - **Blackboard state management** — Shared key-value store with namespace scoping for inter-node communication.
 - **Event-driven observability** — Typed events for node lifecycle, agent calls, blackboard writes, strategy decisions, and structured NDJSON logging.
-- **Flexible tree construction** — Fluent builder API, YAML configuration with a type registry, or direct node instantiation.
+- **Flexible tree construction** — Fluent builder API with optional type registry, or direct node instantiation.
 - **Scheduler** — Interval, cron, and one-shot execution with configurable tick behavior.
 - **Actor framework** — `TreeActor` and `ActorServer` for persistent, message-driven applications with REST endpoints, SSE events, and state serialization (in-memory or Redis).
 - **Client SDK** — `@cartographer/client` for connecting browser and Node.js frontends to a running ActorServer.
@@ -99,7 +99,7 @@ Full documentation is available in the [`docs/`](docs/) directory:
 
 - [Getting Started](docs/getting-started.md) — Installation and your first tree.
 - [Concepts](docs/concepts.md) — Behavior tree fundamentals: ticks, statuses, and the execution model.
-- [Building Trees](docs/guide-building-trees.md) — Builder API, YAML configuration, and manual wiring.
+- [Building Trees](docs/guide-building-trees.md) — Builder API, registry references, and direct instantiation.
 - [Nodes](docs/guide-nodes.md) — ActionNode, ConditionNode, and AgentNode.
 - [Composites](docs/guide-composites.md) — Selectors, sequences, parallel nodes, and strategies.
 - [Decorators](docs/guide-decorators.md) — All eight decorator types with examples.
@@ -111,7 +111,7 @@ Full documentation is available in the [`docs/`](docs/) directory:
 - [CLI Runner](docs/guide-cli.md) — Running, inspecting, and scaffolding trees from the command line.
 - [Error Handling and Resilience](docs/guide-error-handling.md) — Error containment, retry/timeout stacking, and abort signals.
 - [Testing Behavior Trees](docs/guide-testing.md) — Test contexts, helper functions, and multi-tick test patterns.
-- [Advanced Patterns](docs/guide-advanced-patterns.md) — Custom nodes, custom strategies, parallel policies, and advanced YAML.
+- [Advanced Patterns](docs/guide-advanced-patterns.md) — Custom nodes, custom strategies, parallel policies, and advanced blackboard patterns.
 - [Actor Framework](docs/guide-actor-framework.md) — TreeActor, ActorServer, StateStore, client SDK, and SSE events.
 - [Svelte Integration](docs/guide-svelte.md) — Svelte 5 bindings for reactive UI connected to an ActorServer.
 - [React Integration](docs/guide-react.md) — React hooks for blackboard, tree status, actions, and events.

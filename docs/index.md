@@ -36,7 +36,7 @@ Your background determines the fastest path through these docs.
 
 - [Getting Started](getting-started.md) -- Installation and your first tree in 60 seconds.
 - [Concepts](concepts.md) -- Behavior tree fundamentals: ticks, statuses, and tree structure.
-- [Building Trees](guide-building-trees.md) -- Three construction approaches side-by-side: builder API, declarative config, and manual wiring.
+- [Building Trees](guide-building-trees.md) -- Three construction approaches side-by-side: builder API, builder with registry references, and direct instantiation.
 - [Nodes](guide-nodes.md) -- Leaf nodes: ActionNode, ConditionNode, and an introduction to AgentNode.
 - [Composites](guide-composites.md) -- SelectorNode, SequenceNode, and ParallelNode with completion strategies.
 - [Decorators](guide-decorators.md) -- All eight decorator nodes with examples.
@@ -48,7 +48,7 @@ Your background determines the fastest path through these docs.
 - [CLI Runner](guide-cli.md) -- Running, inspecting, and scaffolding trees from the command line.
 - [Error Handling and Resilience](guide-error-handling.md) -- Error containment, retry/timeout stacking, abort signals, and scheduler error recovery.
 - [Testing Behavior Trees](guide-testing.md) -- Test contexts, helper functions, event verification, and multi-tick test patterns.
-- [Advanced Patterns](guide-advanced-patterns.md) -- Custom nodes, custom strategies, multi-tick resumption internals, parallel policies, advanced blackboard patterns, and advanced YAML.
+- [Advanced Patterns](guide-advanced-patterns.md) -- Custom nodes, custom strategies, multi-tick resumption internals, parallel policies, and advanced blackboard patterns.
 - [Actor Framework](guide-actor-framework.md) -- TreeActor, ActorServer, StateStore, client SDK, SSE events, serialization, and content hashing.
 - [Svelte Integration](guide-svelte.md) -- Svelte 5 bindings: reactive blackboard, tree status, actions, and event subscriptions.
 - [React Integration](guide-react.md) -- React hooks: blackboard, tree status, actions, and event subscriptions.
@@ -67,7 +67,7 @@ Your background determines the fastest path through these docs.
 - [Decorators](api/decorators.md) -- All eight decorator nodes.
 - [Strategies](api/strategies.md) -- Default and agent strategies, strategy interfaces.
 - [Builder](api/builder.md) -- `TreeBuilder`, `CompositeBuilder`, `SingleChildBuilder`.
-- [Config](api/config.md) -- `TreeLoader`, `TreeRegistry`.
+- [Config](api/config.md) -- `TreeRegistry`.
 - [Scheduler](api/scheduler.md) -- `TreeScheduler`, `SchedulerConfig`, `SchedulerEvents`.
 - [Actor](api/actor.md) -- `TreeActor`, `ActorServer`, `ActorMessage`, `StateStore`, `InMemoryStateStore`, `RedisStateStore`.
 - [Client](api/client.md) -- `createCartographerClient`, `CartographerClient`, `ConflictError`.
