@@ -119,7 +119,7 @@ Re-exported from the internal type definitions. See individual reference pages f
 | --------------- | ------------------------------------------------------------ |
 | `TreeScheduler` | Runs a behavior tree on a schedule (interval, cron, or once) |
 
-## Agent Integration
+## [Agent Integration](agent.md)
 
 | Export                         | Description                                                                                                                                                                                                   |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -146,7 +146,7 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `MessageFailedEvent`       | Event emitted on message failure                                 |
 | `generateMessageId`        | Utility to generate unique message IDs                           |
 
-## State
+## [State](state.md)
 
 | Export                | Description                                                       |
 | --------------------- | ----------------------------------------------------------------- |
@@ -165,7 +165,7 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `CartographerClient`          | Client interface (action, write, interrupt, resume)   |
 | `ConflictError`               | Thrown on 409 (another message is being processed)    |
 
-## Logging
+## [Logging](logging.md)
 
 | Export              | Description                                                                                                                                                                                   |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
