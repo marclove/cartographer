@@ -1,19 +1,17 @@
 <script lang="ts">
-  import {
-    getTreeName,
-    getTickCount,
-    getCycleCount,
-    getLastStatus,
-    getLastDurationMs,
-    getConnectionState,
-  } from '../lib/stores.svelte.js';
+  import { getConnectionStatus, getTreeStatus } from '@cartographer/svelte';
+  import { getDashboardState } from '../lib/stores.svelte.js';
 
-  let treeName = $derived(getTreeName());
-  let tickCount = $derived(getTickCount());
-  let cycleCount = $derived(getCycleCount());
-  let lastStatus = $derived(getLastStatus());
-  let lastDurationMs = $derived(getLastDurationMs());
-  let connectionState = $derived(getConnectionState());
+  const dashState = getDashboardState();
+  const connection = getConnectionStatus();
+  const treeStatus = getTreeStatus();
+
+  let treeName = $derived(dashState.treeName);
+  let tickCount = $derived(dashState.tickCount);
+  let cycleCount = $derived(dashState.cycleCount);
+  let lastStatus = $derived(treeStatus.current?.status ?? dashState.lastStatus);
+  let lastDurationMs = $derived(treeStatus.current?.durationMs ?? dashState.lastDurationMs);
+  let connectionState = $derived(connection.current);
 
   let statusClass = $derived(
     lastStatus === 'success' ? 'status-success' :

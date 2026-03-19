@@ -44,6 +44,88 @@ describe('connection:error on EventSource error', () => {
   });
 });
 
+describe('SSE event forwarding', () => {
+  function createMockEventSource() {
+    const handlers = new Map<string, (e: any) => void>();
+    const instance = {
+      readyState: 1,
+      onerror: null as (() => void) | null,
+      addEventListener: vi.fn((type: string, handler: (e: any) => void) => {
+        handlers.set(type, handler);
+      }),
+      close: vi.fn(),
+      _emit(type: string, data: unknown) {
+        const handler = handlers.get(type);
+        if (handler) handler({ data: JSON.stringify(data) });
+      },
+    };
+    vi.stubGlobal('EventSource', vi.fn(() => instance));
+    return instance;
+  }
+
+  const ALL_EVENT_TYPES = [
+    'snapshot',
+    'blackboard:write', 'client:event', 'message:processed',
+    'message:interrupted', 'message:failed', 'node:enter', 'node:exit', 'tree:tick',
+    'node:error', 'tree:init', 'tree:reset', 'tree:abort', 'tree:tick:skipped',
+    'agent:prompt', 'agent:thinking', 'agent:text', 'agent:tool_use', 'agent:response',
+    'agent:error', 'agent:message', 'agent:tool_progress', 'agent:init', 'agent:status',
+    'agent:rate_limit', 'agent:elicitation_declined',
+    'blackboard:keys', 'blackboard:read', 'strategy:decision',
+  ];
+
+  it('registers listeners for all event types', () => {
+    const mock = createMockEventSource();
+    const client = createCartographerClient('http://localhost:3000');
+    client.connect();
+
+    const registeredTypes = mock.addEventListener.mock.calls.map((c: any) => c[0]);
+    for (const type of ALL_EVENT_TYPES) {
+      expect(registeredTypes).toContain(type);
+    }
+  });
+
+  it('dispatches each event type to on() handlers', () => {
+    const mock = createMockEventSource();
+    const client = createCartographerClient('http://localhost:3000');
+
+    const received: Array<{ event: string; data: unknown }> = [];
+    for (const type of ALL_EVENT_TYPES) {
+      client.on(type, (data) => received.push({ event: type, data }));
+    }
+
+    client.connect();
+
+    for (const type of ALL_EVENT_TYPES) {
+      mock._emit(type, { type });
+    }
+
+    expect(received).toHaveLength(ALL_EVENT_TYPES.length);
+    for (const type of ALL_EVENT_TYPES) {
+      expect(received.find(r => r.event === type)).toBeDefined();
+    }
+  });
+
+  it('dispatches each event type to onAny() handler', () => {
+    const mock = createMockEventSource();
+    const client = createCartographerClient('http://localhost:3000');
+
+    const received: Array<{ event: string; data: unknown }> = [];
+    client.onAny((event, data) => received.push({ event, data }));
+
+    client.connect();
+
+    for (const type of ALL_EVENT_TYPES) {
+      mock._emit(type, { type });
+    }
+
+    expect(received).toHaveLength(ALL_EVENT_TYPES.length);
+    for (const type of ALL_EVENT_TYPES) {
+      expect(received.find(r => r.event === type)).toBeDefined();
+    }
+  });
+});
+
 describe('requireConnection guard', () => {
   it('actionAndWait throws when connect() has not been called', async () => {
     const client = createCartographerClient('http://localhost:3000');

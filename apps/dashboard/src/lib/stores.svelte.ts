@@ -1,23 +1,18 @@
-import { connectSSE, fetchNode } from './api.js';
-import type {
-  TreeNode,
-  SseEventName,
-  SseEventMap,
-} from './types.js';
+import { getContext } from 'svelte';
+import type { CartographerClient } from '@cartographer/client';
+import type { TreeNode } from './types.js';
 
 // ---------------------------------------------------------------------------
-// Local types not present in types.ts
+// Types
 // ---------------------------------------------------------------------------
-
-export type ConnectionState = 'connecting' | 'connected' | 'disconnected';
 
 export type NodeStatus = 'running' | 'success' | 'failure' | null;
 
-export interface TimelineEvent<K extends SseEventName = SseEventName> {
+export interface TimelineEvent {
   id: number;
-  event: K;
+  event: string;
   timestamp: number;
-  data: SseEventMap[K];
+  data: unknown;
   category: string;
 }
 
@@ -25,7 +20,7 @@ export interface TimelineEvent<K extends SseEventName = SseEventName> {
 // Event categorization
 // ---------------------------------------------------------------------------
 
-const EVENT_CATEGORIES: Partial<Record<SseEventName, string>> = {
+export const EVENT_CATEGORIES: Record<string, string> = {
   'node:enter': 'nodes',
   'node:exit': 'nodes',
   'node:error': 'nodes',
@@ -56,354 +51,251 @@ const EVENT_CATEGORIES: Partial<Record<SseEventName, string>> = {
 };
 
 export function getEventCategory(eventName: string): string {
-  return EVENT_CATEGORIES[eventName as SseEventName] ?? 'other';
+  return EVENT_CATEGORIES[eventName] ?? 'other';
 }
 
 // ---------------------------------------------------------------------------
-// Reactive state
+// DashboardState
 // ---------------------------------------------------------------------------
 
 const MAX_EVENTS = 2000;
 
-// Connection
-let connectionState = $state<ConnectionState>('connecting');
+/** All SSE event types the dashboard subscribes to. */
+const ALL_EVENTS = [
+  'snapshot',
+  'node:enter', 'node:exit', 'node:error',
+  'tree:tick', 'tree:tick:skipped', 'tree:reset', 'tree:init', 'tree:abort',
+  'blackboard:keys', 'blackboard:read', 'blackboard:write',
+  'strategy:decision',
+  'message:processed', 'message:interrupted', 'message:failed',
+  'agent:prompt', 'agent:thinking', 'agent:text', 'agent:tool_use',
+  'agent:response', 'agent:error', 'agent:message', 'agent:tool_progress',
+  'agent:init', 'agent:status', 'agent:rate_limit', 'agent:elicitation_declined',
+];
 
-// Stats baseline — events with IDs <= this value are already accounted
-// for in the snapshot stats and should not re-increment counters.
-let statsAsOfEventId = 0;
-export function getConnectionState(): ConnectionState {
-  return connectionState;
-}
+export class DashboardState {
+  // Tree structure
+  treeName = $state<string>('');
+  treeRoot = $state<TreeNode | null>(null);
 
-// Tree structure
-// `Snapshot.tree` IS the root TreeNode directly (no wrapper object).
-let treeName = $state<string>('');
-let treeRoot = $state<TreeNode | null>(null);
-export function getTreeName(): string {
-  return treeName;
-}
-export function getTreeRoot(): TreeNode | null {
-  return treeRoot;
-}
+  // Node status tracking
+  nodeStatuses = $state<Map<string, NodeStatus>>(new Map());
 
-// Node status tracking
-let nodeStatuses = $state<Map<string, NodeStatus>>(new Map());
-export function getNodeStatuses(): Map<string, NodeStatus> {
-  return nodeStatuses;
-}
+  // Run stats
+  tickCount = $state(0);
+  cycleCount = $state(0);
+  lastStatus = $state<string | null>(null);
+  lastDurationMs = $state<number | null>(null);
 
-// Run stats (updated from tree:tick events)
-let tickCount = $state(0);
-let cycleCount = $state(0);
-let lastStatus = $state<string | null>(null);
-let lastDurationMs = $state<number | null>(null);
-export function getTickCount(): number {
-  return tickCount;
-}
-export function getCycleCount(): number {
-  return cycleCount;
-}
-export function getLastStatus(): string | null {
-  return lastStatus;
-}
-export function getLastDurationMs(): number | null {
-  return lastDurationMs;
-}
+  // Event timeline
+  events = $state<TimelineEvent[]>([]);
 
-// Event timeline
-let events = $state<TimelineEvent[]>([]);
-export function getEvents(): TimelineEvent[] {
-  return events;
-}
+  // Event filters
+  activeFilters = $state<Set<string>>(
+    new Set(['nodes', 'agent', 'blackboard', 'strategy', 'lifecycle']),
+  );
 
-// Event filters — all categories active by default
-let activeFilters = $state<Set<string>>(
-  new Set(['nodes', 'agent', 'blackboard', 'strategy', 'lifecycle']),
-);
-export function getActiveFilters(): Set<string> {
-  return activeFilters;
-}
-export function toggleFilter(filter: string): void {
-  const next = new Set(activeFilters);
-  if (next.has(filter)) {
-    next.delete(filter);
-  } else {
-    next.add(filter);
+  // Blackboard
+  blackboard = $state<Record<string, unknown>>({});
+  recentlyUpdatedKeys = $state<Set<string>>(new Set());
+
+  // Selected node
+  selectedNodeId = $state<string | null>(null);
+  nodeDetail = $state<Record<string, unknown> | null>(null);
+
+  // Private state
+  private statsBaselineCounter = 0;
+  private highlightTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private baseUrl = '';
+
+  // ---------------------------------------------------------------------------
+  // Event handling
+  // ---------------------------------------------------------------------------
+
+  private pushEvent(event: string, data: unknown, id: number): void {
+    const entry: TimelineEvent = {
+      id,
+      event,
+      timestamp: Date.now(),
+      data,
+      category: getEventCategory(event),
+    };
+    this.events.push(entry);
+    if (this.events.length > MAX_EVENTS) {
+      this.events = this.events.slice(-MAX_EVENTS);
+    } else {
+      this.events = this.events;
+    }
   }
-  activeFilters = next;
-}
 
-// Blackboard
-let blackboard = $state<Record<string, unknown>>({});
-let recentlyUpdatedKeys = $state<Set<string>>(new Set());
-export function getBlackboard(): Record<string, unknown> {
-  return blackboard;
-}
-export function getRecentlyUpdatedKeys(): Set<string> {
-  return recentlyUpdatedKeys;
-}
+  private handleEvent(event: string, raw: unknown): void {
+    const data = raw as Record<string, unknown>;
+    // Use a monotonically increasing local ID since the client doesn't
+    // forward the SSE lastEventId.
+    const id = ++this._eventCounter;
 
-// Selected node
-let selectedNodeId = $state<string | null>(null);
-let nodeDetail = $state<Record<string, unknown> | null>(null);
-export function getSelectedNodeId(): string | null {
-  return selectedNodeId;
-}
-export function getNodeDetail(): Record<string, unknown> | null {
-  return nodeDetail;
-}
-export function selectNode(id: string | null): void {
-  if (id === null) {
-    selectedNodeId = null;
-    nodeDetail = null;
-    return;
-  }
-  // Toggle: clicking the already-selected node deselects it
-  selectedNodeId = selectedNodeId === id ? null : id;
-  if (selectedNodeId) {
-    fetchNode(selectedNodeId).then((data) => {
-      nodeDetail = data as unknown as Record<string, unknown>;
-    }).catch(() => {
-      nodeDetail = null;
-    });
-  } else {
-    nodeDetail = null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-function pushEvent<K extends SseEventName>(
-  event: K,
-  data: SseEventMap[K],
-  id: number,
-): void {
-  const entry: TimelineEvent<K> = {
-    id,
-    event,
-    timestamp: Date.now(),
-    data,
-    category: getEventCategory(event),
-  };
-  // Mutate-then-trim: only reallocate when the buffer overflows
-  events.push(entry as TimelineEvent);
-  if (events.length > MAX_EVENTS) {
-    events = events.slice(-MAX_EVENTS);
-  } else {
-    events = events;  // trigger Svelte reactivity
-  }
-}
-
-// ---------------------------------------------------------------------------
-// SSE connection
-// ---------------------------------------------------------------------------
-
-// Per-key highlight timers for blackboard updates
-let highlightTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-let cleanup: (() => void) | null = null;
-
-export function connect(): void {
-  if (cleanup) cleanup();
-
-  connectionState = 'connecting';
-
-  cleanup = connectSSE({
-    onOpen() {
-      connectionState = 'connected';
-    },
-
-    onError(_err) {
-      connectionState = 'disconnected';
-    },
-
-    // Snapshot: contains the full tree root and blackboard state
-    snapshot(data, id) {
-      // snapshot.tree IS the root TreeNode
-      treeName = data.tree.name;
-      treeRoot = data.tree;
-      blackboard = data.blackboard;
-      // Initialize stats from server if provided (avoids undercounting
-      // when the event buffer has dropped older events)
-      if (data.stats) {
-        tickCount = data.stats.tickCount;
-        cycleCount = data.stats.cycleCount;
-        lastStatus = data.stats.lastStatus;
-        lastDurationMs = data.stats.lastDurationMs;
-        statsAsOfEventId = data.stats.asOfEventId;
-      } else {
-        statsAsOfEventId = 0;
-      }
-      // Reset node statuses when a fresh snapshot arrives
-      nodeStatuses = new Map();
-      pushEvent('snapshot', data, id);
-    },
-
-    'node:enter'(data, id) {
-      // When the root node is entered, a new tick is starting — clear stale
-      // statuses from the previous tick so indicators don't mix across ticks.
-      const next = (treeRoot && data.node.id === treeRoot.id)
-        ? new Map<string, NodeStatus>()
-        : new Map(nodeStatuses);
-      next.set(data.node.id, 'running');
-      nodeStatuses = next;
-      pushEvent('node:enter', data, id);
-    },
-
-    'node:exit'(data, id) {
-      const next = new Map(nodeStatuses);
-      next.set(data.node.id, data.status);
-      nodeStatuses = next;
-      pushEvent('node:exit', data, id);
-    },
-
-    'node:error'(data, id) {
-      const next = new Map(nodeStatuses);
-      next.set(data.node.id, 'failure');
-      nodeStatuses = next;
-      pushEvent('node:error', data, id);
-    },
-
-    'tree:tick'(data, id) {
-      // Only accumulate stats from events newer than the snapshot baseline
-      // (replayed events are already accounted for in snapshot stats)
-      if (id > statsAsOfEventId) {
-        tickCount += 1;
-        if (data.status !== 'running') {
-          cycleCount += 1;
+    switch (event) {
+      case 'snapshot': {
+        const tree = data['tree'] as TreeNode;
+        this.treeName = tree.name;
+        this.treeRoot = tree;
+        this.blackboard = data['blackboard'] as Record<string, unknown>;
+        const stats = data['stats'] as {
+          tickCount: number; cycleCount: number;
+          lastStatus: string | null; lastDurationMs: number | null;
+          asOfEventId: number;
+        } | undefined;
+        if (stats) {
+          this.tickCount = stats.tickCount;
+          this.cycleCount = stats.cycleCount;
+          this.lastStatus = stats.lastStatus;
+          this.lastDurationMs = stats.lastDurationMs;
+          // Record the current local counter as the baseline. Events replayed
+          // after this snapshot carry server IDs that were already counted in
+          // the snapshot stats — we use the local counter (not the server ID)
+          // since the client.on() API doesn't forward lastEventId.
+          this.statsBaselineCounter = this._eventCounter;
+        } else {
+          this.statsBaselineCounter = 0;
         }
+        this.nodeStatuses = new Map();
+        break;
       }
-      lastStatus = data.status;
-      lastDurationMs = data.durationMs;
-      pushEvent('tree:tick', data, id);
-    },
-
-    'tree:tick:skipped'(data, id) {
-      pushEvent('tree:tick:skipped', data, id);
-    },
-
-    'tree:reset'(data, id) {
-      nodeStatuses = new Map();
-      pushEvent('tree:reset', data, id);
-    },
-
-    'tree:init'(data, id) {
-      pushEvent('tree:init', data, id);
-    },
-
-    'tree:abort'(data, id) {
-      pushEvent('tree:abort', data, id);
-    },
-
-    'blackboard:keys'(data, id) {
-      pushEvent('blackboard:keys', data, id);
-    },
-
-    'blackboard:read'(data, id) {
-      pushEvent('blackboard:read', data, id);
-    },
-
-    'blackboard:write'(data, id) {
-      const key = typeof data.key === 'string' ? data.key : null;
-      if (key !== null) {
-        blackboard = { ...blackboard, [key]: data.value };
-        const next = new Set(recentlyUpdatedKeys);
-        next.add(key);
-        recentlyUpdatedKeys = next;
-        // Cancel any existing timer for this key so the highlight stays
-        // for a full 2 seconds from the most recent write
-        const existing = highlightTimers.get(key);
-        if (existing !== undefined) clearTimeout(existing);
-        highlightTimers.set(key, setTimeout(() => {
-          const cleared = new Set(recentlyUpdatedKeys);
-          cleared.delete(key);
-          recentlyUpdatedKeys = cleared;
-          highlightTimers.delete(key);
-        }, 2000));
+      case 'node:enter': {
+        const node = data['node'] as { id: string };
+        const next = (this.treeRoot && node.id === this.treeRoot.id)
+          ? new Map<string, NodeStatus>()
+          : new Map(this.nodeStatuses);
+        next.set(node.id, 'running');
+        this.nodeStatuses = next;
+        break;
       }
-      pushEvent('blackboard:write', data, id);
-    },
+      case 'node:exit': {
+        const node = data['node'] as { id: string };
+        const next = new Map(this.nodeStatuses);
+        next.set(node.id, data['status'] as NodeStatus);
+        this.nodeStatuses = next;
+        break;
+      }
+      case 'node:error': {
+        const node = data['node'] as { id: string };
+        const next = new Map(this.nodeStatuses);
+        next.set(node.id, 'failure');
+        this.nodeStatuses = next;
+        break;
+      }
+      case 'tree:tick': {
+        if (id > this.statsBaselineCounter) {
+          this.tickCount += 1;
+          if (data['status'] !== 'running') {
+            this.cycleCount += 1;
+          }
+        }
+        this.lastStatus = data['status'] as string;
+        this.lastDurationMs = data['durationMs'] as number;
+        break;
+      }
+      case 'tree:reset':
+        this.nodeStatuses = new Map();
+        break;
+      case 'blackboard:write': {
+        const key = typeof data['key'] === 'string' ? data['key'] : null;
+        if (key !== null) {
+          this.blackboard = { ...this.blackboard, [key]: data['value'] };
+          const next = new Set(this.recentlyUpdatedKeys);
+          next.add(key);
+          this.recentlyUpdatedKeys = next;
+          const existing = this.highlightTimers.get(key);
+          if (existing !== undefined) clearTimeout(existing);
+          this.highlightTimers.set(key, setTimeout(() => {
+            const cleared = new Set(this.recentlyUpdatedKeys);
+            cleared.delete(key);
+            this.recentlyUpdatedKeys = cleared;
+            this.highlightTimers.delete(key);
+          }, 2000));
+        }
+        break;
+      }
+      // All other events: no special state handling, just push to timeline
+    }
 
-    'strategy:decision'(data, id) {
-      pushEvent('strategy:decision', data, id);
-    },
-
-    'message:processed'(data, id) {
-      pushEvent('message:processed', data, id);
-    },
-    'message:interrupted'(data, id) {
-      pushEvent('message:interrupted', data, id);
-    },
-    'message:failed'(data, id) {
-      pushEvent('message:failed', data, id);
-    },
-
-    'agent:prompt'(data, id) {
-      pushEvent('agent:prompt', data, id);
-    },
-    'agent:thinking'(data, id) {
-      pushEvent('agent:thinking', data, id);
-    },
-    'agent:text'(data, id) {
-      pushEvent('agent:text', data, id);
-    },
-    'agent:tool_use'(data, id) {
-      pushEvent('agent:tool_use', data, id);
-    },
-    'agent:response'(data, id) {
-      pushEvent('agent:response', data, id);
-    },
-    'agent:error'(data, id) {
-      pushEvent('agent:error', data, id);
-    },
-    // agent:message intentionally ignored — duplicates the specialized
-    // agent:thinking, agent:text, agent:tool_use, and agent:response events.
-    'agent:tool_progress'(data, id) {
-      pushEvent('agent:tool_progress', data, id);
-    },
-    'agent:init'(data, id) {
-      pushEvent('agent:init', data, id);
-    },
-    'agent:status'(data, id) {
-      pushEvent('agent:status', data, id);
-    },
-    'agent:rate_limit'(data, id) {
-      pushEvent('agent:rate_limit', data, id);
-    },
-    'agent:elicitation_declined'(data, id) {
-      pushEvent('agent:elicitation_declined', data, id);
-    },
-  });
-}
-
-export function disconnect(): void {
-  if (cleanup) {
-    cleanup();
-    cleanup = null;
+    this.pushEvent(event, data, id);
   }
-  connectionState = 'disconnected';
+
+  private _eventCounter = 0;
+
+  // ---------------------------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Subscribe to all SSE events via `client.on()`.
+   * @param client - The CartographerClient to subscribe to.
+   * @param baseUrl - Base URL of the Cartographer server, used for node detail fetches.
+   * @returns A cleanup function that removes all listeners.
+   */
+  wire(client: CartographerClient, baseUrl = ''): () => void {
+    this.baseUrl = baseUrl;
+
+    const handlers = new Map<string, (data: unknown) => void>();
+    for (const event of ALL_EVENTS) {
+      const handler = (data: unknown) => this.handleEvent(event, data);
+      handlers.set(event, handler);
+      client.on(event, handler);
+    }
+
+    return () => {
+      for (const [event, handler] of handlers) {
+        client.off(event, handler);
+      }
+      for (const timer of this.highlightTimers.values()) clearTimeout(timer);
+      this.highlightTimers.clear();
+    };
+  }
+
+  selectNode(id: string | null): void {
+    if (id === null) {
+      this.selectedNodeId = null;
+      this.nodeDetail = null;
+      return;
+    }
+    this.selectedNodeId = this.selectedNodeId === id ? null : id;
+    if (this.selectedNodeId) {
+      const nodeId = this.selectedNodeId;
+      fetch(`${this.baseUrl}/api/nodes/${encodeURIComponent(nodeId)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          this.nodeDetail = data as Record<string, unknown>;
+        })
+        .catch(() => {
+          this.nodeDetail = null;
+        });
+    } else {
+      this.nodeDetail = null;
+    }
+  }
+
+  toggleFilter(filter: string): void {
+    const next = new Set(this.activeFilters);
+    if (next.has(filter)) {
+      next.delete(filter);
+    } else {
+      next.add(filter);
+    }
+    this.activeFilters = next;
+  }
 }
 
-/** Reset all store state. Exported for tests only. */
-export function _resetForTest(): void {
-  disconnect();
-  connectionState = 'connecting';
-  treeName = '';
-  treeRoot = null;
-  nodeStatuses = new Map();
-  tickCount = 0;
-  cycleCount = 0;
-  lastStatus = null;
-  lastDurationMs = null;
-  statsAsOfEventId = 0;
-  events = [];
-  activeFilters = new Set(['nodes', 'agent', 'blackboard', 'strategy', 'lifecycle']);
-  blackboard = {};
-  for (const timer of highlightTimers.values()) clearTimeout(timer);
-  highlightTimers.clear();
-  recentlyUpdatedKeys = new Set();
-  selectedNodeId = null;
-  nodeDetail = null;
+// ---------------------------------------------------------------------------
+// Context
+// ---------------------------------------------------------------------------
+
+export const DASHBOARD_STATE_KEY = Symbol('dashboard-state');
+
+export function getDashboardState(): DashboardState {
+  const state = getContext<DashboardState>(DASHBOARD_STATE_KEY);
+  if (!state) {
+    throw new Error('getDashboardState() must be called inside a DashboardProvider');
+  }
+  return state;
 }

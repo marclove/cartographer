@@ -1,14 +1,14 @@
 <script lang="ts">
   import type { TreeNode as TreeNodeType } from '../lib/types.js';
-  import { getNodeStatuses, getSelectedNodeId, selectNode } from '../lib/stores.svelte.js';
+  import { getDashboardState } from '../lib/stores.svelte.js';
   import TreeNode from './TreeNode.svelte';
 
   let { node, depth = 0 }: { node: TreeNodeType; depth?: number } = $props();
 
-  let nodeStatuses = $derived(getNodeStatuses());
-  let selectedNodeId = $derived(getSelectedNodeId());
-  let status = $derived(nodeStatuses.get(node.id) ?? null);
-  let isSelected = $derived(selectedNodeId === node.id);
+  const dashState = getDashboardState();
+
+  let status = $derived(dashState.nodeStatuses.get(node.id) ?? null);
+  let isSelected = $derived(dashState.selectedNodeId === node.id);
 
   const TYPE_LABELS: Record<string, string> = {
     sequence: 'S',
@@ -33,7 +33,7 @@
   class="tree-node"
   class:selected={isSelected}
   style:padding-left="{16 + depth * 20}px"
-  onclick={() => selectNode(node.id)}
+  onclick={() => dashState.selectNode(node.id)}
 >
   <span class="node-icon type-{node.type}">{typeLabel}</span>
   <span class="node-name">{node.name}</span>

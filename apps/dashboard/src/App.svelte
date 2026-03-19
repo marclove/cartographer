@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { connect, disconnect } from './lib/stores.svelte.js';
-  import { onMount } from 'svelte';
+  import { Cartographer } from '@cartographer/svelte';
+  import DashboardProvider from './components/DashboardProvider.svelte';
   import Header from './components/Header.svelte';
   import TreePanel from './components/TreePanel.svelte';
   import EventTimeline from './components/EventTimeline.svelte';
@@ -8,10 +8,7 @@
   import NodeDetail from './components/NodeDetail.svelte';
   import './styles/theme.css';
 
-  onMount(() => {
-    connect();
-    return () => disconnect();
-  });
+  const serverUrl = typeof window !== 'undefined' ? window.location.origin : '';
 
   // Panel widths
   let leftWidth = $state(250);
@@ -67,6 +64,8 @@
   onresize={onWindowResize}
 />
 
+<Cartographer url={serverUrl}>
+<DashboardProvider url={serverUrl}>
 <div class="dashboard">
   <Header />
   <main
@@ -115,6 +114,8 @@
   </main>
   <NodeDetail />
 </div>
+</DashboardProvider>
+</Cartographer>
 
 <style>
   .dashboard {

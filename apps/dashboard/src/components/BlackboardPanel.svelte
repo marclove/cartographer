@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { getBlackboard, getRecentlyUpdatedKeys } from '../lib/stores.svelte.js';
+  import { getBlackboardSnapshot } from '@cartographer/svelte';
+  import { getDashboardState } from '../lib/stores.svelte.js';
 
   interface Props {
     collapsed: boolean;
@@ -8,8 +9,11 @@
 
   let { collapsed, onToggle }: Props = $props();
 
-  let blackboard = $derived(getBlackboard());
-  let recentlyUpdatedKeys = $derived(getRecentlyUpdatedKeys());
+  const bbSnapshot = getBlackboardSnapshot();
+  const dashState = getDashboardState();
+
+  let blackboard = $derived(bbSnapshot.current);
+  let recentlyUpdatedKeys = $derived(dashState.recentlyUpdatedKeys);
 
   interface BaseEntry {
     key: string;       // display key (without scope prefix)

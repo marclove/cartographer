@@ -1,16 +1,12 @@
 <script lang="ts">
-  import {
-    getSelectedNodeId,
-    getNodeDetail,
-    getNodeStatuses,
-    selectNode,
-  } from '../lib/stores.svelte.js';
+  import { getDashboardState } from '../lib/stores.svelte.js';
 
-  let selectedNodeId = $derived(getSelectedNodeId());
-  let detail = $derived(getNodeDetail());
-  let nodeStatuses = $derived(getNodeStatuses());
+  const dashState = getDashboardState();
 
-  let status = $derived(selectedNodeId ? (nodeStatuses.get(selectedNodeId) ?? null) : null);
+  let selectedNodeId = $derived(dashState.selectedNodeId);
+  let detail = $derived(dashState.nodeDetail);
+
+  let status = $derived(selectedNodeId ? (dashState.nodeStatuses.get(selectedNodeId) ?? null) : null);
 
   let statusClass = $derived(
     status === 'success' ? 'val-success' :
@@ -26,7 +22,7 @@
         <span class="panel-title">Node Detail</span>
         <span class="drawer-node-name">{detail.name ?? selectedNodeId}</span>
       </div>
-      <button class="close-btn" onclick={() => selectNode(null)}>&#10005;</button>
+      <button class="close-btn" onclick={() => dashState.selectNode(null)}>&#10005;</button>
     </div>
     <div class="drawer-body">
       <div class="detail-group">

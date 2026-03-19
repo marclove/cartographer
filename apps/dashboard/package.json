@@ -19,6 +19,10 @@
     "test": "vitest run",
     "dev": "vite dev"
   },
+  "dependencies": {
+    "@cartographer/client": "workspace:*",
+    "@cartographer/svelte": "workspace:*"
+  },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
     "svelte": "^5.53.11",

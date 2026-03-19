@@ -1,16 +1,13 @@
 <script lang="ts">
   import EventTag from './EventTag.svelte';
-  import {
-    getEvents,
-    getActiveFilters,
-    toggleFilter,
-    getSelectedNodeId,
-  } from '../lib/stores.svelte.js';
+  import { getDashboardState } from '../lib/stores.svelte.js';
   import { formatTimestamp, formatEventSummary, formatEventDetail } from '../lib/format.js';
 
-  let events = $derived(getEvents());
-  let activeFilters = $derived(getActiveFilters());
-  let selectedNodeId = $derived(getSelectedNodeId());
+  const dashState = getDashboardState();
+
+  let events = $derived(dashState.events);
+  let activeFilters = $derived(dashState.activeFilters);
+  let selectedNodeId = $derived(dashState.selectedNodeId);
 
   const FILTER_OPTIONS = ['nodes', 'agent', 'blackboard', 'strategy'];
 
@@ -56,7 +53,7 @@
       <button
         class="filter-chip"
         class:active={activeFilters.has(filter)}
-        onclick={() => toggleFilter(filter)}
+        onclick={() => dashState.toggleFilter(filter)}
       >
         {filter}
       </button>
