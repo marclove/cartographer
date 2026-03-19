@@ -71,8 +71,10 @@ export function useAction(name: string): UseActionReturn {
   const [pending, setPending] = useState(false);
   // IDs of sends that reached the server and are awaiting SSE completion events.
   const pendingIdsRef = useRef<Set<string>>(new Set());
-  // Count of send() calls whose HTTP request hasn't returned yet (no ID assigned).
+  // Count of send/sendAndWait calls whose HTTP request hasn't returned yet (no ID assigned).
   const inflightRef = useRef<number>(0);
+  // Resolvers for sendAndWait promises, keyed by message ID.
+  const waitResolversRef = useRef<Map<string, { resolve: (v: { messageId: string; treeStatus: string }) => void; reject: (e: Error) => void }>>(new Map());
 
   const clearIfDone = useCallback(() => {
     if (inflightRef.current === 0 && pendingIdsRef.current.size === 0) {
@@ -81,25 +83,37 @@ export function useAction(name: string): UseActionReturn {
   }, []);
 
   useEffect(() => {
-    const onProcessed = (data: unknown) => {
-      const d = data as { messageId: string };
-      if (pendingIdsRef.current.has(d.messageId)) {
-        pendingIdsRef.current.delete(d.messageId);
-        clearIfDone();
+    const settle = (id: string, outcome: { messageId: string; treeStatus: string } | Error) => {
+      if (!pendingIdsRef.current.has(id)) return;
+      pendingIdsRef.current.delete(id);
+      const resolver = waitResolversRef.current.get(id);
+      if (resolver) {
+        waitResolversRef.current.delete(id);
+        if (outcome instanceof Error) {
+          resolver.reject(outcome);
+        } else {
+          resolver.resolve(outcome);
+        }
       }
+      clearIfDone();
+    };
+    const onProcessed = (data: unknown) => {
+      const d = data as { messageId: string; treeStatus: string };
+      settle(d.messageId, { messageId: d.messageId, treeStatus: d.treeStatus });
     };
     const onFailed = (data: unknown) => {
-      const d = data as { messageId: string };
-      if (pendingIdsRef.current.has(d.messageId)) {
-        pendingIdsRef.current.delete(d.messageId);
-        clearIfDone();
-      }
+      const d = data as { messageId: string; error?: string };
+      settle(d.messageId, new Error(d.error ?? 'Action failed'));
     };
     client.on('message:processed', onProcessed);
     client.on('message:failed', onFailed);
     return () => {
       client.off('message:processed', onProcessed);
       client.off('message:failed', onFailed);
+      for (const [, resolver] of waitResolversRef.current) {
+        resolver.reject(new Error('Component unmounted'));
+      }
+      waitResolversRef.current.clear();
     };
   }, [client, clearIfDone]);
 
@@ -123,14 +137,22 @@ export function useAction(name: string): UseActionReturn {
 
   const sendAndWait = useCallback(
     async (payload?: unknown): Promise<{ messageId: string; treeStatus: string }> => {
+      inflightRef.current += 1;
       setPending(true);
       try {
-        return await client.actionAndWait(name, payload);
-      } finally {
-        setPending(false);
+        const result = await client.action(name, payload);
+        inflightRef.current -= 1;
+        pendingIdsRef.current.add(result.id);
+        return new Promise<{ messageId: string; treeStatus: string }>((resolve, reject) => {
+          waitResolversRef.current.set(result.id, { resolve, reject });
+        });
+      } catch (err) {
+        inflightRef.current -= 1;
+        clearIfDone();
+        throw err;
       }
     },
-    [client, name],
+    [client, name, clearIfDone],
   );
 
   return { send, sendAndWait, pending };

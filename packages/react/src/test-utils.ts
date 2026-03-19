@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import type { CartographerClient } from '@cartographer/client';
 
 /** Creates a mock CartographerClient that stores listeners and lets tests simulate SSE events. */

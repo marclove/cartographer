@@ -276,17 +276,75 @@ describe('useAction', () => {
     expect(result.current.pending).toBe(false);
   });
 
-  it('sendAndWait calls client.actionAndWait', async () => {
+  it('sendAndWait calls client.action and resolves on message:processed', async () => {
     const client = createMockClient();
     const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
 
     let response: { messageId: string; treeStatus: string } | undefined;
     await act(async () => {
-      response = await result.current.sendAndWait({ data: 1 });
+      const promise = result.current.sendAndWait({ data: 1 });
+      // Flush microtasks so the resolver is registered
+      await Promise.resolve();
+      await Promise.resolve();
+      client.emit('message:processed', { messageId: 'msg-1', treeStatus: 'success' });
+      response = await promise;
     });
 
-    expect(client.actionAndWait).toHaveBeenCalledWith('submit', { data: 1 });
+    expect(client.action).toHaveBeenCalledWith('submit', { data: 1 });
     expect(response!.treeStatus).toBe('success');
+    expect(result.current.pending).toBe(false);
+  });
+
+  it('sendAndWait rejects on message:failed', async () => {
+    const client = createMockClient();
+    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+
+    await expect(
+      act(async () => {
+        const promise = result.current.sendAndWait();
+        await Promise.resolve();
+        await Promise.resolve();
+        client.emit('message:failed', { messageId: 'msg-1', error: 'boom' });
+        await promise;
+      }),
+    ).rejects.toThrow('boom');
+
+    expect(result.current.pending).toBe(false);
+  });
+
+  it('sendAndWait does not clear pending while send() is still awaiting completion', async () => {
+    const client = createMockClient();
+    (client.action as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ id: 'msg-send' })
+      .mockResolvedValueOnce({ id: 'msg-wait' });
+
+    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+
+    // Fire send() — pending because it's awaiting message:processed
+    await act(async () => {
+      await result.current.send();
+    });
+    expect(result.current.pending).toBe(true);
+
+    // Fire sendAndWait() concurrently — both tracked by ID
+    let waitResponse: { messageId: string; treeStatus: string } | undefined;
+    await act(async () => {
+      const promise = result.current.sendAndWait();
+      await Promise.resolve();
+      await Promise.resolve();
+      // Resolve sendAndWait via SSE — but send() is still pending
+      client.emit('message:processed', { messageId: 'msg-wait', treeStatus: 'success' });
+      waitResponse = await promise;
+    });
+
+    expect(waitResponse!.treeStatus).toBe('success');
+    // pending should still be true because send()'s ID hasn't been resolved
+    expect(result.current.pending).toBe(true);
+
+    // Now resolve the send()
+    act(() => {
+      client.emit('message:processed', { messageId: 'msg-send', treeStatus: 'success' });
+    });
     expect(result.current.pending).toBe(false);
   });
 });
