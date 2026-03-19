@@ -210,6 +210,8 @@ export class AgentNode extends BaseNode {
     // cached results survive interrupt.
   }
 
+  private static sdkAbortHandlerInstalled = false;
+
   /**
    * The SDK's handleControlRequest fires an internal write() to the child
    * process during abort. That promise is detached — we can't .catch() it
@@ -217,11 +219,14 @@ export class AgentNode extends BaseNode {
    * message + stack, and retroactively handle the promise. This triggers
    * Node's 'rejectionHandled' event, which tells test runners to disregard it.
    *
-   * The listener stays active for 500ms to cover rejections that arrive
-   * after multiple event-loop ticks (e.g. when the SDK is mid-network-call).
+   * Installed once for the process lifetime — the handler only matches
+   * `Operation aborted` errors with `handleControlRequest` in the stack,
+   * so there is no false-positive risk.
    */
   private static catchSdkAbortRejections(): void {
-    const handler = (reason: unknown, promise: Promise<unknown>) => {
+    if (AgentNode.sdkAbortHandlerInstalled) return;
+    AgentNode.sdkAbortHandlerInstalled = true;
+    process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
       if (
         reason instanceof Error &&
         reason.message === 'Operation aborted' &&
@@ -229,9 +234,7 @@ export class AgentNode extends BaseNode {
       ) {
         promise.catch(() => {});
       }
-    };
-    process.on('unhandledRejection', handler);
-    setTimeout(() => process.removeListener('unhandledRejection', handler), 500);
+    });
   }
 
   /**

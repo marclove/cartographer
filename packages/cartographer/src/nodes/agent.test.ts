@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NodeStatus } from '../types.js';
 import type { TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
@@ -1088,5 +1088,104 @@ describe('AgentNode - stream EOF', () => {
     await flush();
     // Second tick polls the completed result — should be FAILURE
     expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
+  });
+});
+
+describe('AgentNode - SDK abort rejection handling', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    // Reset the static flag so each test installs fresh
+    (AgentNode as any).sdkAbortHandlerInstalled = false;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('suppresses matching SDK abort rejections arriving after 500ms', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      { type: 'result', subtype: 'success', output: 'done', total_cost_usd: 0 },
+    ]) as any);
+
+    const node = new AgentNode({ name: 'abort-test', prompt: 'Do work' });
+    const ctx = createContext();
+
+    // Tick to start inflight, then abort to trigger handler installation
+    await node.tick(ctx);
+    node.abort();
+
+    // Advance past the old 500ms cleanup window
+    await vi.advanceTimersByTimeAsync(600);
+
+    // Simulate a late SDK rejection — with the old implementation, the
+    // handler would have been removed by now and this would be unhandled.
+    const sdkError = new Error('Operation aborted');
+    sdkError.stack = 'Error: Operation aborted\n    at x9.write (sdk.mjs)\n    at g9.handleControlRequest (sdk.mjs)';
+
+    // Track whether 'rejectionHandled' fires — this proves our handler
+    // retroactively caught the promise via promise.catch(() => {}).
+    const rejectionHandled = vi.fn();
+    process.once('rejectionHandled', rejectionHandled);
+
+    const p = Promise.reject(sdkError);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // The permanent handler should have called promise.catch(), which
+    // triggers the 'rejectionHandled' event.
+    expect(rejectionHandled).toHaveBeenCalled();
+
+    p.catch(() => {}); // safety cleanup
+  });
+
+  it('does not suppress unrelated rejections', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      { type: 'result', subtype: 'success', output: 'done', total_cost_usd: 0 },
+    ]) as any);
+
+    const node = new AgentNode({ name: 'unrelated-test', prompt: 'Do work' });
+    const ctx = createContext();
+
+    await node.tick(ctx);
+    node.abort();
+
+    // Emit a rejection that does NOT match the SDK pattern
+    const unrelatedHandler = vi.fn();
+    process.once('unhandledRejection', unrelatedHandler);
+
+    const unrelatedErr = new Error('Something else broke');
+    const p = Promise.reject(unrelatedErr);
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(unrelatedHandler).toHaveBeenCalledWith(unrelatedErr, p);
+
+    // Clean up
+    p.catch(() => {});
+  });
+
+  it('installs the handler only once across multiple aborts', async () => {
+    mockQuery.mockReturnValue(mockMessages([
+      { type: 'result', subtype: 'success', output: 'done', total_cost_usd: 0 },
+    ]) as any);
+
+    const listenerCountBefore = process.listenerCount('unhandledRejection');
+
+    const node = new AgentNode({ name: 'multi-abort', prompt: 'Do work' });
+    const ctx = createContext();
+
+    // Abort multiple times
+    await node.tick(ctx);
+    node.abort();
+
+    mockQuery.mockReturnValue(mockMessages([
+      { type: 'result', subtype: 'success', output: 'done', total_cost_usd: 0 },
+    ]) as any);
+    await node.tick(ctx);
+    node.abort();
+
+    // Should only have added one listener
+    const listenerCountAfter = process.listenerCount('unhandledRejection');
+    expect(listenerCountAfter - listenerCountBefore).toBe(1);
   });
 });
