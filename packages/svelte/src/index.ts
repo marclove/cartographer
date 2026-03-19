@@ -21,4 +21,4 @@ export type { ConnectionStatusRef, TreeStatusRef } from './status.svelte.js';
 export type { ActionRef } from './action.svelte.js';
 
 // Test utilities
-export { createMockClient } from './test-utils.svelte.js';
+export { createMockClient, createTestContext } from './test-utils.svelte.js';

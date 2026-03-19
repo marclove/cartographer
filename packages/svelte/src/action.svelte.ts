@@ -102,6 +102,10 @@ export function createAction(name: string): ActionRef {
   onDestroy(() => {
     client.off('message:processed', onProcessed);
     client.off('message:failed', onFailed);
+    for (const [, resolver] of waitResolvers) {
+      resolver.reject(new Error('Component unmounted'));
+    }
+    waitResolvers.clear();
   });
 
   async function submitAction(payload?: unknown): Promise<string> {

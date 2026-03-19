@@ -1,5 +1,5 @@
 import { getContext } from 'svelte';
-import { CartographerState } from './state.svelte.js';
+import type { CartographerState } from './state.svelte.js';
 import { CARTOGRAPHER_STATE_KEY } from './context.js';
 import type { ConnectionStatus, TreeStatusInfo } from './types.js';
 

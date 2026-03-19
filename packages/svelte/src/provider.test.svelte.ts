@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, cleanup } from '@testing-library/svelte';
+import { describe, it, expect } from 'vitest';
+import { render } from '@testing-library/svelte';
 import ProviderTest from './__tests__/ProviderTest.svelte';
+import GetClientAlone from './__tests__/GetClientAlone.svelte';
 import { createMockClient } from './test-utils.svelte.js';
 import type { CartographerState } from './state.svelte.js';
 import type { CartographerClient } from '@cartographer/client';
@@ -39,10 +40,6 @@ describe('Cartographer provider', () => {
   });
 
   it('getClient() throws when used outside provider', () => {
-    // getClient uses getContext which requires component context
-    // Testing this directly would require rendering a component without a provider
-    // The context.test.ts already verifies the key exports; the throw is guaranteed
-    // by the getClient implementation checking for undefined
-    expect(true).toBe(true);
+    expect(() => render(GetClientAlone)).toThrow('must be used within');
   });
 });

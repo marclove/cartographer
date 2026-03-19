@@ -6,7 +6,8 @@ import { CartographerState } from './state.svelte.js';
  * Creates a mock {@link CartographerClient} suitable for unit tests.
  *
  * All client methods (`action`, `write`, `send`, etc.) are stubbed with
- * `vi.fn()` and return sensible defaults. The mock's `on`/`off` methods
+ * `vi.fn()` and return sensible defaults. Requires `vitest` to be available
+ * in the consuming project's test environment. The mock's `on`/`off` methods
  * manage a real listener map so the returned `emit` helper can dispatch
  * synthetic SSE events to any registered handler.
  *
@@ -56,6 +57,8 @@ export function createMockClient(): CartographerClient & {
  * Use this to test reactive state transitions driven by SSE events without
  * rendering a full Svelte component tree. Call `client.emit(event, data)` to
  * simulate server events and then assert against `state.*` properties.
+ *
+ * Requires `vitest` to be available in the consuming project's test environment.
  *
  * @param overrides - Optional partial overrides merged onto the mock client
  *                    before `attach()` is called, useful for customizing

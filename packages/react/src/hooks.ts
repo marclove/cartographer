@@ -110,6 +110,10 @@ export function useAction(name: string): UseActionReturn {
     return () => {
       client.off('message:processed', onProcessed);
       client.off('message:failed', onFailed);
+      for (const [, resolver] of waitResolversRef.current) {
+        resolver.reject(new Error('Component unmounted'));
+      }
+      waitResolversRef.current.clear();
     };
   }, [client, clearIfDone]);
 

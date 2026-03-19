@@ -32,4 +32,8 @@ describe('@cartographer/svelte exports', () => {
   it('exports createMockClient', () => {
     expect(typeof pkg.createMockClient).toBe('function');
   });
+
+  it('exports createTestContext', () => {
+    expect(typeof pkg.createTestContext).toBe('function');
+  });
 });
