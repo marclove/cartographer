@@ -10,15 +10,16 @@ interface CartographerContextValue {
 
 const CartographerContext = createContext<CartographerContextValue | null>(null);
 
-interface CartographerProviderProps {
-  url: string;
-  client?: CartographerClient;
+type CartographerProviderProps = {
   children: React.ReactNode;
-}
+} & (
+  | { url: string; client?: CartographerClient }
+  | { url?: string; client: CartographerClient }
+);
 
 export function CartographerProvider({ url, client: clientProp, children }: CartographerProviderProps) {
   const { client, store } = useMemo(() => {
-    const client = clientProp ?? createCartographerClient(url);
+    const client = clientProp ?? createCartographerClient(url!);
     const store = createSyncStore();
     return { client, store };
   }, [url, clientProp]);
