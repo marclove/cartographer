@@ -8,7 +8,7 @@ import { createMockClient } from './test-utils.js';
 function wrapper(client: ReturnType<typeof createMockClient>) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return (
-      <CartographerProvider url="http://localhost:3148" client={client}>
+      <CartographerProvider client={client}>
         {children}
       </CartographerProvider>
     );
