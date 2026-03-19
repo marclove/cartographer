@@ -1,17 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { formatTimestamp, formatEventSummary, formatEventDetail } from './format.js';
 import type { TimelineEvent } from './stores.svelte.js';
-import type { SseEventName } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Helper — build a TimelineEvent with minimal boilerplate
 // ---------------------------------------------------------------------------
 
-function event<K extends SseEventName>(
-  name: K,
+function event(
+  name: string,
   data: Record<string, unknown>,
 ): TimelineEvent {
-  return { id: 1, event: name, timestamp: Date.now(), data: data as any, category: 'test' };
+  return { id: 1, event: name, timestamp: Date.now(), data, category: 'test' };
 }
 
 // ---------------------------------------------------------------------------

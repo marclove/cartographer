@@ -1,6 +1,6 @@
 <script lang="ts">
   import TreeNode from './TreeNode.svelte';
-  import { getTreeRoot } from '../lib/stores.svelte.js';
+  import { getDashboardState } from '../lib/stores.svelte.js';
 
   interface Props {
     collapsed: boolean;
@@ -9,7 +9,8 @@
 
   let { collapsed, onToggle }: Props = $props();
 
-  let treeRoot = $derived(getTreeRoot());
+  const dashState = getDashboardState();
+  let treeRoot = $derived(dashState.treeRoot);
 </script>
 
 <div class="panel">

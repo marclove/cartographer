@@ -185,7 +185,15 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
       eventSource.addEventListener('snapshot', (e: any) => {
         dispatchEvent('snapshot', JSON.parse(e.data));
       });
-      for (const type of ['blackboard:write', 'client:event', 'message:processed', 'message:interrupted', 'message:failed', 'node:enter', 'node:exit', 'tree:tick']) {
+      for (const type of [
+        'blackboard:write', 'client:event', 'message:processed',
+        'message:interrupted', 'message:failed', 'node:enter', 'node:exit', 'tree:tick',
+        'node:error', 'tree:init', 'tree:reset', 'tree:abort', 'tree:tick:skipped',
+        'agent:prompt', 'agent:thinking', 'agent:text', 'agent:tool_use', 'agent:response',
+        'agent:error', 'agent:message', 'agent:tool_progress', 'agent:init', 'agent:status',
+        'agent:rate_limit', 'agent:elicitation_declined',
+        'blackboard:keys', 'blackboard:read', 'strategy:decision',
+      ]) {
         eventSource.addEventListener(type, (e: any) => {
           try { dispatchEvent(type, JSON.parse(e.data)); } catch {}
         });

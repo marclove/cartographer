@@ -31,6 +31,13 @@ importers:
         version: 4.3.6
 
   apps/dashboard:
+    dependencies:
+      '@cartographer/client':
+        specifier: workspace:*
+        version: link:../../packages/client
+      '@cartographer/svelte':
+        specifier: workspace:*
+        version: link:../../packages/svelte
     devDependencies:
       '@sveltejs/vite-plugin-svelte':
         specifier: ^5.1.1
