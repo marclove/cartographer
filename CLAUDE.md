@@ -9,21 +9,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run build            # Compile TypeScript to dist/
-npm run test             # Run unit tests (vitest run --project unit)
-npm run test:integration # Run integration tests (vitest run --project integration)
-npm run test:live        # Run live API tests (vitest run --project live, requires ANTHROPIC_API_KEY)
-npm run test:all         # Run all tests (unit + integration + live)
-npm run test:watch       # Watch unit tests
-npm run typecheck        # Type-check without emitting
-npx vitest run src/nodes/action.test.ts  # Run a single test file
+pnpm run build              # Build all packages (via turbo)
+pnpm run test               # Run unit tests across all packages (via turbo)
+pnpm run typecheck           # Type-check all packages (via turbo)
+pnpm run test:integration    # Run integration tests (cartographer package)
+pnpm run test:live           # Run live API tests (requires ANTHROPIC_API_KEY)
+
+# Per-package commands
+pnpm --filter cartographer test              # Run cartographer unit tests
+pnpm --filter @cartographer/client test      # Run client tests
+pnpm --filter @cartographer/react test       # Run react tests
+pnpm --filter @cartographer/dashboard test   # Run dashboard tests
 ```
 
-Tests are organized into three vitest projects: `unit` (src/**/\*.test.ts), `integration` (src/**integration**/**/_.test.ts, deterministic), and `live` (src/**integration**/live/\*\*/_.test.ts, requires `ANTHROPIC_API_KEY`).
+This is a pnpm + Turborepo monorepo. Tests are organized per-package with each package having its own `vitest.config.ts`. The cartographer package additionally has `vitest.integration.config.ts` and `vitest.live.config.ts` for integration and live API tests.
 
 ## Architecture
 
-All types live in `src/types.ts`. Everything is re-exported from `src/index.ts`.
+The repo is a pnpm workspaces monorepo with Turborepo orchestration:
+
+- **`packages/cartographer/`** — Core behavior tree framework (published as `cartographer`)
+- **`packages/client/`** — Lightweight browser/Node client SDK (`@cartographer/client`)
+- **`packages/react/`** — React hooks (`@cartographer/react`)
+- **`apps/dashboard/`** — Svelte dashboard app (`@cartographer/dashboard`)
+- **`apps/content-pipeline/`** — Example app
+- **`apps/scheduled-monitor/`** — Example app
+
+All core types live in `packages/cartographer/src/types.ts`. Everything is re-exported from `packages/cartographer/src/index.ts`.
 
 ### Node Model
 
@@ -52,5 +64,4 @@ Every node implements the `BTreeNode` interface (`tick`, `reset`, `abort`). Tick
 
 - `@anthropic-ai/claude-agent-sdk` — Claude integration for AgentNode and agent strategies
 - `zod` (v4) — Schema validation for structured agent output
-- `yaml` — YAML config loading
 - `cron-parser` — Cron expression parsing for scheduler

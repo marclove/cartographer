@@ -10,10 +10,13 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const CLI = resolve(__dirname, '../cli/index.ts');
 const FIXTURES = resolve(__dirname, 'fixtures/cli');
 const PROJECT_ROOT = resolve(__dirname, '../../../..');
+const PACKAGE_ROOT = resolve(__dirname, '../..');
 
 // Absolute path to tsx ESM loader — needed when spawning from a cwd
 // outside the project tree (e.g. temp directories for init tests).
-const TSX_ESM = resolve(PROJECT_ROOT, 'node_modules/tsx/dist/esm/index.mjs');
+// tsx is a devDependency of cartographer, so pnpm places it under
+// packages/cartographer/node_modules/, not the monorepo root.
+const TSX_ESM = resolve(PACKAGE_ROOT, 'node_modules/tsx/dist/esm/index.mjs');
 
 function runCli(
   args: string[],

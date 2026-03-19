@@ -426,12 +426,10 @@ Cartographer uses three vitest projects, each targeting a different scope:
 Run them with:
 
 ```bash
-npm run test             # unit only
-npm run test:integration # integration only
-npm run test:live        # live only (requires API key)
-npm run test:all         # all three
-npm run test:watch       # unit tests in watch mode
-npx vitest run src/nodes/action.test.ts  # single file
+pnpm run test             # unit tests across all packages
+pnpm run test:integration # integration only (cartographer package)
+pnpm run test:live        # live only (requires API key)
+pnpm --filter cartographer exec vitest run src/nodes/action.test.ts  # single file
 ```
 
 ### Where to put your tests

@@ -14,7 +14,8 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "NODE_OPTIONS=--experimental-eventsource vitest run"
   },
   "license": "Apache-2.0"
 }

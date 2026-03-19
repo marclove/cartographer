@@ -1,5 +1,4 @@
 import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import type { RunContext, TreeRunConfig } from '../types.js';
 
@@ -70,16 +69,19 @@ export interface DashboardHandle {
 export async function startDashboard(options: {
   apiPort: number;
   dashboardPort?: number;
-  importMetaUrl: string;
   quiet?: boolean;
 }): Promise<DashboardHandle | null> {
   try {
-    const dashboardServerPath = new URL('../../dashboard-server/server.js', options.importMetaUrl);
-    const { DashboardServer } = await import(dashboardServerPath.href);
-    const staticDir = new URL('../../dashboard/', options.importMetaUrl);
+    // Variable specifiers prevent TypeScript from resolving these optional
+    // imports at compile time. The dashboard is a separate app that may or
+    // may not be built; the catch block handles its absence at runtime.
+    const serverPkg = '@cartographer/dashboard/server';
+    const staticDirPkg = '@cartographer/dashboard/static-dir';
+    const { DashboardServer } = await import(serverPkg);
+    const { staticDir } = await import(staticDirPkg);
     const server = new DashboardServer({
       port: options.dashboardPort,
-      staticDir: fileURLToPath(staticDir),
+      staticDir,
       apiUrl: `http://localhost:${options.apiPort}`,
     });
     const { port } = await server.start();
@@ -89,7 +91,7 @@ export async function startDashboard(options: {
     return { port, close: () => server.close() };
   } catch {
     if (!options.quiet) {
-      process.stderr.write('Dashboard: not available (run npm run build first)\n');
+      process.stderr.write('Dashboard: not available (run pnpm build first)\n');
     }
     return null;
   }

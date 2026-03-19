@@ -139,7 +139,6 @@ async function runDaemon(
     dashHandle = await startDashboard({
       apiPort: serverPort,
       dashboardPort,
-      importMetaUrl: import.meta.url,
       quiet,
     });
   }

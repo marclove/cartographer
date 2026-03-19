@@ -3,3 +3,4 @@ dist
 logs
 .superpowers/
 .worktrees/
+.turbo/

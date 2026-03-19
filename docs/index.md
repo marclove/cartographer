@@ -14,7 +14,7 @@ Cartographer also includes an **actor framework** that turns behavior trees into
 - **Multi-agent coordination** -- Run several AgentNodes in parallel or sequence, each with its own tools and system prompt, coordinated by composite nodes.
 - **Classification and routing** -- Use condition nodes and selectors to route inputs through different processing branches based on structured or LLM-driven evaluation.
 
-The [`examples/`](../examples/) directory contains two runnable programs that exercise these patterns end-to-end with real Claude API calls. See the [Examples README](../examples/README.md) for details.
+The [`apps/`](../apps/) directory contains two runnable programs that exercise these patterns end-to-end with real Claude API calls: [content-pipeline](../apps/content-pipeline/) and [scheduled-monitor](../apps/scheduled-monitor/).
 
 ## Where to Start
 
@@ -51,7 +51,8 @@ Your background determines the fastest path through these docs.
 
 ### Examples
 
-- [Examples README](../examples/README.md) -- Two runnable programs demonstrating the framework end-to-end: a support ticket triage pipeline and a scheduled health monitor with incident management.
+- [Content Pipeline](../apps/content-pipeline/) -- A support ticket triage pipeline demonstrating classification, routing, and agent integration.
+- [Scheduled Monitor](../apps/scheduled-monitor/) -- A scheduled health monitor with incident management across ticks.
 
 ### API Reference
 
