@@ -253,7 +253,7 @@ describe('GET /events — Last-Event-ID reconnection', () => {
     // Close the default server and create one with a tiny buffer to force eviction
     await server.close();
     tree = createTree();
-    server = new TreeServer(tree, { port: 0, eventBufferCapacity: 2 });
+    server = new TreeServer(tree, { port: 0, eventStreamCapacity: 2 });
     ({ port } = await server.start());
 
     // Tick multiple times to generate events that overflow the 2-event buffer
