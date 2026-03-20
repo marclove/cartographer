@@ -3,22 +3,22 @@ import type { IncomingMessage, ServerResponse, Server } from 'node:http';
 import type { BehaviorTree } from '../core/behavior-tree.js';
 import { NodeStatus } from '../types.js';
 import type { TreeEvents } from '../types.js';
-import { EventBuffer } from './event-buffer.js';
+import { InProcessEventStream } from './event-stream.js';
 import { serializeEvent } from './serializers.js';
 import { handleApiTree, handleApiStatus, handleApiBlackboard, handleApiNode } from './api-handlers.js';
 import type { StatusState } from './api-handlers.js';
-import { handleSseStream, broadcastSseEvent } from './sse-handler.js';
+import { handleSseStream } from './sse-handler.js';
 import type { SseClient } from './sse-handler.js';
 import { jsonError } from './http-utils.js';
 
 export interface TreeServerOptions {
   port?: number;
-  eventBufferCapacity?: number;
+  eventStreamCapacity?: number;
 }
 
 export class TreeServer {
   private server: Server | null = null;
-  private readonly eventBuffer: EventBuffer;
+  private readonly eventStream: InProcessEventStream;
   private readonly sseClients: Set<SseClient> = new Set();
   private readonly state: StatusState;
   private readonly port: number;
@@ -29,7 +29,7 @@ export class TreeServer {
     options: TreeServerOptions = {},
   ) {
     this.port = options.port ?? 3147;
-    this.eventBuffer = new EventBuffer(options.eventBufferCapacity ?? 500);
+    this.eventStream = new InProcessEventStream(options.eventStreamCapacity ?? 500);
     this.state = {
       tickCount: 0,
       cycleCount: 0,
@@ -88,11 +88,10 @@ export class TreeServer {
     this.tree.events.on('tree:tick', onTick);
     this.unsubscribers.push(() => this.tree.events.off('tree:tick', onTick));
 
-    // Forward all events to SSE clients
+    // Forward all events to the event stream (subscribers handle SSE delivery)
     const onAnyEvent = (event: string, data: unknown) => {
       const serialized = serializeEvent(event as any, data);
-      const entry = this.eventBuffer.push(event, serialized);
-      broadcastSseEvent(this.sseClients, entry);
+      this.eventStream.push(event, serialized);
     };
     this.tree.events.onAny(onAnyEvent);
     this.unsubscribers.push(() => this.tree.events.offAny(onAnyEvent));
@@ -127,7 +126,7 @@ export class TreeServer {
 
     // SSE endpoint
     if (pathname === '/events') {
-      handleSseStream(req, res, this.tree, this.eventBuffer, this.sseClients);
+      handleSseStream(req, res, this.tree, this.eventStream, this.sseClients);
       return;
     }
 
