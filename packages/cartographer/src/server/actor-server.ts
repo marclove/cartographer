@@ -177,10 +177,6 @@ export class ActorServer {
     }
 
     if (method === 'GET' && url.pathname === '/events') {
-      return this.handleDashboardSSE(req, res);
-    }
-
-    if (method === 'GET' && url.pathname === '/api/events') {
       return this.handleSSE(req, res);
     }
 
@@ -322,7 +318,7 @@ export class ActorServer {
     }
   }
 
-  private async handleDashboardSSE(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  private async handleSSE(req: IncomingMessage, res: ServerResponse): Promise<void> {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -359,40 +355,6 @@ export class ActorServer {
     req.on('close', () => {
       this.sseClients.delete(res);
     });
-  }
-
-  private async handleSSE(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    });
-
-    const state = await this.stateStore.getState('default');
-    const snapshot = {
-      blackboard: state?.blackboard ?? {},
-      treeRootHash: state?.treeState.rootHash ?? null,
-      lastMessageAt: state?.lastMessageAt ?? null,
-    };
-    res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
-
-    const lastEventId = req.headers['last-event-id'] as string | undefined;
-
-    this.sseClients.add(res);
-    let closed = false;
-    req.on('close', () => { closed = true; this.sseClients.delete(res); });
-
-    try {
-      for await (const event of this.stateStore.readEvents('default', lastEventId)) {
-        if (closed) break;
-        res.write(`id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`);
-      }
-    } catch {
-      // Connection closed or error — clean exit
-    } finally {
-      this.sseClients.delete(res);
-      if (!closed) res.end();
-    }
   }
 
   private forwardEvent(event: { type: string; data: Record<string, unknown> }): void {

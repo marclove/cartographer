@@ -85,6 +85,10 @@ importers:
       '@cartographer/client':
         specifier: workspace:*
         version: link:../client
+    optionalDependencies:
+      '@cartographer/dashboard':
+        specifier: workspace:*
+        version: link:../../apps/dashboard
 
   packages/client: {}
 

@@ -191,11 +191,11 @@ describe('ActorServer write endpoints', () => {
     expect(bb.myKey).toBe('hello');
   });
 
-  it('GET /api/events returns SSE stream with snapshot', async () => {
+  it('GET /events returns SSE stream with snapshot', async () => {
     server = new ActorServer({ createTree: makeTree, port: 0 });
     port = (await server.start()).port;
 
-    const res = await fetch(`http://localhost:${port}/api/events`);
+    const res = await fetch(`http://localhost:${port}/events`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('text/event-stream');
 
@@ -524,12 +524,12 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
     expect(collected).toContain('message:processed');
   });
 
-  it('stop() closes /api/events SSE clients', async () => {
+  it('stop() closes /events SSE clients', async () => {
     server = new ActorServer({ createTree: makeTree, port: 0 });
     port = (await server.start()).port;
 
-    // Connect to /api/events SSE
-    const res = await fetch(`http://localhost:${port}/api/events`);
+    // Connect to /events SSE
+    const res = await fetch(`http://localhost:${port}/events`);
     const reader = res.body!.getReader();
 
     // Read initial snapshot

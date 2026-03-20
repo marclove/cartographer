@@ -181,7 +181,7 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
     connect() {
       if (eventSource) return;
       if (typeof globalThis.EventSource === 'undefined') return;
-      eventSource = new EventSource(`${baseUrl}/api/events`);
+      eventSource = new EventSource(`${baseUrl}/events`);
       eventSource.addEventListener('snapshot', (e: any) => {
         dispatchEvent('snapshot', JSON.parse(e.data));
       });
