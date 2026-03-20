@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { setContext, onDestroy } from 'svelte';
+  import { setContext } from 'svelte';
   import { getClient } from '@cartographer/svelte';
   import { DashboardState, DASHBOARD_STATE_KEY } from '../lib/stores.svelte.js';
   import type { Snippet } from 'svelte';
@@ -10,8 +10,10 @@
   const state = new DashboardState();
   setContext(DASHBOARD_STATE_KEY, state);
 
-  const detach = state.wire(client, url);
-  onDestroy(detach);
+  $effect(() => {
+    const detach = state.wire(client, url);
+    return detach;
+  });
 </script>
 
 {@render children()}
