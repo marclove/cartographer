@@ -9,8 +9,8 @@ import type { ActorMessage } from '../actor/types.js';
 import type { ProcessResult } from '../actor/tree-actor.js';
 import { jsonResponse, jsonError, readBody } from './http-utils.js';
 import { EventBridge } from './event-bridge.js';
-import { EventBuffer } from './event-buffer.js';
-import { broadcastSseEvent, sendSseEvent, blackboardToRecord } from './sse-handler.js';
+import { InProcessEventStream, type EventStream } from './event-stream.js';
+import { sendSseEvent, blackboardToRecord } from './sse-handler.js';
 import type { SseClient } from './sse-handler.js';
 import { serializeTree as serializeTreeForApi, serializeNodeRef, serializeEvent } from './serializers.js';
 import { findNodeById } from './api-handlers.js';
@@ -39,7 +39,7 @@ export class ActorServer {
   private activeActor: TreeActor | null = null;
   private activeMessageId: string | null = null;
   private readonly stats: StatusState = { tickCount: 0, cycleCount: 0, lastStatus: null, lastDurationMs: null, startedAt: 0 };
-  private readonly eventBuffer: EventBuffer = new EventBuffer(500);
+  private readonly eventStream: EventStream = new InProcessEventStream(500);
   private readonly sseClients: Set<SseClient> = new Set();
   private _readTree: BehaviorTree | null = null;
 
@@ -118,6 +118,7 @@ export class ActorServer {
     await this.stateStore.saveState('default', {
       blackboard,
       treeState,
+      treeStructure: serializeTreeForApi(tree.root),
       createdAt: Date.now(),
       lastMessageAt: Date.now(),
     });
@@ -331,36 +332,39 @@ export class ActorServer {
     const snapshot = {
       tree: serializeTreeForApi(tree.root),
       blackboard: state?.blackboard ?? {},
-      stats: { ...this.stats, asOfEventId: this.eventBuffer.latestId },
+      stats: { ...this.stats, asOfEventId: this.eventStream.latestId },
     };
 
     // Send snapshot
-    sendSseEvent(res, 'snapshot', snapshot, 0);
+    sendSseEvent(res, 'snapshot', snapshot, '0');
 
     // Replay buffered events — on reconnect, replay since last-event-id;
     // on initial connect, replay the entire buffer so the dashboard
     // shows events that occurred before the client connected.
-    const lastEventId = req.headers['last-event-id'];
-    const sinceId = lastEventId ? parseInt(lastEventId as string, 10) : 0;
-    if (!isNaN(sinceId)) {
-      const events = this.eventBuffer.getEventsSince(sinceId);
-      if (events !== null) {
-        for (const event of events) {
-          sendSseEvent(res, event.event, event.data, event.id);
-        }
+    const lastEventId = req.headers['last-event-id'] as string | undefined;
+    const sinceId = lastEventId ?? '0';
+    const events = this.eventStream.replaySince(sinceId);
+    if (events !== null) {
+      for (const event of events) {
+        sendSseEvent(res, event.event, event.data, event.id);
       }
     }
 
+    // Subscribe to live events
+    const unsubscribe = this.eventStream.subscribe((entry) => {
+      sendSseEvent(res, entry.event, entry.data, entry.id);
+    });
+
     this.sseClients.add(res);
     req.on('close', () => {
+      unsubscribe();
       this.sseClients.delete(res);
     });
   }
 
   private forwardEvent(event: { type: string; data: Record<string, unknown> }): void {
     this.trackEvent(event);
-    const entry = this.eventBuffer.push(event.type, event.data);
-    broadcastSseEvent(this.sseClients, entry);
+    this.eventStream.push(event.type, event.data);
   }
 
   private trackEvent(event: { type: string; data: Record<string, unknown> }): void {

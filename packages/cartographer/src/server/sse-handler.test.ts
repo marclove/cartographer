@@ -3,9 +3,9 @@ import { EventEmitter } from 'node:events';
 import {
   sendSseEvent,
   blackboardToRecord,
-  broadcastSseEvent,
   handleSseStream,
 } from './sse-handler.js';
+import { InProcessEventStream } from './event-stream.js';
 
 // Mock serializeTree so we don't pull in real node classes
 vi.mock('./serializers.js', () => ({
@@ -25,12 +25,12 @@ function makeReq(headers: Record<string, string> = {}): import('node:http').Inco
   return emitter as unknown as import('node:http').IncomingMessage;
 }
 
-function makeEventBuffer(overrides: { latestId?: number; getEventsSince?: ReturnType<typeof vi.fn> } = {}) {
+function makeEventStream(overrides: { latestId?: string; replaySince?: ReturnType<typeof vi.fn> } = {}) {
   return {
-    latestId: overrides.latestId ?? 0,
-    getEventsSince: overrides.getEventsSince ?? vi.fn(() => []),
+    latestId: overrides.latestId ?? '0',
+    replaySince: overrides.replaySince ?? vi.fn(() => []),
     push: vi.fn(),
-    capacity: 100,
+    subscribe: vi.fn(() => vi.fn()),
   };
 }
 
@@ -50,7 +50,7 @@ function makeTree(bbOverrides?: Record<string, unknown>) {
 describe('sendSseEvent', () => {
   it('writes correct SSE wire format', () => {
     const res = makeRes();
-    sendSseEvent(res, 'snapshot', { hello: 'world' }, 42);
+    sendSseEvent(res, 'snapshot', { hello: 'world' }, '42');
 
     expect(res.write).toHaveBeenCalledTimes(3);
     expect(res.write).toHaveBeenNthCalledWith(1, 'id: 42\n');
@@ -81,31 +81,6 @@ describe('blackboardToRecord', () => {
   });
 });
 
-// ---------- broadcastSseEvent ----------
-
-describe('broadcastSseEvent', () => {
-  it('sends event to all clients in set', () => {
-    const clients = new Set([makeRes(), makeRes(), makeRes()]);
-    const entry = { id: 5, event: 'update', data: { key: 'val' }, ts: new Date().toISOString() };
-
-    broadcastSseEvent(clients, entry);
-
-    for (const c of clients) {
-      expect(c.write).toHaveBeenCalledTimes(3);
-      expect(c.write).toHaveBeenNthCalledWith(1, 'id: 5\n');
-    }
-  });
-
-  it('with empty set is a no-op', () => {
-    const clients = new Set<import('node:http').ServerResponse>();
-    const entry = { id: 1, event: 'update', data: {}, ts: new Date().toISOString() };
-
-    // Should not throw
-    broadcastSseEvent(clients, entry);
-    expect(clients.size).toBe(0);
-  });
-});
-
 // ---------- handleSseStream ----------
 
 describe('handleSseStream', () => {
@@ -122,8 +97,8 @@ describe('handleSseStream', () => {
   });
 
   it('sets SSE response headers', () => {
-    const buf = makeEventBuffer();
-    handleSseStream(req, res, tree, buf as any, sseClients);
+    const stream = makeEventStream();
+    handleSseStream(req, res, tree, stream as any, sseClients);
 
     expect(res.writeHead).toHaveBeenCalledWith(200, {
       'Content-Type': 'text/event-stream',
@@ -133,13 +108,11 @@ describe('handleSseStream', () => {
   });
 
   it('sends initial snapshot', () => {
-    const buf = makeEventBuffer({ latestId: 7 });
-    handleSseStream(req, res, tree, buf as any, sseClients);
+    const stream = makeEventStream({ latestId: '7' });
+    handleSseStream(req, res, tree, stream as any, sseClients);
 
-    // First write call is the id line of the snapshot event
     expect(res.write).toHaveBeenNthCalledWith(1, 'id: 7\n');
     expect(res.write).toHaveBeenNthCalledWith(2, 'event: snapshot\n');
-    // data line contains serialized tree and blackboard
     const dataArg = (res.write as any).mock.calls[2][0] as string;
     expect(dataArg).toMatch(/^data: /);
     const parsed = JSON.parse(dataArg.replace('data: ', '').trim());
@@ -150,69 +123,94 @@ describe('handleSseStream', () => {
 
   it('replays missed events on reconnect (Last-Event-ID)', () => {
     const missed = [
-      { id: 3, event: 'update', data: { a: 1 }, ts: '' },
-      { id: 4, event: 'update', data: { b: 2 }, ts: '' },
+      { id: '3', event: 'update', data: { a: 1 }, ts: '' },
+      { id: '4', event: 'update', data: { b: 2 }, ts: '' },
     ];
-    const getEventsSince = vi.fn(() => missed);
-    const buf = makeEventBuffer({ latestId: 4, getEventsSince });
+    const replaySince = vi.fn(() => missed);
+    const stream = makeEventStream({ latestId: '4', replaySince });
 
     req = makeReq({ 'last-event-id': '2' });
-    handleSseStream(req, res, tree, buf as any, sseClients);
+    handleSseStream(req, res, tree, stream as any, sseClients);
 
-    expect(getEventsSince).toHaveBeenCalledWith(2);
+    expect(replaySince).toHaveBeenCalledWith('2');
 
     // 3 writes for initial snapshot + 3 writes per missed event = 9
     expect(res.write).toHaveBeenCalledTimes(9);
-    // The 4th write (first replay event id line)
     expect(res.write).toHaveBeenNthCalledWith(4, 'id: 3\n');
     expect(res.write).toHaveBeenNthCalledWith(7, 'id: 4\n');
   });
 
   it('sends full snapshot on buffer gap', () => {
-    const getEventsSince = vi.fn(() => null);
-    const buf = makeEventBuffer({ latestId: 10, getEventsSince });
+    const replaySince = vi.fn(() => null);
+    const stream = makeEventStream({ latestId: '10', replaySince });
 
     req = makeReq({ 'last-event-id': '1' });
-    handleSseStream(req, res, tree, buf as any, sseClients);
+    handleSseStream(req, res, tree, stream as any, sseClients);
 
-    expect(getEventsSince).toHaveBeenCalledWith(1);
+    expect(replaySince).toHaveBeenCalledWith('1');
 
     // 3 writes for initial snapshot + 3 writes for gap snapshot = 6
     expect(res.write).toHaveBeenCalledTimes(6);
-    // Both snapshots should have id: 10
     expect(res.write).toHaveBeenNthCalledWith(1, 'id: 10\n');
     expect(res.write).toHaveBeenNthCalledWith(4, 'id: 10\n');
   });
 
   it('does not replay when Last-Event-ID header is absent', () => {
-    const getEventsSince = vi.fn();
-    const buf = makeEventBuffer({ latestId: 5, getEventsSince });
+    const replaySince = vi.fn();
+    const stream = makeEventStream({ latestId: '5', replaySince });
 
-    handleSseStream(req, res, tree, buf as any, sseClients);
+    handleSseStream(req, res, tree, stream as any, sseClients);
 
-    expect(getEventsSince).not.toHaveBeenCalled();
-    // Only the initial snapshot: 3 writes
+    expect(replaySince).not.toHaveBeenCalled();
     expect(res.write).toHaveBeenCalledTimes(3);
   });
 
   it('adds client to sseClients set', () => {
-    const buf = makeEventBuffer();
-    handleSseStream(req, res, tree, buf as any, sseClients);
+    const stream = makeEventStream();
+    handleSseStream(req, res, tree, stream as any, sseClients);
 
     expect(sseClients.has(res)).toBe(true);
     expect(sseClients.size).toBe(1);
   });
 
   it('removes client from sseClients set on request close', () => {
-    const buf = makeEventBuffer();
-    handleSseStream(req, res, tree, buf as any, sseClients);
+    const stream = makeEventStream();
+    handleSseStream(req, res, tree, stream as any, sseClients);
 
     expect(sseClients.has(res)).toBe(true);
 
-    // Simulate client disconnect
     req.emit('close');
 
     expect(sseClients.has(res)).toBe(false);
     expect(sseClients.size).toBe(0);
+  });
+
+  it('subscribes to live events and unsubscribes on close', () => {
+    const unsubscribe = vi.fn();
+    const subscribe = vi.fn(() => unsubscribe);
+    const stream = { ...makeEventStream(), subscribe };
+
+    handleSseStream(req, res, tree, stream as any, sseClients);
+
+    expect(subscribe).toHaveBeenCalledOnce();
+    expect(unsubscribe).not.toHaveBeenCalled();
+
+    req.emit('close');
+
+    expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('forwards live events to the response', () => {
+    const stream = new InProcessEventStream(100);
+    handleSseStream(req, res, tree, stream, sseClients);
+
+    // Clear snapshot writes
+    (res.write as any).mockClear();
+
+    stream.push('node:enter', { node: { id: 'a' } });
+
+    expect(res.write).toHaveBeenCalledTimes(3);
+    expect(res.write).toHaveBeenNthCalledWith(1, 'id: 1\n');
+    expect(res.write).toHaveBeenNthCalledWith(2, 'event: node:enter\n');
   });
 });

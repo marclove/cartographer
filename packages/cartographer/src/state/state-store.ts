@@ -3,6 +3,8 @@ import type { SerializedTreeState } from '../core/serialization.js';
 export interface TreeSessionState {
   blackboard: Record<string, unknown>;
   treeState: SerializedTreeState;
+  /** Serialized tree structure for API/SSE snapshots. Enables multi-server SSE without an in-process tree. */
+  treeStructure?: { id: string; name: string; type: string; children: unknown[] };
   createdAt: number;
   lastMessageAt: number;
   /** When true, the tree is held after interrupt — tick messages are no-ops. */

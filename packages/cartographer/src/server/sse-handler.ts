@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { BehaviorTree } from '../core/behavior-tree.js';
-import type { EventBuffer, BufferedEvent } from './event-buffer.js';
+import type { EventStream } from './event-stream.js';
 import { serializeTree } from './serializers.js';
 
 export type SseClient = ServerResponse;
@@ -9,7 +9,7 @@ export function handleSseStream(
   req: IncomingMessage,
   res: ServerResponse,
   tree: BehaviorTree,
-  eventBuffer: EventBuffer,
+  eventStream: EventStream,
   sseClients: Set<SseClient>,
 ): void {
   res.writeHead(200, {
@@ -23,46 +23,40 @@ export function handleSseStream(
     tree: serializeTree(tree.root),
     blackboard: blackboardToRecord(tree.blackboard),
   };
-  sendSseEvent(res, 'snapshot', snapshot, eventBuffer.latestId);
+  sendSseEvent(res, 'snapshot', snapshot, eventStream.latestId);
 
   // Replay missed events on reconnect
   const lastEventId = req.headers['last-event-id'];
   if (lastEventId) {
-    const lastId = parseInt(lastEventId as string, 10);
-    if (!isNaN(lastId)) {
-      const missed = eventBuffer.getEventsSince(lastId);
-      if (missed === null) {
-        // Buffer gap — send a full snapshot instead
-        sendSseEvent(res, 'snapshot', snapshot, eventBuffer.latestId);
-      } else {
-        for (const event of missed) {
-          sendSseEvent(res, event.event, event.data, event.id);
-        }
+    const missed = eventStream.replaySince(lastEventId as string);
+    if (missed === null) {
+      // Buffer gap — send a full snapshot instead
+      sendSseEvent(res, 'snapshot', snapshot, eventStream.latestId);
+    } else {
+      for (const event of missed) {
+        sendSseEvent(res, event.event, event.data, event.id);
       }
     }
   }
 
+  // Subscribe to live events
+  const unsubscribe = eventStream.subscribe((entry) => {
+    sendSseEvent(res, entry.event, entry.data, entry.id);
+  });
+
   sseClients.add(res);
 
   req.on('close', () => {
+    unsubscribe();
     sseClients.delete(res);
   });
-}
-
-export function broadcastSseEvent(
-  sseClients: Set<SseClient>,
-  entry: BufferedEvent,
-): void {
-  for (const client of sseClients) {
-    sendSseEvent(client, entry.event, entry.data, entry.id);
-  }
 }
 
 export function sendSseEvent(
   res: ServerResponse,
   event: string,
   data: unknown,
-  id: number,
+  id: string,
 ): void {
   res.write(`id: ${id}\n`);
   res.write(`event: ${event}\n`);
