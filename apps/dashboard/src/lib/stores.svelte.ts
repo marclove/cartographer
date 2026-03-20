@@ -143,7 +143,7 @@ export class DashboardState {
         const stats = data['stats'] as {
           tickCount: number; cycleCount: number;
           lastStatus: string | null; lastDurationMs: number | null;
-          asOfEventId: number;
+          asOfEventId: string;
         } | undefined;
         if (stats) {
           this.tickCount = stats.tickCount;
