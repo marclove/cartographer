@@ -28,5 +28,5 @@ export interface StateStore {
   releaseLock(key: string, requestId: string): Promise<void>;
 
   appendEvents(key: string, events: TreeEvent[]): Promise<void>;
-  readEvents(key: string, lastEventId?: string): AsyncIterable<TreeEvent>;
+  readEvents(key: string, lastEventId?: string, options?: { signal?: AbortSignal }): AsyncIterable<TreeEvent>;
 }

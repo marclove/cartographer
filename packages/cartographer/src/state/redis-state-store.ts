@@ -93,7 +93,8 @@ export class RedisStateStore implements StateStore {
     await pipeline.exec();
   }
 
-  async *readEvents(key: string, lastEventId?: string): AsyncIterable<TreeEvent> {
+  async *readEvents(key: string, lastEventId?: string, options?: { signal?: AbortSignal }): AsyncIterable<TreeEvent> {
+    const signal = options?.signal;
     let cursor = lastEventId ?? '0';
 
     const existing = await this.redis.xrange(
@@ -102,18 +103,21 @@ export class RedisStateStore implements StateStore {
       '+'
     );
     for (const [streamId, fields] of existing) {
+      if (signal?.aborted) return;
       yield this.parseStreamEntry(streamId, fields);
       cursor = streamId;
     }
 
     const subscriber = this.redis.duplicate();
     try {
-      while (true) {
+      while (!signal?.aborted) {
         const result = await subscriber.xread('BLOCK', 5000, 'STREAMS', this.eventsKey(key), cursor);
+        if (signal?.aborted) break;
         if (!result) continue;
 
         for (const [, entries] of result) {
           for (const [streamId, fields] of entries) {
+            if (signal?.aborted) return;
             yield this.parseStreamEntry(streamId, fields);
             cursor = streamId;
           }

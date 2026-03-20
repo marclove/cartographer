@@ -59,12 +59,15 @@ export class StoreBackedEventStream implements EventStream {
    * to all subscribers.
    */
   startSubscription(fromId?: string): void {
+    // Stop any existing subscription to prevent duplicate dispatches
+    this.stop();
+
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
 
     const run = async () => {
       try {
-        const iterable = this.stateStore.readEvents(this.stateKey, fromId);
+        const iterable = this.stateStore.readEvents(this.stateKey, fromId, { signal });
         for await (const event of iterable) {
           if (signal.aborted) break;
 

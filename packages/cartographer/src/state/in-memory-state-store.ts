@@ -63,7 +63,8 @@ export class InMemoryStateStore implements StateStore {
     }
   }
 
-  async *readEvents(key: string, lastEventId?: string): AsyncIterable<TreeEvent> {
+  async *readEvents(key: string, lastEventId?: string, options?: { signal?: AbortSignal }): AsyncIterable<TreeEvent> {
+    const signal = options?.signal;
     const buffer = this.eventBuffers.get(key) ?? [];
 
     let startIndex = 0;
@@ -72,10 +73,11 @@ export class InMemoryStateStore implements StateStore {
       if (idx !== -1) startIndex = idx + 1;
     }
     for (let i = startIndex; i < buffer.length; i++) {
+      if (signal?.aborted) return;
       yield buffer[i];
     }
 
-    while (true) {
+    while (!signal?.aborted) {
       const currentLen = (this.eventBuffers.get(key) ?? []).length;
       await new Promise<void>(resolve => {
         let waiters = this.eventWaiters.get(key);
@@ -84,10 +86,15 @@ export class InMemoryStateStore implements StateStore {
           this.eventWaiters.set(key, waiters);
         }
         waiters.push(resolve);
+        // If already aborted, resolve immediately to unblock
+        if (signal?.aborted) resolve();
       });
+
+      if (signal?.aborted) return;
 
       const allEvents = this.eventBuffers.get(key) ?? [];
       for (let i = currentLen; i < allEvents.length; i++) {
+        if (signal?.aborted) return;
         yield allEvents[i];
       }
     }
