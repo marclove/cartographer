@@ -27,7 +27,7 @@ describe('TreeActor', () => {
     expect(saved!.treeState.rootHash).toBeDefined();
   });
 
-  it('processes an action message — writes to blackboard then ticks', async () => {
+  it('processes a command message — writes to blackboard then ticks', async () => {
     let receivedValue: unknown;
     const store = new InMemoryStateStore();
     const actor = new TreeActor({
@@ -36,7 +36,7 @@ describe('TreeActor', () => {
         root: new ActionNode({
           name: 'check',
           action: async (ctx) => {
-            receivedValue = ctx.blackboard.get('actions:approve');
+            receivedValue = ctx.blackboard.get('commands:approve');
             return NodeStatus.SUCCESS;
           },
         }),
@@ -45,7 +45,7 @@ describe('TreeActor', () => {
       stateKey: 'default',
     });
 
-    await actor.process({ type: 'action', name: 'approve', payload: { docId: '123' } });
+    await actor.process({ type: 'command', name: 'approve', payload: { docId: '123' } });
     expect(receivedValue).toEqual({ docId: '123' });
   });
 

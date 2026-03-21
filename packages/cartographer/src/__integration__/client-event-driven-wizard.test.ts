@@ -97,28 +97,28 @@ describe('client-event-driven wizard', () => {
 
     // 1. Start wizard — step 1 form emitted, suspends
     const form1Promise = waitForEvent(harness.client, 'ui:form', 1);
-    const step1Result = await harness.client.actionAndWait('tick');
+    const step1Result = await harness.client.commandAndWait('tick');
     expect(step1Result.treeStatus).toBe('running');
     const [form1Data] = await form1Promise;
     expect(form1Data).toEqual({ step: 1, fields: ['name', 'email'] });
 
     // 2. Submit step 1 with valid data — validation passes, step 2 form emitted
     const form2Promise = waitForEvent(harness.client, 'ui:form', 1);
-    const step2StartResult = await harness.client.actionAndWait('step-1', { name: 'Alice', email: 'alice@acme.com' });
+    const step2StartResult = await harness.client.commandAndWait('step-1', { name: 'Alice', email: 'alice@acme.com' });
     expect(step2StartResult.treeStatus).toBe('running');
     const [form2Data] = await form2Promise;
     expect(form2Data).toEqual({ step: 2, fields: ['company', 'role'] });
 
     // 3. Submit step 2 with INVALID data — validation fails, retry re-emits step 2 form
     const form3Promise = waitForEvent(harness.client, 'ui:form', 1);
-    const invalidResult = await harness.client.actionAndWait('step-2', { company: '', role: 'eng' });
+    const invalidResult = await harness.client.commandAndWait('step-2', { company: '', role: 'eng' });
     expect(invalidResult.treeStatus).toBe('running');
     const [form3Data] = await form3Promise;
     expect(form3Data).toEqual({ step: 2, fields: ['company', 'role'] }); // Re-emitted
 
     // 4. Submit step 2 with valid data — validation passes, step 3 form emitted
     const form4Promise = waitForEvent(harness.client, 'ui:form', 1);
-    const step2ValidResult = await harness.client.actionAndWait('step-2', { company: 'Acme Corp', role: 'eng' });
+    const step2ValidResult = await harness.client.commandAndWait('step-2', { company: 'Acme Corp', role: 'eng' });
     expect(step2ValidResult.treeStatus).toBe('running');
     const [form4Data] = await form4Promise;
     expect(form4Data).toEqual({ step: 3, fields: ['plan'] });
@@ -130,7 +130,7 @@ describe('client-event-driven wizard', () => {
 
     // 5. Submit step 3 — validation passes, account created, confirmation emitted
     const confirmPromise = waitForEvent(harness.client, 'ui:confirmation', 1);
-    const finalResult = await harness.client.actionAndWait('step-3', { plan: 'pro' });
+    const finalResult = await harness.client.commandAndWait('step-3', { plan: 'pro' });
     expect(finalResult.treeStatus).toBe('success');
 
     // 6. Verify confirmation event with aggregated data

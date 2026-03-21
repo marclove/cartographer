@@ -56,7 +56,7 @@ export interface ProcessResult {
  *
  * 1. **Load** — retrieve persisted session state from the {@link StateStore}.
  * 2. **Hydrate** — create a fresh tree via the factory and restore blackboard + node state.
- * 3. **Apply** — write the incoming message (action, write, signal, or tick) onto the tree.
+ * 3. **Apply** — write the incoming message (command, write, signal, or tick) onto the tree.
  * 4. **Run** — tick the tree in a loop until it reaches a terminal status or is interrupted.
  * 5. **Serialize** — snapshot the blackboard and node state.
  * 6. **Save** — persist the snapshot back to the store.
@@ -111,7 +111,7 @@ export class TreeActor {
    *    the session with `held: true`.
    *
    * Once held, subsequent `tick` messages are no-ops (returning `{ held: true }`)
-   * until the held state is cleared by an `action`, `write`, or `resume` signal.
+   * until the held state is cleared by a `command`, `write`, or `resume` signal.
    *
    * Safe to call at any time — if no processing is in progress, the
    * `AbortController` is `null` and the call is a no-op.
@@ -131,7 +131,7 @@ export class TreeActor {
    *
    * - `tick` — triggers the tree's run-to-completion loop. If the tree is held,
    *   the tick is skipped and `{ held: true }` is returned.
-   * - `action` — writes `msg.payload` to the blackboard under `actions:<name>`,
+   * - `command` — writes `msg.payload` to the blackboard under `commands:<name>`,
    *   then ticks the tree.
    * - `write` — sets an arbitrary blackboard key, then ticks the tree.
    * - `signal` — applies a control signal (`reset`, `abort`, `resume`) without
@@ -155,7 +155,7 @@ export class TreeActor {
       restoreTree(tree.root, tree.rootHash, stored.treeState, this.topologyPolicy);
     }
 
-    // Handle held state: tick messages are no-ops, action/write clear held,
+    // Handle held state: tick messages are no-ops, command/write clear held,
     // signal:resume clears held without ticking
     if (stored?.held) {
       if (msg.type === 'tick') {
@@ -165,13 +165,13 @@ export class TreeActor {
         await this.stateStore.saveState(this.stateKey, { ...stored, held: false });
         return { treeStatus: 'error', error: 'Signal handled: resume' };
       }
-      // action/write: clear held flag, then fall through to normal processing
+      // command/write: clear held flag, then fall through to normal processing
       await this.stateStore.saveState(this.stateKey, { ...stored, held: false });
     }
 
     // Apply message
-    if (msg.type === 'action') {
-      tree.blackboard.set(`actions:${msg.name}`, msg.payload ?? {});
+    if (msg.type === 'command') {
+      tree.blackboard.set(`commands:${msg.name}`, msg.payload ?? {});
     } else if (msg.type === 'write') {
       tree.blackboard.set(msg.key, msg.value);
     } else if (msg.type === 'signal') {

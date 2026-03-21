@@ -18,11 +18,11 @@ describe('ReceiveNode', () => {
   it('returns SUCCESS and consumes key when action is present', async () => {
     const node = receive('approve');
     const ctx = createContext();
-    ctx.blackboard.set('actions:approve', { docId: '123' });
+    ctx.blackboard.set('commands:approve', { docId: '123' });
 
     const status = await node.tick(ctx);
     expect(status).toBe(NodeStatus.SUCCESS);
-    expect(ctx.blackboard.get('actions:approve')).toBeUndefined();
+    expect(ctx.blackboard.get('commands:approve')).toBeUndefined();
   });
 
   it('returns FAILURE when action is not present', async () => {
@@ -52,7 +52,7 @@ describe('ReceiveNode', () => {
       },
     });
     const ctx = createContext();
-    ctx.blackboard.set('actions:approve', { decision: 'accepted' });
+    ctx.blackboard.set('commands:approve', { decision: 'accepted' });
 
     await node.tick(ctx);
     expect(ctx.blackboard.get('review:decision')).toBe('accepted');

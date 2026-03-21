@@ -170,11 +170,11 @@ const server = new ActorServer({
 await server.start();
 ```
 
-On the client side, React hooks connect your UI to the running tree. State streams in over SSE; actions flow back over HTTP. No manual event wiring — hooks handle the lifecycle.
+On the client side, React hooks connect your UI to the running tree. State streams in over SSE; commands flow back over HTTP. No manual event wiring — hooks handle the lifecycle.
 
 ```tsx
 import { useState } from "react";
-import { CartographerProvider, useAction, useClientEvent, useTreeStatus } from "@cartographer/react";
+import { CartographerProvider, useCommand, useClientEvent, useTreeStatus } from "@cartographer/react";
 
 function App() {
   return (
@@ -186,8 +186,8 @@ function App() {
 
 function ReviewApp() {
   const [findings, setFindings] = useState<string[] | null>(null);
-  const approve = useAction("approve");
-  const reject = useAction("reject");
+  const approve = useCommand("approve");
+  const reject = useCommand("reject");
   const tree = useTreeStatus();
 
   // The tree pushes findings to the client when analysis is done

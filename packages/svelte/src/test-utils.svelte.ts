@@ -5,7 +5,7 @@ import { CartographerState } from './state.svelte.js';
 /**
  * Creates a mock {@link CartographerClient} suitable for unit tests.
  *
- * All client methods (`action`, `write`, `send`, etc.) are stubbed with
+ * All client methods (`command`, `write`, `send`, etc.) are stubbed with
  * `vi.fn()` and return sensible defaults. Requires `vitest` to be available
  * in the consuming project's test environment. The mock's `on`/`off` methods
  * manage a real listener map so the returned `emit` helper can dispatch
@@ -21,13 +21,13 @@ export function createMockClient(): CartographerClient & {
   const listeners = new Map<string, Set<(data: unknown) => void>>();
 
   return {
-    action: vi.fn().mockResolvedValue({ id: 'msg-1' }),
+    command: vi.fn().mockResolvedValue({ id: 'msg-1' }),
     write: vi.fn().mockResolvedValue({ id: 'msg-2' }),
     send: vi.fn().mockResolvedValue({ id: 'msg-3' }),
-    actionAndWait: vi.fn().mockResolvedValue({ messageId: 'msg-1', treeStatus: 'success' }),
+    commandAndWait: vi.fn().mockResolvedValue({ messageId: 'msg-1', treeStatus: 'success' }),
     interrupt: vi.fn().mockResolvedValue({ interrupted: false }),
     resume: vi.fn().mockResolvedValue({ resumed: true }),
-    interruptAndAction: vi.fn().mockResolvedValue({ id: 'msg-4' }),
+    interruptAndCommand: vi.fn().mockResolvedValue({ id: 'msg-4' }),
     blackboard: vi.fn().mockResolvedValue({}),
     tree: vi.fn().mockResolvedValue({}),
     status: vi.fn().mockResolvedValue({}),

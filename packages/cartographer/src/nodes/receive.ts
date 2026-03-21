@@ -9,7 +9,7 @@ export interface ReceiveOptions {
 
 /**
  * A synchronous, non-reactive node that receives and consumes an inbound
- * action from the blackboard.
+ * command from the blackboard.
  *
  * Extends BaseNode directly (not ActionNode or ConditionNode) to ensure:
  * - Non-reactive: sequences cache its SUCCESS in completedMap
@@ -19,24 +19,24 @@ export interface ReceiveOptions {
  * completedMap serialization.
  */
 export class ReceiveNode extends BaseNode {
-  private readonly actionName: string;
+  private readonly commandName: string;
   private readonly mapPayload?: (payload: unknown, blackboard: Blackboard) => void;
 
-  constructor(actionName: string, options?: ReceiveOptions) {
-    super(`receive:${actionName}`);
-    this.actionName = actionName;
+  constructor(commandName: string, options?: ReceiveOptions) {
+    super(`receive:${commandName}`);
+    this.commandName = commandName;
     this.mapPayload = options?.mapPayload;
   }
 
   protected async execute(context: TreeContext): Promise<NodeStatus> {
-    const key = `actions:${this.actionName}`;
+    const key = `commands:${this.commandName}`;
     const payload = context.blackboard.get(key);
 
     if (payload === undefined) {
       return NodeStatus.FAILURE;
     }
 
-    // Consume the action
+    // Consume the command
     context.blackboard.delete(key);
 
     if (this.mapPayload) {
@@ -47,7 +47,7 @@ export class ReceiveNode extends BaseNode {
   }
 
   protected override computeHash(): string {
-    return computeContentHash('ReceiveNode', this.actionName);
+    return computeContentHash('ReceiveNode', this.commandName);
   }
 }
 

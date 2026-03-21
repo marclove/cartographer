@@ -79,7 +79,7 @@ describe('parallel approval policy', () => {
 
     // 1. Start the flow — prepare runs, all 3 reviewers emit requests, all suspend
     const reviewRequestsPromise = waitForEvent(harness.client, 'ui:review-request', 3);
-    const step1Result = await harness.client.actionAndWait('tick');
+    const step1Result = await harness.client.commandAndWait('tick');
     expect(step1Result.treeStatus).toBe('running');
 
     // Verify 3 review request events
@@ -94,13 +94,13 @@ describe('parallel approval policy', () => {
     );
 
     // 2. First reviewer approves — parallel still RUNNING (need 2)
-    const step2Result = await harness.client.actionAndWait('reviewer-1', { verdict: 'approve' });
+    const step2Result = await harness.client.commandAndWait('reviewer-1', { verdict: 'approve' });
     expect(step2Result.treeStatus).toBe('running');
     const bb1 = await harness.client.blackboard();
     expect(bb1['published']).toBeUndefined(); // Not yet published
 
     // 3. Second reviewer approves — policy satisfied, parallel SUCCESS, publish runs
-    const result = await harness.client.actionAndWait('reviewer-2', { verdict: 'approve' });
+    const result = await harness.client.commandAndWait('reviewer-2', { verdict: 'approve' });
     expect(result.treeStatus).toBe('success');
 
     // 4. Verify final state

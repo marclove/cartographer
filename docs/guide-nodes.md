@@ -114,7 +114,7 @@ For the full `AgentNodeConfig` reference and advanced patterns, see [Agent Integ
 
 ## ReceiveNode
 
-A synchronous, non-reactive node that receives and consumes an inbound action from the blackboard. Designed for the [application server](guide-app-server.md) where user actions are delivered as blackboard entries.
+A synchronous, non-reactive node that receives and consumes an inbound command from the blackboard. Designed for the [application server](guide-app-server.md) where user commands are delivered as blackboard entries.
 
 ### Factory
 
@@ -126,7 +126,7 @@ const node = receive("approve");
 
 ### Behavior
 
-- Checks for `actions:<name>` on the blackboard.
+- Checks for `commands:<name>` on the blackboard.
 - If present: deletes the key (consume-on-read) and returns `SUCCESS`.
 - If absent: returns `FAILURE`.
 - Never returns `RUNNING` -- execution is synchronous with no inflight state.

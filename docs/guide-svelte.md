@@ -167,15 +167,15 @@ The `current` value is `null` until the first `tree:tick` SSE event arrives, and
 
 ---
 
-## Dispatching Actions
+## Dispatching Commands
 
-`createAction` returns a reactive handle for sending named actions to the server. It tracks whether the action is still in flight or awaiting server-side completion.
+`createCommand` returns a reactive handle for sending named commands to the server. It tracks whether the command is still in flight or awaiting server-side completion.
 
 ```svelte
 <script lang="ts">
-  import { createAction } from '@cartographer/svelte';
+  import { createCommand } from '@cartographer/svelte';
 
-  const approve = createAction('approve');
+  const approve = createCommand('approve');
 </script>
 
 <button onclick={() => approve.send({ comment: 'Ship it' })} disabled={approve.pending}>
@@ -183,13 +183,13 @@ The `current` value is `null` until the first `tree:tick` SSE event arrives, and
 </button>
 ```
 
-The returned `ActionRef` has three members:
+The returned `CommandRef` has three members:
 
 | Member                  | Type                                               | Description                                                                                                                                                |
 | ----------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pending`               | `boolean`                                          | `true` while an HTTP request is in flight or a dispatched message hasn't received its `message:processed` / `message:failed` SSE event. Reactive.          |
-| `send(payload?)`        | `(unknown?) => Promise<{ id }>`                    | Fires the action and returns the server-assigned message ID. `pending` remains `true` until the SSE settlement event arrives.                              |
-| `sendAndWait(payload?)` | `(unknown?) => Promise<{ messageId, treeStatus }>` | Fires the action and waits for the server to finish processing. The promise resolves with the final tree status, or rejects if the server reports failure. |
+| `send(payload?)`        | `(unknown?) => Promise<{ id }>`                    | Fires the command and returns the server-assigned message ID. `pending` remains `true` until the SSE settlement event arrives.                             |
+| `sendAndWait(payload?)` | `(unknown?) => Promise<{ messageId, treeStatus }>` | Fires the command and waits for the server to finish processing. The promise resolves with the final tree status, or rejects if the server reports failure. |
 
 ### Fire-and-forget vs. await completion
 
@@ -199,9 +199,9 @@ Use `sendAndWait` when subsequent logic depends on the tree run finishing:
 
 ```svelte
 <script lang="ts">
-  import { createAction } from '@cartographer/svelte';
+  import { createCommand } from '@cartographer/svelte';
 
-  const analyze = createAction('analyze');
+  const analyze = createCommand('analyze');
   let result = $state<string | null>(null);
 
   async function runAnalysis() {
@@ -218,7 +218,7 @@ Use `sendAndWait` when subsequent logic depends on the tree run finishing:
 
 ### Lifecycle
 
-`createAction` registers `message:processed` and `message:failed` SSE listeners when called and removes them automatically when the component is destroyed. If the component unmounts while a `sendAndWait` promise is pending, the promise rejects with a `"Component unmounted"` error.
+`createCommand` registers `message:processed` and `message:failed` SSE listeners when called and removes them automatically when the component is destroyed. If the component unmounts while a `sendAndWait` promise is pending, the promise rejects with a `"Component unmounted"` error.
 
 ---
 
@@ -283,7 +283,7 @@ When the reactive wrappers don't cover the operation you need, use `getClient()`
 
   async function interruptAndRedirect() {
     await client.interrupt();
-    await client.action('redirect', { target: '/new-path' });
+    await client.command('redirect', { target: '/new-path' });
   }
 </script>
 
@@ -319,15 +319,15 @@ This example ties together a provider, blackboard reading, action dispatching, a
     getBlackboard,
     getConnectionStatus,
     getTreeStatus,
-    createAction,
+    createCommand,
     onClientEvent,
   } from '@cartographer/svelte';
 
   const conn = getConnectionStatus();
   const tree = getTreeStatus();
   const analysis = getBlackboard<{ summary: string }>('analysis');
-  const approve = createAction('approve');
-  const reject = createAction('reject');
+  const approve = createCommand('approve');
+  const reject = createCommand('reject');
 
   let findings = $state<unknown>(null);
 
@@ -388,7 +388,7 @@ const client = createMockClient();
 client.emit("snapshot", { blackboard: { greeting: "hello" } });
 
 // Assert that action was called
-await client.action("approve", { comment: "LGTM" });
+await client.command("approve", { comment: "LGTM" });
 expect(client.action).toHaveBeenCalledWith("approve", { comment: "LGTM" });
 ```
 
@@ -469,7 +469,7 @@ client.emit("snapshot", { blackboard: { status: "ready" } });
 | `getBlackboardSnapshot()`      | Function     | Reactive ref for the full blackboard object.                      |
 | `getConnectionStatus()`        | Function     | Reactive ref for SSE connection state.                            |
 | `getTreeStatus()`              | Function     | Reactive ref for the latest tree tick result.                     |
-| `createAction(name)`           | Function     | Reactive action handle with `send`, `sendAndWait`, and `pending`. |
+| `createCommand(name)`          | Function     | Reactive command handle with `send`, `sendAndWait`, and `pending`. |
 | `onClientEvent(name, handler)` | Function     | Subscribe to `emitToClient` events.                               |
 | `onTreeEvent(type, handler)`   | Function     | Subscribe to raw SSE event types.                                 |
 | `createMockClient()`           | Test utility | Mock client with `emit()` for simulating SSE events.              |

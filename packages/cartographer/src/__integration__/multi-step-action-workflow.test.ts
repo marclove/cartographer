@@ -96,7 +96,7 @@ describe('multi-step action workflow', () => {
 
     // 1. Start the pipeline — analyze runs, findings emitted, suspends at untilSuccess
     const findingsPromise = waitForEvent(harness.client, 'ui:findings', 1);
-    const step1Result = await harness.client.actionAndWait('tick');
+    const step1Result = await harness.client.commandAndWait('tick');
     expect(step1Result.treeStatus).toBe('running');
 
     // Verify: tree is RUNNING (suspended), findings event arrived
@@ -111,7 +111,7 @@ describe('multi-step action workflow', () => {
     expect(bb1['analysis']).toBeDefined();
 
     // 2. Send approval action — resumes, approve consumed, publish runs
-    const result = await harness.client.actionAndWait('approve', { comment: 'Ship it' });
+    const result = await harness.client.commandAndWait('approve', { comment: 'Ship it' });
     expect(result.treeStatus).toBe('success');
 
     // 3. Verify final blackboard state

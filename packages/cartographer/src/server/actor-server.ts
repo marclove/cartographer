@@ -186,9 +186,9 @@ export class ActorServer {
       return this.handleMessage(req, res);
     }
 
-    const actionMatch = url.pathname.match(/^\/api\/actions\/(.+)$/);
-    if (method === 'POST' && actionMatch) {
-      return this.handleAction(req, res, decodeURIComponent(actionMatch[1]));
+    const commandMatch = url.pathname.match(/^\/api\/commands\/(.+)$/);
+    if (method === 'POST' && commandMatch) {
+      return this.handleCommand(req, res, decodeURIComponent(commandMatch[1]));
     }
 
     const bbMatch = url.pathname.match(/^\/api\/blackboard\/(.+)$/);
@@ -212,15 +212,15 @@ export class ActorServer {
     if (!body || !body.type) {
       return jsonError(res, 400, 'Missing message type');
     }
-    if (body.type === 'action' && !body.name) {
-      return jsonError(res, 400, 'Action message requires name');
+    if (body.type === 'command' && !body.name) {
+      return jsonError(res, 400, 'Command message requires name');
     }
     await this.processAsync({ ...body }, res, body.id);
   }
 
-  private async handleAction(req: IncomingMessage, res: ServerResponse, name: string): Promise<void> {
+  private async handleCommand(req: IncomingMessage, res: ServerResponse, name: string): Promise<void> {
     const payload = await readBody(req);
-    await this.processAsync({ type: 'action', name, payload }, res);
+    await this.processAsync({ type: 'command', name, payload }, res);
   }
 
   private async handleBlackboardWrite(req: IncomingMessage, res: ServerResponse, key: string): Promise<void> {

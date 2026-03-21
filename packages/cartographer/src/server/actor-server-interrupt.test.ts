@@ -46,7 +46,7 @@ describe('ActorServer interrupt/resume endpoints', () => {
     port = (await server.start()).port;
 
     // Start a slow message (will be processing)
-    const actionRes = fetch(`http://localhost:${port}/api/actions/go`, {
+    const commandRes = fetch(`http://localhost:${port}/api/commands/go`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -64,7 +64,7 @@ describe('ActorServer interrupt/resume endpoints', () => {
     expect(intBody.interrupted).toBe(true);
 
     // Wait for original request to complete
-    const origRes = await actionRes;
+    const origRes = await commandRes;
     expect(origRes.status).toBe(202);
 
     // Wait a bit for async processing to complete

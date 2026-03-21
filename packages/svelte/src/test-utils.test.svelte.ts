@@ -4,13 +4,13 @@ import { createMockClient, createTestContext } from './test-utils.svelte.js';
 describe('createMockClient', () => {
   it('has all CartographerClient methods', () => {
     const client = createMockClient();
-    expect(client.action).toBeDefined();
+    expect(client.command).toBeDefined();
     expect(client.write).toBeDefined();
     expect(client.send).toBeDefined();
-    expect(client.actionAndWait).toBeDefined();
+    expect(client.commandAndWait).toBeDefined();
     expect(client.interrupt).toBeDefined();
     expect(client.resume).toBeDefined();
-    expect(client.interruptAndAction).toBeDefined();
+    expect(client.interruptAndCommand).toBeDefined();
     expect(client.blackboard).toBeDefined();
     expect(client.tree).toBeDefined();
     expect(client.status).toBeDefined();
@@ -38,9 +38,9 @@ describe('createMockClient', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it('action returns default mock response', async () => {
+  it('command returns default mock response', async () => {
     const client = createMockClient();
-    const result = await client.action('test');
+    const result = await client.command('test');
     expect(result).toEqual({ id: 'msg-1' });
   });
 });
@@ -54,9 +54,9 @@ describe('createTestContext', () => {
   });
 
   it('accepts overrides', async () => {
-    const customAction = vi.fn().mockResolvedValue({ id: 'custom' });
-    const { client } = createTestContext({ action: customAction });
-    const result = await client.action('test');
+    const customCommand = vi.fn().mockResolvedValue({ id: 'custom' });
+    const { client } = createTestContext({ command: customCommand });
+    const result = await client.command('test');
     expect(result.id).toBe('custom');
   });
 });

@@ -130,7 +130,7 @@ describe('agent structured pipeline (live)', () => {
     });
 
     // Start pipeline — ingest runs synchronously, then agent classifies asynchronously.
-    // Use send (non-blocking) since actionAndWait would time out waiting for the agent.
+    // Use send (non-blocking) since commandAndWait would time out waiting for the agent.
     await harness.client.send({ type: 'tick' });
 
     // Wait for the agent to produce structured classification output.
@@ -158,7 +158,7 @@ describe('agent structured pipeline (live)', () => {
 
     if (bb['clientEvents:ui:needs-review'] != null && bb['published'] == null) {
       // Low-confidence path: confirm the classification so the tree can proceed.
-      await harness.client.actionAndWait('confirm-classification');
+      await harness.client.commandAndWait('confirm-classification');
       // Wait for manual-publish to set the key rather than using a fixed delay.
       await waitForBlackboard(harness.client, 'published', 10000, 500);
       bb = await harness.client.blackboard();

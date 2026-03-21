@@ -7,14 +7,14 @@ export { ConflictError, type CartographerClient } from './types.js';
  *
  * The client provides two communication channels with the server:
  *
- * 1. **HTTP (request/response)** — Used by `action`, `write`, `send`, `interrupt`,
+ * 1. **HTTP (request/response)** — Used by `command`, `write`, `send`, `interrupt`,
  *    `resume`, `blackboard`, `tree`, and `status`. These methods work standalone
  *    and do not require an SSE connection.
  *
  * 2. **SSE (server-sent events)** — A persistent, one-way stream from the server
  *    that pushes real-time events (tree ticks, agent activity, blackboard mutations,
  *    message lifecycle, etc.) to the client. Opened by calling {@link CartographerClient.connect | connect()}.
- *    Required by `actionAndWait` and `interruptAndAction` (when a message is active),
+ *    Required by `commandAndWait` and `interruptAndCommand` (when a message is active),
  *    since these methods need to observe server-side completion events.
  *
  * The client uses the standard `fetch` API for HTTP and the browser-native
@@ -45,11 +45,11 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
    * processed at a time. If a message is already being processed, the server
    * responds with 409 Conflict, which this method surfaces as a {@link ConflictError}.
    *
-   * This is the shared HTTP transport for `action`, `write`, and `send`.
+   * This is the shared HTTP transport for `command`, `write`, and `send`.
    *
    * @throws {ConflictError} 409 — Another message is already being processed.
    *   The caller should either wait for the current message to finish, or use
-   *   `interruptAndAction` to preempt it.
+   *   `interruptAndCommand` to preempt it.
    * @throws {Error} 400 — The request payload failed server-side validation.
    *   The error message from the server is included.
    * @throws {Error} 503 — The server is shutting down and no longer accepting messages.
@@ -121,32 +121,32 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
 
   /**
    * Guard that ensures an SSE connection is active. Methods that wait for
-   * server-side events (`actionAndWait`, `interruptAndAction`) call this
+   * server-side events (`commandAndWait`, `interruptAndCommand`) call this
    * before setting up event listeners, since without a connection those
    * listeners would never fire and the returned promise would hang forever.
    */
   function requireConnection(): void {
     if (!eventSource) {
       throw new Error(
-        'SSE connection required: call connect() before using actionAndWait or interruptAndAction'
+        'SSE connection required: call connect() before using commandAndWait or interruptAndCommand'
       );
     }
   }
 
   return {
     /**
-     * Sends a named action to the behavior tree for processing.
+     * Sends a named command to the behavior tree for processing.
      *
-     * The action is enqueued as a message in the ActorServer's message queue.
-     * On the next tick, the tree's ReceiveNode will match on the action
+     * The command is enqueued as a message in the ActorServer's message queue.
+     * On the next tick, the tree's ReceiveNode will match on the command
      * name and make it available to the tree logic.
      *
      * Returns immediately with the server-assigned message ID. Does *not* wait
-     * for the tree to process the action — use `actionAndWait` if you need to
+     * for the tree to process the command — use `commandAndWait` if you need to
      * block until processing completes.
      */
-    async action(name, payload) {
-      return post('/api/actions/' + encodeURIComponent(name), payload ?? {});
+    async command(name, payload) {
+      return post('/api/commands/' + encodeURIComponent(name), payload ?? {});
     },
 
     /**
@@ -174,9 +174,9 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
     },
 
     /**
-     * Sends an action and waits for the tree to finish processing it.
+     * Sends a command and waits for the tree to finish processing it.
      *
-     * This is a higher-level alternative to `action()` that blocks until the
+     * This is a higher-level alternative to `command()` that blocks until the
      * server emits a terminal event for the submitted message:
      *
      * - **`message:processed`** — The tree completed a tick cycle for this message.
@@ -188,16 +188,16 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
      * client can observe these server-side lifecycle events.
      *
      * The flow is:
-     * 1. POST the action to the server, receiving a message ID.
+     * 1. POST the command to the server, receiving a message ID.
      * 2. Register one-shot SSE listeners for `message:processed` and `message:failed`.
      * 3. When the matching event arrives (identified by message ID), clean up
      *    listeners and resolve/reject the promise.
      */
-    async actionAndWait(name, payload) {
+    async commandAndWait(name, payload) {
       requireConnection();
-      // Send the action and capture the server-assigned message ID.
-      // This ID is used to correlate the SSE completion event back to this specific action.
-      const { id } = await post('/api/actions/' + encodeURIComponent(name), payload ?? {});
+      // Send the command and capture the server-assigned message ID.
+      // This ID is used to correlate the SSE completion event back to this specific command.
+      const { id } = await post('/api/commands/' + encodeURIComponent(name), payload ?? {});
       return new Promise((resolve, reject) => {
         // Listen for successful processing — the tree completed its tick cycle
         const onProcessed = (data: unknown) => {
@@ -216,7 +216,7 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
           }
         };
         // Remove both listeners once either event fires. This prevents memory leaks
-        // and ensures each actionAndWait call only resolves once.
+        // and ensures each commandAndWait call only resolves once.
         const cleanup = () => {
           listeners.get('message:processed')?.delete(onProcessed);
           listeners.get('message:failed')?.delete(onFailed);
@@ -265,12 +265,12 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
     },
 
     /**
-     * Interrupts the current message (if any) and sends a new action once the
+     * Interrupts the current message (if any) and sends a new command once the
      * processing lock is released.
      *
-     * This is the safe way to preempt a running action with a new one. The
+     * This is the safe way to preempt a running command with a new one. The
      * ActorServer only processes one message at a time (enforced via a lock),
-     * so sending an action while another is processing would result in a 409.
+     * so sending a command while another is processing would result in a 409.
      * This method handles that coordination:
      *
      * 1. **Interrupt** — Signal the server to abort the current tick.
@@ -278,26 +278,26 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
      *    down (cleanup, state persistence, event emission). We listen for the
      *    server's terminal event (`message:processed`, `message:failed`, or
      *    `message:interrupted`) to know the lock is free.
-     * 3. **Send** — Once the lock is released, send the new action.
+     * 3. **Send** — Once the lock is released, send the new command.
      *
      * If nothing was being processed (interrupt returns `interrupted: false`),
-     * the action is sent immediately without waiting — no lock contention exists.
+     * the command is sent immediately without waiting — no lock contention exists.
      *
-     * Unlike `actionAndWait`, this method does *not* wait for the new action to
+     * Unlike `commandAndWait`, this method does *not* wait for the new command to
      * finish processing. It returns the new message's ID immediately after sending.
      */
-    async interruptAndAction(name, payload) {
+    async interruptAndCommand(name, payload) {
       const { interrupted, messageId } = await this.interrupt();
 
       // Fast path: nothing was processing, so the lock is already free.
-      // Send the action immediately without setting up SSE listeners.
+      // Send the command immediately without setting up SSE listeners.
       if (!interrupted) {
-        return this.action(name, payload);
+        return this.command(name, payload);
       }
 
       // Slow path: a message was processing and has been told to abort.
       // We must wait for the server to fully release the processing lock before
-      // sending the new action — otherwise we'd hit a 409 Conflict.
+      // sending the new command — otherwise we'd hit a 409 Conflict.
       requireConnection();
       await new Promise<void>((resolve) => {
         // The interrupted message can complete in one of three ways:
@@ -332,8 +332,8 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
         listeners.get('message:interrupted')!.add(onInterrupted);
       });
 
-      // Lock is released — send the new action
-      return this.action(name, payload);
+      // Lock is released — send the new command
+      return this.command(name, payload);
     },
 
     /**
@@ -476,8 +476,8 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
     /**
      * Closes the SSE connection and releases the EventSource resource.
      *
-     * After disconnecting, SSE-dependent methods (`actionAndWait`,
-     * `interruptAndAction` when processing) will throw until `connect()`
+     * After disconnecting, SSE-dependent methods (`commandAndWait`,
+     * `interruptAndCommand` when processing) will throw until `connect()`
      * is called again. HTTP-only methods continue to work normally.
      *
      * Registered listeners are preserved — they will resume receiving events

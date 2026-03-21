@@ -15,7 +15,7 @@ A Cartographer tree lives in memory and runs until its process ends. The applica
 3. **ActorServer** wraps TreeActor with an HTTP server — REST endpoints for sending messages, SSE for real-time events, and read endpoints for inspecting state.
 4. A **Client SDK** connects frontends to the server via fetch and EventSource.
 
-The tree itself is *transient* — created per request, then discarded. The *state* is durable, stored in a `StateStore` (in-memory for development, Redis for production).
+The tree itself is _transient_ — created per request, then discarded. The _state_ is durable, stored in a `StateStore` (in-memory for development, Redis for production).
 
 ---
 
@@ -32,62 +32,60 @@ import {
   receive,
   untilSuccess,
   emitToClient,
-} from 'cartographer';
+} from "cartographer";
 
 const server = new ActorServer({
-  createTree: () => new BehaviorTree({
-    name: 'review-flow',
-    root: new SequenceNode({
-      name: 'main',
-      children: [
-        // Agent analyzes the document
-        new ActionNode({
-          name: 'analyze',
-          action: async (ctx) => {
-            ctx.blackboard.set('analysis', { summary: 'Looks good' });
-            return NodeStatus.SUCCESS;
-          },
-        }),
-        // Send findings to the client
-        emitToClient('ui:show_review', (ctx) => ({
-          findings: ctx.blackboard.get('analysis'),
-        })),
-        // Wait for user approval or rejection
-        untilSuccess(
-          new SelectorNode({
-            name: 'wait-for-decision',
-            children: [
-              receive('approve'),
-              receive('reject'),
-            ],
+  createTree: () =>
+    new BehaviorTree({
+      name: "review-flow",
+      root: new SequenceNode({
+        name: "main",
+        children: [
+          // Agent analyzes the document
+          new ActionNode({
+            name: "analyze",
+            action: async (ctx) => {
+              ctx.blackboard.set("analysis", { summary: "Looks good" });
+              return NodeStatus.SUCCESS;
+            },
           }),
-        ),
-      ],
+          // Send findings to the client
+          emitToClient("ui:show_review", (ctx) => ({
+            findings: ctx.blackboard.get("analysis"),
+          })),
+          // Wait for user approval or rejection
+          untilSuccess(
+            new SelectorNode({
+              name: "wait-for-decision",
+              children: [receive("approve"), receive("reject")],
+            }),
+          ),
+        ],
+      }),
     }),
-  }),
   port: 3148,
 });
 
 await server.start();
-console.log('ActorServer running on http://localhost:3148');
+console.log("ActorServer running on http://localhost:3148");
 ```
 
 Then from a browser or Node.js client:
 
 ```typescript
-import { createCartographerClient } from 'cartographer';
+import { createCartographerClient } from "cartographer";
 
-const client = createCartographerClient('http://localhost:3148');
+const client = createCartographerClient("http://localhost:3148");
 
 // Start the tree
-await client.send({ type: 'tick' });
+await client.send({ type: "tick" });
 
 // Read blackboard state
 const bb = await client.blackboard();
 console.log(bb.analysis); // { summary: 'Looks good' }
 
-// Send a user action
-await client.action('approve', { comment: 'Ship it' });
+// Send a user command
+await client.command("approve", { comment: "Ship it" });
 ```
 
 ---
@@ -103,7 +101,7 @@ For each message, `TreeActor.process()` runs this pipeline:
 1. **Create tree** from the factory function.
 2. **Load state** from the `StateStore` (blackboard values and serialized tree execution state).
 3. **Restore** the tree's execution state using content-hash-based serialization.
-4. **Apply the message** — write action payloads or blackboard values.
+4. **Apply the message** — write command payloads or blackboard values.
 5. **Run to completion** — tick the tree repeatedly until it reaches a terminal status (`SUCCESS`/`FAILURE`) or suspends (`RUNNING` with no in-flight work).
 6. **Serialize** tree state and blackboard.
 7. **Save** back to the `StateStore`.
@@ -119,31 +117,31 @@ The `runToCompletion()` loop is the core of the processing model. It distinguish
 const actor = new TreeActor({
   createTree: () => myTreeFactory(),
   stateStore: myStore,
-  stateKey: 'session-123',
+  stateKey: "session-123",
 });
 
-const result = await actor.process({ type: 'tick' });
+const result = await actor.process({ type: "tick" });
 // result.treeStatus is 'success', 'failure', 'running' (suspended), or 'error' (signal handled)
 ```
 
 ### Message Types
 
-| Type     | Fields                   | Effect                                          |
-|----------|--------------------------|-------------------------------------------------|
-| `tick`   | —                        | Ticks the tree with no additional input.        |
-| `action` | `name`, `payload?`       | Writes `payload` to `actions:<name>` on the blackboard, then ticks. |
-| `write`  | `key`, `value`           | Writes `value` to `key` on the blackboard, then ticks. |
-| `signal` | `signal: 'stop'\|'reset'\|'abort'\|'resume'` | Resets or aborts the tree without ticking. `reset` calls `tree.reset()`, `abort` calls `tree.abort()`. `resume` clears the held state (see [Interrupts](#interrupts) below). `stop` is accepted but is currently a no-op. All signals return `{ treeStatus: 'error' }` without ticking. |
+| Type      | Fields                                       | Effect                                                                                                                                                                                                                                                                                  |
+| --------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tick`    | —                                            | Ticks the tree with no additional input.                                                                                                                                                                                                                                                |
+| `command` | `name`, `payload?`                           | Writes `payload` to `commands:<name>` on the blackboard, then ticks.                                                                                                                                                                                                                    |
+| `write`   | `key`, `value`                               | Writes `value` to `key` on the blackboard, then ticks.                                                                                                                                                                                                                                  |
+| `signal`  | `signal: 'stop'\|'reset'\|'abort'\|'resume'` | Resets or aborts the tree without ticking. `reset` calls `tree.reset()`, `abort` calls `tree.abort()`. `resume` clears the held state (see [Interrupts](#interrupts) below). `stop` is accepted but is currently a no-op. All signals return `{ treeStatus: 'error' }` without ticking. |
 
 ### Interrupts
 
 When a long-running `AgentNode` is processing (seconds to minutes), the user may want to cancel the current work without losing progress. `interrupt` is a middle ground between doing nothing and a full `abort`:
 
-| Operation     | Cancels in-flight work | Clears completedMap | Requires reset() | Tree afterward      |
-|---------------|----------------------|--------------------|-----------------|--------------------|
-| **abort**     | Yes                  | Yes                | Yes             | Dead (needs reset) |
-| **interrupt** | Yes                  | No                 | No              | RUNNING, suspended |
-| **do nothing**| No                   | No                 | No              | RUNNING, in-flight |
+| Operation      | Cancels in-flight work | Clears completedMap | Requires reset() | Tree afterward     |
+| -------------- | ---------------------- | ------------------- | ---------------- | ------------------ |
+| **abort**      | Yes                    | Yes                 | Yes              | Dead (needs reset) |
+| **interrupt**  | Yes                    | No                  | No               | RUNNING, suspended |
+| **do nothing** | No                     | No                  | No               | RUNNING, in-flight |
 
 After interrupt, the tree is in the same state as a normal suspension point: `RUNNING` with `hasInflightWork() === false`. Sequence `completedMap` entries survive, so previously completed children are not re-executed.
 
@@ -161,8 +159,9 @@ After interrupt, the tree is in the same state as a normal suspension point: `RU
 After interrupt, the tree enters a **held** state. This prevents the scheduler from immediately restarting the interrupted agent before the user has a chance to redirect.
 
 While held:
+
 - **`tick` messages** → no-op (returns `{ treeStatus: 'running', held: true }` without processing).
-- **`action` / `write` messages** → clear held flag, then process normally.
+- **`command` / `write` messages** → clear held flag, then process normally.
 - **`signal: resume`** → clear held flag without ticking (next scheduler tick resumes the agent).
 
 #### What happens after interrupt
@@ -177,11 +176,11 @@ The interrupted agent's in-flight state is cleared. On the next deliberate user 
 const actor = new TreeActor({
   createTree: () => myTreeFactory(),
   stateStore: myStore,
-  stateKey: 'session-123',
+  stateKey: "session-123",
 });
 
 // Start processing in the background
-const processPromise = actor.process({ type: 'tick' });
+const processPromise = actor.process({ type: "tick" });
 
 // Interrupt from another context (e.g., HTTP handler)
 actor.requestInterrupt();
@@ -201,11 +200,11 @@ const result = await processPromise;
 
 ```typescript
 const server = new ActorServer({
-  createTree: () => myTreeFactory(),  // Required: tree factory
-  stateStore: new InMemoryStateStore(),  // Optional (default: InMemoryStateStore)
-  port: 3148,                         // Optional (default: PORT env var or 3148)
-  context: { tenantId: 'abc' },       // Optional: written to blackboard as context:*
-  topologyPolicy: 'fail',             // Optional: 'fail' or 'reset' on tree shape change
+  createTree: () => myTreeFactory(), // Required: tree factory
+  stateStore: new InMemoryStateStore(), // Optional (default: InMemoryStateStore)
+  port: 3148, // Optional (default: PORT env var or 3148)
+  context: { tenantId: "abc" }, // Optional: written to blackboard as context:*
+  topologyPolicy: "fail", // Optional: 'fail' or 'reset' on tree shape change
 });
 
 const { port } = await server.start();
@@ -223,41 +222,41 @@ The `context` option injects key-value pairs into the blackboard on initializati
 
 #### Read Endpoints
 
-| Method | Path                | Description                                |
-|--------|---------------------|--------------------------------------------|
+| Method | Path                | Description                                                |
+| ------ | ------------------- | ---------------------------------------------------------- |
 | GET    | `/_platform/health` | Platform health check. Returns `{ status: "ok", uptime }`. |
-| GET    | `/api/blackboard`   | Current blackboard state as JSON.          |
-| GET    | `/api/status`       | Tree metadata: `lastMessageAt`, `treeRootHash`. |
-| GET    | `/api/tree`         | Tree structure: `name`, `rootHash`.        |
-| GET    | `/api/events`       | SSE event stream (see below).              |
+| GET    | `/api/blackboard`   | Current blackboard state as JSON.                          |
+| GET    | `/api/status`       | Tree metadata: `lastMessageAt`, `treeRootHash`.            |
+| GET    | `/api/tree`         | Tree structure: `name`, `rootHash`.                        |
+| GET    | `/api/events`       | SSE event stream (see below).                              |
 
 #### Write Endpoints
 
 All write endpoints use an **async 202 pattern**: the server acquires a lock, returns `202 Accepted` with a message ID immediately, then processes the message in the background. When processing completes, a `message:processed` or `message:failed` event is emitted via the event stream.
 
-| Method | Path                   | Body                              | Description                      |
-|--------|------------------------|-----------------------------------|----------------------------------|
-| POST   | `/api/messages`        | `{ type, name?, payload?, ... }`  | Send any message type.           |
-| POST   | `/api/actions/:name`   | `{ ...payload }`                  | Shorthand for action messages.   |
-| POST   | `/api/blackboard/:key` | `{ value }`                       | Shorthand for write messages.    |
+| Method | Path                   | Body                             | Description                     |
+| ------ | ---------------------- | -------------------------------- | ------------------------------- |
+| POST   | `/api/messages`        | `{ type, name?, payload?, ... }` | Send any message type.          |
+| POST   | `/api/commands/:name`  | `{ ...payload }`                 | Shorthand for command messages. |
+| POST   | `/api/blackboard/:key` | `{ value }`                      | Shorthand for write messages.   |
 
 #### Control Endpoints
 
 These endpoints bypass the processing lock and take effect immediately.
 
-| Method | Path              | Description                                                                                         |
-|--------|-------------------|-----------------------------------------------------------------------------------------------------|
-| POST   | `/api/interrupt`  | Interrupts the active processing loop. Returns `{ interrupted: true, messageId }` or `{ interrupted: false }`. |
-| POST   | `/api/resume`     | Clears the held state. Returns `{ resumed: true }` or `{ resumed: false }`.                        |
+| Method | Path             | Description                                                                                                    |
+| ------ | ---------------- | -------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/interrupt` | Interrupts the active processing loop. Returns `{ interrupted: true, messageId }` or `{ interrupted: false }`. |
+| POST   | `/api/resume`    | Clears the held state. Returns `{ resumed: true }` or `{ resumed: false }`.                                    |
 
 #### Error Responses
 
-| Status | Meaning                                        |
-|--------|------------------------------------------------|
-| 400    | Invalid request (missing `type`, etc.).        |
-| 404    | Unknown route.                                 |
-| 409    | Another message is currently being processed.  |
-| 500    | Internal server error.                         |
+| Status | Meaning                                       |
+| ------ | --------------------------------------------- |
+| 400    | Invalid request (missing `type`, etc.).       |
+| 404    | Unknown route.                                |
+| 409    | Another message is currently being processed. |
+| 500    | Internal server error.                        |
 
 ### Locking
 
@@ -276,16 +275,16 @@ The stream supports the `Last-Event-ID` header for automatic reconnection and re
 
 ```typescript
 // Browser
-const source = new EventSource('http://localhost:3148/api/events');
-source.addEventListener('snapshot', (e) => {
+const source = new EventSource("http://localhost:3148/api/events");
+source.addEventListener("snapshot", (e) => {
   const state = JSON.parse(e.data);
-  console.log('Initial state:', state.blackboard);
+  console.log("Initial state:", state.blackboard);
 });
-source.addEventListener('message:processed', (e) => {
+source.addEventListener("message:processed", (e) => {
   const { messageId, treeStatus } = JSON.parse(e.data);
   console.log(`Message ${messageId} completed: ${treeStatus}`);
 });
-source.addEventListener('message:interrupted', (e) => {
+source.addEventListener("message:interrupted", (e) => {
   const { messageId } = JSON.parse(e.data);
   console.log(`Message ${messageId} was interrupted`);
 });
@@ -302,7 +301,7 @@ The `StateStore` interface abstracts state persistence, locking, and event strea
 For local development and testing. State lives in process memory and is lost on restart.
 
 ```typescript
-import { InMemoryStateStore } from 'cartographer';
+import { InMemoryStateStore } from "cartographer";
 
 const store = new InMemoryStateStore({ maxEvents: 1000 });
 ```
@@ -312,12 +311,12 @@ const store = new InMemoryStateStore({ maxEvents: 1000 });
 For production deployments. Uses Redis for durable state, `SET NX EX` with Lua scripts for safe locking, and Redis Streams for event delivery.
 
 ```typescript
-import Redis from 'ioredis';
-import { RedisStateStore } from 'cartographer';
+import Redis from "ioredis";
+import { RedisStateStore } from "cartographer";
 
 const store = new RedisStateStore({
   redis: new Redis(process.env.REDIS_URL),
-  keyPrefix: 'myapp:',
+  keyPrefix: "myapp:",
   maxEvents: 5000,
 });
 
@@ -358,26 +357,26 @@ interface StateStore {
 `createCartographerClient` creates a lightweight client for browser and Node.js environments.
 
 ```typescript
-import { createCartographerClient } from 'cartographer';
+import { createCartographerClient } from "cartographer";
 
-const client = createCartographerClient('http://localhost:3148');
+const client = createCartographerClient("http://localhost:3148");
 ```
 
 ### Sending Messages
 
 ```typescript
 // Send an action (fire-and-forget)
-const { id } = await client.action('approve', { comment: 'LGTM' });
+const { id } = await client.command("approve", { comment: "LGTM" });
 
 // Write to the blackboard
-await client.write('config:theme', 'dark');
+await client.write("config:theme", "dark");
 
 // Send any message type
-await client.send({ type: 'tick' });
+await client.send({ type: "tick" });
 
-// Send an action and wait for processing to complete (requires SSE connection)
+// Send a command and wait for processing to complete (requires SSE connection)
 client.connect();
-const result = await client.actionAndWait('approve', { comment: 'LGTM' });
+const result = await client.commandAndWait("approve", { comment: "LGTM" });
 console.log(result.treeStatus); // 'success', 'failure', or 'running'
 ```
 
@@ -390,36 +389,36 @@ const { interrupted } = await client.interrupt();
 // Clear the held state so the next tick processes normally
 const { resumed } = await client.resume();
 
-// Interrupt, wait for lock release via SSE, then send a new action.
+// Interrupt, wait for lock release via SSE, then send a new command.
 // Requires connect() since it listens for message:processed/message:failed events.
-// If nothing was processing, the action is sent immediately without SSE.
+// If nothing was processing, the command is sent immediately without SSE.
 client.connect();
-const { id } = await client.interruptAndAction('redirect', { target: 'new-path' });
+const { id } = await client.interruptAndCommand("redirect", { target: "new-path" });
 ```
 
 ### Reading State
 
 ```typescript
-const bb = await client.blackboard();   // Current blackboard
-const tree = await client.tree();       // Tree structure
-const status = await client.status();   // Tree metadata
+const bb = await client.blackboard(); // Current blackboard
+const tree = await client.tree(); // Tree structure
+const status = await client.status(); // Tree metadata
 ```
 
 ### Real-Time Events
 
-The client uses the browser `EventSource` API for SSE. In Node.js, you need a polyfill like the `eventsource` package or the `--experimental-eventsource` flag (Node 22+). If `globalThis.EventSource` is undefined, `connect()` silently returns without error — `actionAndWait()` and `interruptAndAction()` (when processing is active) will hang indefinitely in this case since they depend on SSE events dispatched by the connection.
+The client uses the browser `EventSource` API for SSE. In Node.js, you need a polyfill like the `eventsource` package or the `--experimental-eventsource` flag (Node 22+). If `globalThis.EventSource` is undefined, `connect()` silently returns without error — `commandAndWait()` and `interruptAndCommand()` (when processing is active) will hang indefinitely in this case since they depend on SSE events dispatched by the connection.
 
 ```typescript
 // Start listening for events
 client.connect();
 
 // Listen for specific events
-client.on('message:processed', (data) => {
-  console.log('Processing complete:', data);
+client.on("message:processed", (data) => {
+  console.log("Processing complete:", data);
 });
 
 // Listen for client events emitted by emitToClient nodes
-client.on('ui:show_review', (data) => {
+client.on("ui:show_review", (data) => {
   renderReviewPanel(data);
 });
 
@@ -437,13 +436,13 @@ client.disconnect();
 When the server returns `409 Conflict` (another message is being processed), the client throws a `ConflictError`:
 
 ```typescript
-import { ConflictError } from 'cartographer';
+import { ConflictError } from "cartographer";
 
 try {
-  await client.action('approve');
+  await client.command("approve");
 } catch (err) {
   if (err instanceof ConflictError) {
-    console.log('Server is busy, try again later');
+    console.log("Server is busy, try again later");
   }
 }
 ```
@@ -456,23 +455,23 @@ The application server introduces three specialized nodes designed for message-d
 
 ### receive
 
-Receives and consumes an inbound action from the blackboard. Returns `SUCCESS` if the action is present (and removes it), `FAILURE` otherwise.
+Receives and consumes an inbound command from the blackboard. Returns `SUCCESS` if the command is present (and removes it), `FAILURE` otherwise.
 
 ```typescript
-import { receive } from 'cartographer';
+import { receive } from "cartographer";
 
-const node = receive('approve');
-// Checks blackboard for 'actions:approve', consumes it on success
+const node = receive("approve");
+// Checks blackboard for 'commands:approve', consumes it on success
 ```
 
 `receive` is non-reactive and synchronous — it extends `BaseNode` directly, not `ActionNode` or `ConditionNode`. This ensures sequences cache its `SUCCESS` in the `completedMap`, preventing the consumed key from being re-read.
 
-The optional `mapPayload` callback extracts data from the action payload:
+The optional `mapPayload` callback extracts data from the command payload:
 
 ```typescript
-const node = receive('approve', {
+const node = receive("approve", {
   mapPayload: (payload, blackboard) => {
-    blackboard.set('review:decision', (payload as any).decision);
+    blackboard.set("review:decision", (payload as any).decision);
   },
 });
 ```
@@ -485,10 +484,10 @@ Sends structured data to the client via a dual write:
 2. Emits a `client:event` event (real-time delivery via SSE).
 
 ```typescript
-import { emitToClient } from 'cartographer';
+import { emitToClient } from "cartographer";
 
-const node = emitToClient('ui:show_review', (ctx) => ({
-  findings: ctx.blackboard.get('analysis'),
+const node = emitToClient("ui:show_review", (ctx) => ({
+  findings: ctx.blackboard.get("analysis"),
   timestamp: Date.now(),
 }));
 ```
@@ -496,7 +495,7 @@ const node = emitToClient('ui:show_review', (ctx) => ({
 Clients can listen for these events by name:
 
 ```typescript
-client.on('ui:show_review', (data) => {
+client.on("ui:show_review", (data) => {
   // data === { findings: ..., timestamp: ... }
 });
 ```
@@ -506,21 +505,18 @@ client.on('ui:show_review', (data) => {
 A decorator that creates explicit suspension points. Converts child `FAILURE` to `RUNNING`, causing the tree to suspend until the next message arrives.
 
 ```typescript
-import { untilSuccess, receive, SelectorNode } from 'cartographer';
+import { untilSuccess, receive, SelectorNode } from "cartographer";
 
 // Suspend until the user sends an 'approve' or 'reject' action
 const waitForDecision = untilSuccess(
   new SelectorNode({
-    name: 'decision',
-    children: [
-      receive('approve'),
-      receive('reject'),
-    ],
+    name: "decision",
+    children: [receive("approve"), receive("reject")],
   }),
 );
 ```
 
-This is distinct from `RepeatNode` with `untilStatus: NodeStatus.SUCCESS`. `RepeatNode` loops *internally* within a single tick and never returns `RUNNING` due to child failure. `untilSuccess` returns `RUNNING` to the caller, allowing `runToCompletion()` to detect the suspension and save state.
+This is distinct from `RepeatNode` with `untilStatus: NodeStatus.SUCCESS`. `RepeatNode` loops _internally_ within a single tick and never returns `RUNNING` due to child failure. `untilSuccess` returns `RUNNING` to the caller, allowing `runToCompletion()` to detect the suspension and save state.
 
 ---
 
@@ -533,6 +529,7 @@ The application server serializes and restores tree execution state across messa
 Every node computes a deterministic content hash based on its type, name, configuration, and children's hashes (Merkle-style). The root node's hash (`tree.rootHash`) serves as a fingerprint of the entire tree topology.
 
 The hash is used for:
+
 - **Node identity** in the serialized state map (no developer-assigned IDs needed).
 - **Topology versioning** — if the tree factory produces a different shape, the root hash changes and the framework detects the mismatch.
 

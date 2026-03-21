@@ -68,7 +68,7 @@ describe('agent interrupt and redirect (live)', () => {
     // The blackboard isn't persisted until runToCompletion finishes, so we can't
     // use waitForBlackboard here. A fixed delay is the appropriate strategy —
     // we need the agent to be mid-API-call, not just started.
-    await harness.client.action('set-topic', { topic: 'quantum computing basics' });
+    await harness.client.command('set-topic', { topic: 'quantum computing basics' });
     await new Promise((r) => setTimeout(r, 3000));
 
     // 2. Interrupt the agent mid-research.

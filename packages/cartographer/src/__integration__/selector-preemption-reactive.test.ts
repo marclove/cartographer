@@ -98,14 +98,14 @@ describe('selector preemption reactive', () => {
     });
 
     // 1. Start pipeline — plan-deploy completes, guard passes, provision runs, suspends at confirm-provision
-    await harness.client.actionAndWait('tick');
+    await harness.client.commandAndWait('tick');
 
     let bb = await harness.client.blackboard();
     expect(bb['provisioned']).toBe(true);
     expect(bb['configured']).toBeUndefined();
 
     // 2. Confirm provision — guard still passes, configure runs, suspends at confirm-configure
-    await harness.client.actionAndWait('confirm-provision');
+    await harness.client.commandAndWait('confirm-provision');
 
     bb = await harness.client.blackboard();
     expect(bb['configured']).toBe(true);

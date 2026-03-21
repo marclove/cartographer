@@ -71,14 +71,14 @@ Gracefully shuts down the server.
 ## ActorMessage
 
 ```typescript
-type ActorMessage = TickMessage | ActionMessage | WriteMessage | SignalMessage;
+type ActorMessage = TickMessage | CommandMessage | WriteMessage | SignalMessage;
 
 interface TickMessage {
   type: "tick";
   id?: string;
 }
-interface ActionMessage {
-  type: "action";
+interface CommandMessage {
+  type: "command";
   name: string;
   payload?: unknown;
   id?: string;

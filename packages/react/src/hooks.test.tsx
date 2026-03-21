@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import React from 'react';
 import { CartographerProvider } from './provider.js';
-import { useBlackboard, useBlackboardSnapshot, useTreeStatus, useAction, useClientEvent, useTreeEvent } from './hooks.js';
+import { useBlackboard, useBlackboardSnapshot, useTreeStatus, useCommand, useClientEvent, useTreeEvent } from './hooks.js';
 import { createMockClient } from './test-utils.js';
 
 function wrapper(client: ReturnType<typeof createMockClient>) {
@@ -139,23 +139,23 @@ describe('useTreeStatus', () => {
   });
 });
 
-// ─── useAction ───
+// ─── useCommand ───
 
-describe('useAction', () => {
-  it('send() calls client.action with correct args', async () => {
+describe('useCommand', () => {
+  it('send() calls client.command with correct args', async () => {
     const client = createMockClient();
-    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+    const { result } = renderHook(() => useCommand('submit'), { wrapper: wrapper(client) });
 
     await act(async () => {
       await result.current.send({ rating: 5 });
     });
 
-    expect(client.action).toHaveBeenCalledWith('submit', { rating: 5 });
+    expect(client.command).toHaveBeenCalledWith('submit', { rating: 5 });
   });
 
   it('send() resolves with id', async () => {
     const client = createMockClient();
-    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+    const { result } = renderHook(() => useCommand('submit'), { wrapper: wrapper(client) });
 
     let response: { id: string } | undefined;
     await act(async () => {
@@ -167,13 +167,13 @@ describe('useAction', () => {
 
   it('pending is false initially', () => {
     const client = createMockClient();
-    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+    const { result } = renderHook(() => useCommand('submit'), { wrapper: wrapper(client) });
     expect(result.current.pending).toBe(false);
   });
 
   it('pending becomes true after send and false after message:processed', async () => {
     const client = createMockClient();
-    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+    const { result } = renderHook(() => useCommand('submit'), { wrapper: wrapper(client) });
 
     await act(async () => {
       await result.current.send();
@@ -190,7 +190,7 @@ describe('useAction', () => {
 
   it('pending becomes false on message:failed', async () => {
     const client = createMockClient();
-    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+    const { result } = renderHook(() => useCommand('submit'), { wrapper: wrapper(client) });
 
     await act(async () => {
       await result.current.send();
@@ -205,7 +205,7 @@ describe('useAction', () => {
 
   it('ignores message:processed for different ID', async () => {
     const client = createMockClient();
-    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+    const { result } = renderHook(() => useCommand('submit'), { wrapper: wrapper(client) });
 
     await act(async () => {
       await result.current.send();
@@ -220,11 +220,11 @@ describe('useAction', () => {
 
   it('pending stays true until all concurrent sends are resolved', async () => {
     const client = createMockClient();
-    (client.action as ReturnType<typeof vi.fn>)
+    (client.command as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({ id: 'msg-1' })
       .mockResolvedValueOnce({ id: 'msg-2' });
 
-    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+    const { result } = renderHook(() => useCommand('submit'), { wrapper: wrapper(client) });
 
     await act(async () => {
       await Promise.all([result.current.send(), result.current.send()]);
@@ -243,11 +243,11 @@ describe('useAction', () => {
 
   it('pending clears correctly when one of two concurrent sends fails via HTTP', async () => {
     const client = createMockClient();
-    (client.action as ReturnType<typeof vi.fn>)
+    (client.command as ReturnType<typeof vi.fn>)
       .mockRejectedValueOnce(new Error('500'))
       .mockResolvedValueOnce({ id: 'msg-2' });
 
-    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+    const { result } = renderHook(() => useCommand('submit'), { wrapper: wrapper(client) });
 
     await act(async () => {
       await Promise.allSettled([result.current.send(), result.current.send()]);
@@ -263,9 +263,9 @@ describe('useAction', () => {
 
   it('send() resets pending on HTTP error', async () => {
     const client = createMockClient();
-    (client.action as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('409'));
+    (client.command as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('409'));
 
-    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+    const { result } = renderHook(() => useCommand('submit'), { wrapper: wrapper(client) });
 
     await expect(
       act(async () => {
@@ -276,9 +276,9 @@ describe('useAction', () => {
     expect(result.current.pending).toBe(false);
   });
 
-  it('sendAndWait calls client.action and resolves on message:processed', async () => {
+  it('sendAndWait calls client.command and resolves on message:processed', async () => {
     const client = createMockClient();
-    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+    const { result } = renderHook(() => useCommand('submit'), { wrapper: wrapper(client) });
 
     let response: { messageId: string; treeStatus: string } | undefined;
     await act(async () => {
@@ -290,14 +290,14 @@ describe('useAction', () => {
       response = await promise;
     });
 
-    expect(client.action).toHaveBeenCalledWith('submit', { data: 1 });
+    expect(client.command).toHaveBeenCalledWith('submit', { data: 1 });
     expect(response!.treeStatus).toBe('success');
     expect(result.current.pending).toBe(false);
   });
 
   it('sendAndWait rejects on message:failed', async () => {
     const client = createMockClient();
-    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+    const { result } = renderHook(() => useCommand('submit'), { wrapper: wrapper(client) });
 
     await expect(
       act(async () => {
@@ -314,11 +314,11 @@ describe('useAction', () => {
 
   it('sendAndWait does not clear pending while send() is still awaiting completion', async () => {
     const client = createMockClient();
-    (client.action as ReturnType<typeof vi.fn>)
+    (client.command as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({ id: 'msg-send' })
       .mockResolvedValueOnce({ id: 'msg-wait' });
 
-    const { result } = renderHook(() => useAction('submit'), { wrapper: wrapper(client) });
+    const { result } = renderHook(() => useCommand('submit'), { wrapper: wrapper(client) });
 
     // Fire send() — pending because it's awaiting message:processed
     await act(async () => {
