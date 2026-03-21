@@ -4,7 +4,7 @@ import { ActionNode } from '../nodes/action.js';
 import { ConditionNode } from '../nodes/condition.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { SelectorNode } from '../composites/selector.js';
-import { actionReceived } from '../nodes/action-received.js';
+import { receive } from '../nodes/receive.js';
 import { untilSuccess } from '../decorators/until-success.js';
 import { NodeStatus } from '../types.js';
 import { setupTest, waitForEvent } from './helpers.js';
@@ -42,13 +42,13 @@ describe('multi-step action workflow', () => {
                 new SelectorNode({
                   name: 'wait-decision',
                   children: [
-                    actionReceived('approve', {
+                    receive('approve', {
                       mapPayload: (payload, bb) => {
                         bb.set('decision', 'approve');
                         bb.set('decision:comment', (payload as any)?.comment ?? '');
                       },
                     }),
-                    actionReceived('reject', {
+                    receive('reject', {
                       mapPayload: (payload, bb) => {
                         bb.set('decision', 'reject');
                         bb.set('decision:reason', (payload as any)?.reason ?? '');

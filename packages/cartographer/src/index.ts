@@ -113,7 +113,7 @@ export { EventBridge } from './server/event-bridge.js';
 
 // New nodes
 export { untilSuccess, UntilSuccessNode } from './decorators/until-success.js';
-export { actionReceived, ActionReceivedNode } from './nodes/action-received.js';
+export { receive, ReceiveNode } from './nodes/receive.js';
 export { emitToClient, EmitToClientNode } from './nodes/emit-to-client.js';
 
 // Serialization

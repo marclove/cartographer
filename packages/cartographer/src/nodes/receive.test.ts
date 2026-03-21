@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { actionReceived } from './action-received.js';
+import { receive } from './receive.js';
 import { NodeStatus } from '../types.js';
 import type { TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
@@ -14,9 +14,9 @@ function createContext(): TreeContext {
   };
 }
 
-describe('ActionReceivedNode', () => {
+describe('ReceiveNode', () => {
   it('returns SUCCESS and consumes key when action is present', async () => {
-    const node = actionReceived('approve');
+    const node = receive('approve');
     const ctx = createContext();
     ctx.blackboard.set('actions:approve', { docId: '123' });
 
@@ -26,7 +26,7 @@ describe('ActionReceivedNode', () => {
   });
 
   it('returns FAILURE when action is not present', async () => {
-    const node = actionReceived('approve');
+    const node = receive('approve');
     const ctx = createContext();
 
     const status = await node.tick(ctx);
@@ -34,19 +34,19 @@ describe('ActionReceivedNode', () => {
   });
 
   it('is not reactive (isReactiveNode returns false)', () => {
-    const node = actionReceived('approve');
+    const node = receive('approve');
     expect(isReactiveNode(node)).toBe(false);
   });
 
   it('has no inflight work after tick', async () => {
-    const node = actionReceived('approve');
+    const node = receive('approve');
     const ctx = createContext();
     await node.tick(ctx);
     expect(node.hasInflightWork()).toBe(false);
   });
 
   it('calls mapPayload when action is present', async () => {
-    const node = actionReceived('approve', {
+    const node = receive('approve', {
       mapPayload: (payload: any, blackboard) => {
         blackboard.set('review:decision', payload.decision);
       },
@@ -60,7 +60,7 @@ describe('ActionReceivedNode', () => {
 
   it('does not call mapPayload when action is absent', async () => {
     let called = false;
-    const node = actionReceived('approve', {
+    const node = receive('approve', {
       mapPayload: () => { called = true; },
     });
     const ctx = createContext();
@@ -69,14 +69,14 @@ describe('ActionReceivedNode', () => {
   });
 
   it('produces stable content hash', () => {
-    const a = actionReceived('approve');
-    const b = actionReceived('approve');
+    const a = receive('approve');
+    const b = receive('approve');
     expect(a.contentHash()).toBe(b.contentHash());
   });
 
   it('produces different hash for different action names', () => {
-    const a = actionReceived('approve');
-    const b = actionReceived('reject');
+    const a = receive('approve');
+    const b = receive('reject');
     expect(a.contentHash()).not.toBe(b.contentHash());
   });
 });

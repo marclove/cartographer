@@ -5,7 +5,7 @@ import { ActionNode } from '../nodes/action.js';
 import { InMemoryStateStore } from '../state/in-memory-state-store.js';
 import { NodeStatus } from '../types.js';
 import { untilSuccess } from '../decorators/until-success.js';
-import { actionReceived } from '../nodes/action-received.js';
+import { receive } from '../nodes/receive.js';
 
 describe('TreeActor', () => {
   it('processes a tick message and saves state', async () => {
@@ -54,13 +54,13 @@ describe('TreeActor', () => {
     const actor = new TreeActor({
       createTree: () => new BehaviorTree({
         name: 'test',
-        root: untilSuccess(actionReceived('approve')),
+        root: untilSuccess(receive('approve')),
       }),
       stateStore: store,
       stateKey: 'default',
     });
 
-    // No action present → actionReceived returns FAILURE → untilSuccess returns RUNNING
+    // No action present → receive returns FAILURE → untilSuccess returns RUNNING
     const result = await actor.process({ type: 'tick' });
     expect(result.treeStatus).toBe(NodeStatus.RUNNING);
   });

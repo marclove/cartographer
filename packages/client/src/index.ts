@@ -138,7 +138,7 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
      * Sends a named action to the behavior tree for processing.
      *
      * The action is enqueued as a message in the ActorServer's message queue.
-     * On the next tick, the tree's ActionReceivedNode will match on the action
+     * On the next tick, the tree's ReceiveNode will match on the action
      * name and make it available to the tree logic.
      *
      * Returns immediately with the server-assigned message ID. Does *not* wait

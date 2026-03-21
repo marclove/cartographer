@@ -3,7 +3,7 @@ import { BehaviorTree } from '../../core/behavior-tree.js';
 import { ActionNode } from '../../nodes/action.js';
 import { AgentNode } from '../../nodes/agent.js';
 import { SequenceNode } from '../../composites/sequence.js';
-import { actionReceived } from '../../nodes/action-received.js';
+import { receive } from '../../nodes/receive.js';
 import { untilSuccess } from '../../decorators/until-success.js';
 import { NodeStatus } from '../../types.js';
 import { setupTest, waitForEvent, waitForBlackboard } from '../helpers.js';
@@ -21,7 +21,7 @@ describe('agent interrupt and redirect (live)', () => {
             children: [
               // Wait for topic to be set
               untilSuccess(
-                actionReceived('set-topic', {
+                receive('set-topic', {
                   mapPayload: (payload, bb) => {
                     topicSetCount++;
                     bb.set('research:topic', (payload as any)?.topic ?? 'unknown');

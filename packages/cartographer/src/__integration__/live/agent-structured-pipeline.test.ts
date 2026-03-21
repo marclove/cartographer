@@ -6,7 +6,7 @@ import { ConditionNode } from '../../nodes/condition.js';
 import { SequenceNode } from '../../composites/sequence.js';
 import { SelectorNode } from '../../composites/selector.js';
 import { emitToClient } from '../../nodes/emit-to-client.js';
-import { actionReceived } from '../../nodes/action-received.js';
+import { receive } from '../../nodes/receive.js';
 import { untilSuccess } from '../../decorators/until-success.js';
 import { NodeStatus } from '../../types.js';
 import { setupTest, waitForBlackboard } from '../helpers.js';
@@ -107,8 +107,8 @@ describe('agent structured pipeline (live)', () => {
                         new SelectorNode({
                           name: 'review-decision',
                           children: [
-                            actionReceived('confirm-classification'),
-                            actionReceived('reclassify'),
+                            receive('confirm-classification'),
+                            receive('reclassify'),
                           ],
                         }),
                       ),

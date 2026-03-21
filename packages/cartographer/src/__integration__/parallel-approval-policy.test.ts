@@ -5,7 +5,7 @@ import { SequenceNode } from '../composites/sequence.js';
 import { ParallelNode } from '../composites/parallel.js';
 import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
 import { emitToClient } from '../nodes/emit-to-client.js';
-import { actionReceived } from '../nodes/action-received.js';
+import { receive } from '../nodes/receive.js';
 import { untilSuccess } from '../decorators/until-success.js';
 import { NodeStatus } from '../types.js';
 import { setupTest, waitForEvent } from './helpers.js';
@@ -19,7 +19,7 @@ function reviewerBranch(reviewerName: string, reviewerId: string) {
         reviewerId,
       })),
       untilSuccess(
-        actionReceived(reviewerId, {
+        receive(reviewerId, {
           mapPayload: (payload, bb) => {
             bb.set(`reviews:${reviewerId}`, payload);
           },

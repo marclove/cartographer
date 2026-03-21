@@ -1,6 +1,6 @@
 # Leaf Nodes
 
-Leaf nodes sit at the edges of a behavior tree. They do the actual work -- checking conditions, performing actions, or delegating to an AI agent. This guide covers the built-in leaf node types (including the application server nodes `actionReceived` and `emitToClient`) and explains how to create custom nodes by extending `BaseNode`.
+Leaf nodes sit at the edges of a behavior tree. They do the actual work -- checking conditions, performing actions, or delegating to an AI agent. This guide covers the built-in leaf node types (including the application server nodes `receive` and `emitToClient`) and explains how to create custom nodes by extending `BaseNode`.
 
 ---
 
@@ -112,16 +112,16 @@ For the full `AgentNodeConfig` reference and advanced patterns, see [Agent Integ
 
 ---
 
-## ActionReceivedNode
+## ReceiveNode
 
-A synchronous, non-reactive node that checks and consumes an action key from the blackboard. Designed for the [application server](guide-app-server.md) where user actions are delivered as blackboard entries.
+A synchronous, non-reactive node that receives and consumes an inbound action from the blackboard. Designed for the [application server](guide-app-server.md) where user actions are delivered as blackboard entries.
 
 ### Factory
 
 ```typescript
-import { actionReceived } from "cartographer";
+import { receive } from "cartographer";
 
-const node = actionReceived("approve");
+const node = receive("approve");
 ```
 
 ### Behavior
@@ -136,7 +136,7 @@ The node extends `BaseNode` directly (not `ActionNode` or `ConditionNode`). This
 ### Optional payload mapping
 
 ```typescript
-const node = actionReceived("approve", {
+const node = receive("approve", {
   mapPayload: (payload, blackboard) => {
     blackboard.set("review:decision", (payload as any).decision);
   },

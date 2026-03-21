@@ -5,7 +5,7 @@ import { ConditionNode } from '../nodes/condition.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { RetryNode } from '../decorators/retry.js';
 import { emitToClient } from '../nodes/emit-to-client.js';
-import { actionReceived } from '../nodes/action-received.js';
+import { receive } from '../nodes/receive.js';
 import { untilSuccess } from '../decorators/until-success.js';
 import { NodeStatus } from '../types.js';
 import { setupTest, waitForEvent } from './helpers.js';
@@ -24,7 +24,7 @@ function wizardStep(
       children: [
         emitToClient('ui:form', () => ({ step: stepNumber, fields })),
         untilSuccess(
-          actionReceived(`step-${stepNumber}`, {
+          receive(`step-${stepNumber}`, {
             mapPayload: (payload, bb) => {
               bb.set(bbKey, payload);
             },

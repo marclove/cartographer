@@ -3,13 +3,13 @@ import { NodeStatus } from '../types.js';
 import type { TreeContext, Blackboard } from '../types.js';
 import { computeContentHash } from '../core/content-hash.js';
 
-export interface ActionReceivedOptions {
+export interface ReceiveOptions {
   mapPayload?: (payload: unknown, blackboard: Blackboard) => void;
 }
 
 /**
- * A synchronous, non-reactive node that checks and consumes action keys
- * from the blackboard.
+ * A synchronous, non-reactive node that receives and consumes an inbound
+ * action from the blackboard.
  *
  * Extends BaseNode directly (not ActionNode or ConditionNode) to ensure:
  * - Non-reactive: sequences cache its SUCCESS in completedMap
@@ -18,12 +18,12 @@ export interface ActionReceivedOptions {
  * Critical invariant: consume-on-read safety depends on faithful
  * completedMap serialization.
  */
-export class ActionReceivedNode extends BaseNode {
+export class ReceiveNode extends BaseNode {
   private readonly actionName: string;
   private readonly mapPayload?: (payload: unknown, blackboard: Blackboard) => void;
 
-  constructor(actionName: string, options?: ActionReceivedOptions) {
-    super(`actionReceived:${actionName}`);
+  constructor(actionName: string, options?: ReceiveOptions) {
+    super(`receive:${actionName}`);
     this.actionName = actionName;
     this.mapPayload = options?.mapPayload;
   }
@@ -47,11 +47,11 @@ export class ActionReceivedNode extends BaseNode {
   }
 
   protected override computeHash(): string {
-    return computeContentHash('ActionReceivedNode', this.actionName);
+    return computeContentHash('ReceiveNode', this.actionName);
   }
 }
 
 /** Factory function. */
-export function actionReceived(name: string, options?: ActionReceivedOptions): ActionReceivedNode {
-  return new ActionReceivedNode(name, options);
+export function receive(name: string, options?: ReceiveOptions): ReceiveNode {
+  return new ReceiveNode(name, options);
 }

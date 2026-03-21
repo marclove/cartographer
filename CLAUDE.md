@@ -48,7 +48,7 @@ Every node implements `tick(context: TreeContext) → Promise<NodeStatus>` retur
 
 ### Node Hierarchy
 
-- **Leaf nodes**: ActionNode, ConditionNode, AgentNode, ActionReceivedNode, EmitToClientNode — do actual work
+- **Leaf nodes**: ActionNode, ConditionNode, AgentNode, ReceiveNode, EmitToClientNode — do actual work
 - **Composites**: SelectorNode (first success wins), SequenceNode (all must succeed), ParallelNode (concurrent with completion policies)
 - **Decorators**: InverterNode, RepeatNode, RetryNode, TimeoutNode, GuardNode, AlwaysSucceedNode, AlwaysFailNode, UntilSuccessNode — wrap a single child
 

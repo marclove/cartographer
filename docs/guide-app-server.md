@@ -29,7 +29,7 @@ import {
   SequenceNode,
   SelectorNode,
   NodeStatus,
-  actionReceived,
+  receive,
   untilSuccess,
   emitToClient,
 } from 'cartographer';
@@ -57,8 +57,8 @@ const server = new ActorServer({
           new SelectorNode({
             name: 'wait-for-decision',
             children: [
-              actionReceived('approve'),
-              actionReceived('reject'),
+              receive('approve'),
+              receive('reject'),
             ],
           }),
         ),
@@ -113,7 +113,7 @@ For each message, `TreeActor.process()` runs this pipeline:
 The `runToCompletion()` loop is the core of the processing model. It distinguishes between two kinds of `RUNNING`:
 
 - **In-flight work** (`hasInflightWork() === true`): An `ActionNode` or `AgentNode` has an async operation in progress. The loop waits for it to settle via `settled()`, then ticks again.
-- **Suspended** (`hasInflightWork() === false`): The tree returned `RUNNING` but nothing is in progress — typically because an `untilSuccess` or `actionReceived` node is waiting for external input. The loop exits.
+- **Suspended** (`hasInflightWork() === false`): The tree returned `RUNNING` but nothing is in progress — typically because an `untilSuccess` or `receive` node is waiting for external input. The loop exits.
 
 ```typescript
 const actor = new TreeActor({
@@ -454,23 +454,23 @@ try {
 
 The application server introduces three specialized nodes designed for message-driven trees.
 
-### actionReceived
+### receive
 
-Checks and consumes an action from the blackboard. Returns `SUCCESS` if the action is present (and removes it), `FAILURE` otherwise.
+Receives and consumes an inbound action from the blackboard. Returns `SUCCESS` if the action is present (and removes it), `FAILURE` otherwise.
 
 ```typescript
-import { actionReceived } from 'cartographer';
+import { receive } from 'cartographer';
 
-const node = actionReceived('approve');
+const node = receive('approve');
 // Checks blackboard for 'actions:approve', consumes it on success
 ```
 
-`actionReceived` is non-reactive and synchronous — it extends `BaseNode` directly, not `ActionNode` or `ConditionNode`. This ensures sequences cache its `SUCCESS` in the `completedMap`, preventing the consumed key from being re-read.
+`receive` is non-reactive and synchronous — it extends `BaseNode` directly, not `ActionNode` or `ConditionNode`. This ensures sequences cache its `SUCCESS` in the `completedMap`, preventing the consumed key from being re-read.
 
 The optional `mapPayload` callback extracts data from the action payload:
 
 ```typescript
-const node = actionReceived('approve', {
+const node = receive('approve', {
   mapPayload: (payload, blackboard) => {
     blackboard.set('review:decision', (payload as any).decision);
   },
@@ -506,15 +506,15 @@ client.on('ui:show_review', (data) => {
 A decorator that creates explicit suspension points. Converts child `FAILURE` to `RUNNING`, causing the tree to suspend until the next message arrives.
 
 ```typescript
-import { untilSuccess, actionReceived, SelectorNode } from 'cartographer';
+import { untilSuccess, receive, SelectorNode } from 'cartographer';
 
 // Suspend until the user sends an 'approve' or 'reject' action
 const waitForDecision = untilSuccess(
   new SelectorNode({
     name: 'decision',
     children: [
-      actionReceived('approve'),
-      actionReceived('reject'),
+      receive('approve'),
+      receive('reject'),
     ],
   }),
 );

@@ -231,21 +231,21 @@ const node = untilSuccess(childNode);
 
 **When to use:**
 
-`untilSuccess` is designed for the [application server](guide-app-server.md) where a tree processes one message at a time and suspends between messages. Wrapping an `actionReceived` node in `untilSuccess` tells the processing loop "keep this tree alive and wait for more input."
+`untilSuccess` is designed for the [application server](guide-app-server.md) where a tree processes one message at a time and suspends between messages. Wrapping a `receive` node in `untilSuccess` tells the processing loop "keep this tree alive and wait for more input."
 
 **How it differs from RepeatNode:**
 
 `RepeatNode` with `untilStatus: NodeStatus.SUCCESS` loops _internally_ within a single tick -- it re-ticks its child immediately after each failure and never returns `RUNNING` to the caller due to a child failure. `untilSuccess` returns `RUNNING` to the tree, which causes the `runToCompletion()` loop to detect the suspension (via `hasInflightWork() === false`) and save state.
 
 ```typescript
-import { untilSuccess, actionReceived } from "cartographer";
+import { untilSuccess, receive } from "cartographer";
 import { SelectorNode } from "cartographer";
 
 // Wait for user to approve or reject
 const waitForDecision = untilSuccess(
   new SelectorNode({
     name: "decision",
-    children: [actionReceived("approve"), actionReceived("reject")],
+    children: [receive("approve"), receive("reject")],
   }),
 );
 ```

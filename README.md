@@ -124,7 +124,7 @@ import {
   SequenceNode,
   SelectorNode,
   NodeStatus,
-  actionReceived,
+  receive,
   untilSuccess,
   emitToClient,
 } from "cartographer";
@@ -148,7 +148,17 @@ const server = new ActorServer({
           untilSuccess(
             new SelectorNode({
               name: "await-decision",
-              children: [actionReceived("approve"), actionReceived("reject")],
+              children: [
+                receive("approve", {
+                  mapPayload: (payload, bb) => bb.set("decision", "approved"),
+                }),
+                receive("reject", {
+                  mapPayload: (payload, bb) => {
+                    bb.set("decision", "rejected");
+                    bb.set("reason", (payload as any).reason);
+                  },
+                }),
+              ],
             }),
           ),
         ],
