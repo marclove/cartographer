@@ -4,64 +4,79 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Cartographer** is a TypeScript behavior tree framework with first-class Claude Agent SDK integration. It composes AI agents, deterministic logic, and scheduled automation into behavior trees. ESM-only, Node >= 18.
+Cartographer is a TypeScript behavior tree framework that combines deterministic BT execution with Claude Agent SDK integration. It enables building dependable agent systems where AI agents operate within structured, observable control flows.
+
+## Monorepo Structure
+
+pnpm workspaces + Turborepo. All packages use ES modules with Node16 module resolution.
+
+- `packages/cartographer` — Core BT framework (nodes, composites, decorators, strategies, scheduler, actor, server, CLI)
+- `packages/client` — Lightweight client SDK for ActorServer (SSE event streaming, REST API)
+- `packages/react` — React 19 hooks for behavior trees
+- `packages/svelte` — Svelte 5 runes for behavior trees
+- `apps/dashboard` — Svelte 5 interactive TUI for tree observation
+- `apps/content-pipeline` — Example: content processing workflows
+- `apps/scheduled-monitor` — Example: health monitoring and incident management
 
 ## Commands
 
 ```bash
-pnpm run build              # Build all packages (via turbo)
-pnpm run test               # Run unit tests across all packages (via turbo)
-pnpm run typecheck           # Type-check all packages (via turbo)
-pnpm run test:integration    # Run integration tests (cartographer package)
-pnpm run test:live           # Run live API tests (requires ANTHROPIC_API_KEY)
+pnpm build                          # Build all packages (turbo → tsc)
+pnpm test                           # Unit tests across all packages
+pnpm typecheck                      # Type-check all packages
+pnpm test:integration               # Integration tests (cartographer only)
+pnpm test:live                      # Live tests with real Claude API calls
 
-# Per-package commands
-pnpm --filter cartographer test              # Run cartographer unit tests
-pnpm --filter @cartographer/client test      # Run client tests
-pnpm --filter @cartographer/react test       # Run react tests
-pnpm --filter @cartographer/dashboard test   # Run dashboard tests
+# Single package
+pnpm --filter cartographer test
+pnpm --filter @cartographer/client test
+
+# Single test file
+pnpm --filter cartographer exec vitest run src/nodes/action.test.ts
+
+# Watch mode
+pnpm --filter cartographer exec vitest src/nodes/action.test.ts
 ```
 
-This is a pnpm + Turborepo monorepo. Tests are organized per-package with each package having its own `vitest.config.ts`. The cartographer package additionally has `vitest.integration.config.ts` and `vitest.live.config.ts` for integration and live API tests.
+Note: cartographer tests require `NODE_OPTIONS=--experimental-eventsource` (already set in package.json scripts).
 
 ## Architecture
 
-The repo is a pnpm workspaces monorepo with Turborepo orchestration:
+### Execution Model
 
-- **`packages/cartographer/`** — Core behavior tree framework (published as `cartographer`)
-- **`packages/client/`** — Lightweight browser/Node client SDK (`@cartographer/client`)
-- **`packages/react/`** — React hooks (`@cartographer/react`)
-- **`apps/dashboard/`** — Svelte dashboard app (`@cartographer/dashboard`)
-- **`apps/content-pipeline/`** — Example app
-- **`apps/scheduled-monitor/`** — Example app
+Every node implements `tick(context: TreeContext) → Promise<NodeStatus>` returning one of three statuses: `SUCCESS`, `FAILURE`, or `RUNNING`. Composites and decorators use these to drive control flow. RUNNING means the node has in-flight async work and should be ticked again.
 
-All core types live in `packages/cartographer/src/types.ts`. Everything is re-exported from `packages/cartographer/src/index.ts`.
+### Node Hierarchy
 
-### Node Model
+- **Leaf nodes**: ActionNode, ConditionNode, AgentNode, ActionReceivedNode, EmitToClientNode — do actual work
+- **Composites**: SelectorNode (first success wins), SequenceNode (all must succeed), ParallelNode (concurrent with completion policies)
+- **Decorators**: InverterNode, RepeatNode, RetryNode, TimeoutNode, GuardNode, AlwaysSucceedNode, AlwaysFailNode, UntilSuccessNode — wrap a single child
 
-Every node implements the `BTreeNode` interface (`tick`, `reset`, `abort`). Ticks return `NodeStatus` (SUCCESS, FAILURE, RUNNING). A `TreeContext` flows through the tree carrying `blackboard`, `events`, and an optional `AbortSignal`.
+### Key Abstractions
 
-### Source Layout
+- **TreeContext** — Passed to every node during tick. Carries blackboard, event emitter, abort signal, and configuration overrides.
+- **Blackboard** — Shared key-value store with `scoped(namespace)` for isolation between nodes. Primary mechanism for inter-node communication.
+- **EventEmitter** — Typed observer pattern covering node lifecycle, agent activity, data mutations, tree lifecycle, and strategy decisions.
+- **Strategies** — Pluggable policies for selection, execution, and parallel behavior. Default and Agent variants exist.
+- **Serialization** — Tree state snapshots with content hashing for hydration across ticks and persistence.
 
-- **`src/nodes/`** — Leaf nodes: `ActionNode` (runs a function), `ConditionNode` (boolean check), `AgentNode` (agentic Claude SDK calls, with optional `outputSchema` for structured output)
-- **`src/composites/`** — `SequenceNode` (all succeed), `SelectorNode` (first success), `ParallelNode` (concurrent with policy). Sequence and Selector resume from RUNNING children on subsequent ticks.
-- **`src/decorators/`** — Single-child wrappers: Inverter, Repeat, Retry, Timeout, Guard, AlwaysSucceed, AlwaysFail
-- **`src/strategies/`** — Strategy pattern for composites. Default strategies pass through; Agent strategies delegate ordering/policy decisions to Claude.
-- **`src/builder/`** — Fluent `TreeBuilder` API for constructing trees
-- **`src/config/`** — `TreeRegistry` (action/condition registry for named node factories)
-- **`src/scheduler/`** — `TreeScheduler` for cron, interval, and one-shot execution
-- **`src/agent/`** — `createBlackboardMcpServer` (exposes blackboard to Claude via MCP tools), SDK helpers for agent strategies
-- **`src/core/`** — `BehaviorTree` (root runner), `InMemoryBlackboard`/`ScopedBlackboard`, `EventEmitter`
+### Higher-Level Constructs
 
-### Key Patterns
+- **TreeScheduler** (`src/scheduler/`) — Interval/cron scheduling with lifecycle hooks
+- **TreeActor** (`src/actor/`) — Message-driven processor with state serialization for persistent sessions
+- **ActorServer** (`src/server/`) — HTTP server with SSE event streaming, REST API, state persistence via StateStore
+- **StateStore** (`src/state/`) — Abstract persistence interface with InMemoryStateStore and RedisStateStore implementations
 
-- **Strategy injection**: Composites accept optional strategy objects to customize child ordering or parallel success policies. Agent strategies use Claude to make these decisions at runtime.
-- **Blackboard scoping**: `ScopedBlackboard` namespaces keys with `:` separator. `AgentNode` can auto-scope via `blackboardNamespace`.
-- **Agent caching**: AgentNode and agent strategies support `cache: true` to preserve results across ticks (cleared on `reset()`).
-- **Test contexts**: Tests create a `TreeContext` with `new InMemoryBlackboard()` and `new EventEmitter<TreeEvents>()`.
+### Agent Integration
 
-### Dependencies
+AgentNode delegates work to Claude via the Agent SDK. `createBlackboardMcpServer` exposes the blackboard as MCP tools for agent access. Agent strategies (AgentSelectionStrategy, AgentExecutionStrategy, AgentParallelStrategy) provide specialized policies for multi-agent coordination.
 
-- `@anthropic-ai/claude-agent-sdk` — Claude integration for AgentNode and agent strategies
-- `zod` (v4) — Schema validation for structured agent output
-- `cron-parser` — Cron expression parsing for scheduler
+## Conventions
+
+- Files: kebab-case. Classes: PascalCase with "Node" suffix for BT nodes. Private members: underscore prefix.
+- Imports use explicit `.js` extensions (Node16 module resolution requirement).
+- Tests colocated with source as `*.test.ts`. Integration tests in `src/__integration__/`.
+- Nodes never throw — errors are converted to FAILURE status with error events emitted.
+- All `tick()` methods are async. Multi-tick work returns RUNNING with in-flight state cached via `_inflightState`.
+- ID generators (generateRequestId, generateMessageId, generateEventId) are intentionally separate — do not consolidate.
+- RedisStateStore.readEvents() AsyncIterable must handle client disconnection teardown explicitly.
