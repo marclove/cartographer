@@ -8,7 +8,7 @@ This guide covers the full stack: `TreeActor` for processing, `ActorServer` for 
 
 ## Overview
 
-A traditional Cartographer tree lives in memory and runs until its process ends. The application server changes this:
+A Cartographer tree lives in memory and runs until its process ends. The application server changes this:
 
 1. A **tree factory** creates a fresh tree for every incoming message.
 2. **TreeActor** loads persisted state, hydrates the tree, processes one message to completion, then serializes and saves the result.
