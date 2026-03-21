@@ -241,7 +241,7 @@ await scheduler.start();
 npm install cartographer
 ```
 
-Requires Node.js 18+. An Anthropic API key is required for agent features (set `ANTHROPIC_API_KEY`).
+Requires Node.js 22+. An Anthropic API key is required for agent features (set `ANTHROPIC_API_KEY`).
 
 ```typescript
 import { TreeBuilder, NodeStatus } from "cartographer";

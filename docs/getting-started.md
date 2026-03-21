@@ -4,7 +4,7 @@ This guide walks you through installing Cartographer and building your first beh
 
 ## Prerequisites
 
-- Node.js 18 or later
+- Node.js 22 or later
 - TypeScript (recommended)
 
 ## Installation
