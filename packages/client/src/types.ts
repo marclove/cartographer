@@ -36,8 +36,8 @@ export interface CartographerClient {
    * The action clears the held state implicitly.
    *
    * If nothing is being processed, the action is sent immediately without waiting.
-   * Otherwise, waits for the interrupted message's `message:processed` or
-   * `message:failed` SSE event before sending. Requires {@link connect} when
+   * Otherwise, waits for the interrupted message's `message:processed`,
+   * `message:failed`, or `message:interrupted` SSE event before sending. Requires {@link connect} when
    * processing is active.
    */
   interruptAndAction(name: string, payload?: unknown): Promise<{ id: string }>;

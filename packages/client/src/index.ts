@@ -131,6 +131,13 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
       // Wait for the interrupted message's processing to finish (lock release)
       requireConnection();
       await new Promise<void>((resolve) => {
+        // The interrupted message can complete in one of three ways:
+        // - message:processed — The tick finished normally before the abort took effect
+        // - message:failed — The tick encountered an error during wind-down
+        // - message:interrupted — The tick was successfully aborted mid-execution
+        // We listen for all three since any of them signals that the lock is free.
+        // In all cases we resolve (not reject) because we don't care *how* the
+        // interrupted message ended — only that the lock is released.
         const onProcessed = (data: unknown) => {
           const d = data as { messageId: string };
           if (d.messageId === messageId) { cleanup(); resolve(); }
@@ -139,14 +146,21 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
           const d = data as { messageId: string };
           if (d.messageId === messageId) { cleanup(); resolve(); }
         };
+        const onInterrupted = (data: unknown) => {
+          const d = data as { messageId: string };
+          if (d.messageId === messageId) { cleanup(); resolve(); }
+        };
         const cleanup = () => {
           listeners.get('message:processed')?.delete(onProcessed);
           listeners.get('message:failed')?.delete(onFailed);
+          listeners.get('message:interrupted')?.delete(onInterrupted);
         };
         if (!listeners.has('message:processed')) listeners.set('message:processed', new Set());
         if (!listeners.has('message:failed')) listeners.set('message:failed', new Set());
+        if (!listeners.has('message:interrupted')) listeners.set('message:interrupted', new Set());
         listeners.get('message:processed')!.add(onProcessed);
         listeners.get('message:failed')!.add(onFailed);
+        listeners.get('message:interrupted')!.add(onInterrupted);
       });
 
       // Lock is released — send the new action
