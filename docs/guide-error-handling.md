@@ -14,19 +14,19 @@ Every node in Cartographer extends `BaseNode`, which wraps every `execute()` cal
 4. The node returns `FAILURE` to its parent.
 
 ```typescript
-import { ActionNode, BehaviorTree, NodeStatus } from 'cartographer';
+import { ActionNode, BehaviorTree, NodeStatus } from "cartographer";
 
 const risky = new ActionNode({
-  name: 'might-throw',
+  name: "might-throw",
   action: () => {
-    throw new Error('something went wrong');
+    throw new Error("something went wrong");
   },
 });
 
-const tree = new BehaviorTree({ name: 'safe-tree', root: risky });
+const tree = new BehaviorTree({ name: "safe-tree", root: risky });
 
 // Listen for errors without crashing
-tree.events.on('node:error', ({ node, error }) => {
+tree.events.on("node:error", ({ node, error }) => {
   console.error(`${node.name} failed:`, error.message);
 });
 
@@ -45,14 +45,12 @@ This containment means that a single misbehaving node never takes down the entir
 The most common resilience pattern stacks `RetryNode` around `TimeoutNode` to handle transient failures. The timeout caps each attempt, and the retry re-tries the whole operation.
 
 ```typescript
-import {
-  ActionNode, SequenceNode, RetryNode, TimeoutNode, NodeStatus,
-} from 'cartographer';
+import { ActionNode, SequenceNode, RetryNode, TimeoutNode, NodeStatus } from "cartographer";
 
 let attempts = 0;
 
 const unreliable = new ActionNode({
-  name: 'api-call',
+  name: "api-call",
   action: async (ctx) => {
     attempts++;
     if (attempts < 3) {
@@ -61,28 +59,28 @@ const unreliable = new ActionNode({
       return NodeStatus.SUCCESS;
     }
     // Third attempt completes quickly
-    ctx.blackboard.set('result', 'done');
+    ctx.blackboard.set("result", "done");
     return NodeStatus.SUCCESS;
   },
 });
 
 // TimeoutNode wraps the action — each attempt gets 100ms
 const timeout = new TimeoutNode({
-  name: 'timeout-wrapper',
+  name: "timeout-wrapper",
   child: unreliable,
   timeoutMs: 100,
 });
 
 // RetryNode wraps the timeout — up to 3 attempts total
 const retry = new RetryNode({
-  name: 'retry-wrapper',
+  name: "retry-wrapper",
   child: timeout,
   maxAttempts: 3,
 });
 
 // Put it in a pipeline with follow-up work
 const pipeline = new SequenceNode({
-  name: 'pipeline',
+  name: "pipeline",
   children: [retry, followUpAction],
 });
 ```
@@ -97,7 +95,7 @@ const pipeline = new SequenceNode({
 
 ```typescript
 const retry = new RetryNode({
-  name: 'retry-with-backoff',
+  name: "retry-with-backoff",
   child: apiCallNode,
   maxAttempts: 5,
   delayMs: 500, // 500ms pause between failed attempts
@@ -117,18 +115,18 @@ When a child returns `RUNNING`, `RetryNode` returns `RUNNING` immediately — it
 `SelectorNode` naturally implements a fallback pattern: it tries children in order and returns `SUCCESS` on the first child that succeeds. Combined with error containment, this gives you primary/secondary/tertiary recovery:
 
 ```typescript
-import { SelectorNode, ActionNode, NodeStatus } from 'cartographer';
+import { SelectorNode, ActionNode, NodeStatus } from "cartographer";
 
 const fallback = new SelectorNode({
-  name: 'get-data',
+  name: "get-data",
   children: [
     // Primary: fast cache lookup
     new ActionNode({
-      name: 'from-cache',
+      name: "from-cache",
       action: (ctx) => {
-        const cached = ctx.blackboard.get('cache');
+        const cached = ctx.blackboard.get("cache");
         if (cached) {
-          ctx.blackboard.set('data', cached);
+          ctx.blackboard.set("data", cached);
           return NodeStatus.SUCCESS;
         }
         return NodeStatus.FAILURE;
@@ -136,18 +134,18 @@ const fallback = new SelectorNode({
     }),
     // Secondary: database query (might throw on connection error)
     new ActionNode({
-      name: 'from-db',
+      name: "from-db",
       action: async (ctx) => {
-        const row = await db.query('SELECT ...');
-        ctx.blackboard.set('data', row);
+        const row = await db.query("SELECT ...");
+        ctx.blackboard.set("data", row);
         return NodeStatus.SUCCESS;
       },
     }),
     // Tertiary: return a default
     new ActionNode({
-      name: 'default',
+      name: "default",
       action: (ctx) => {
-        ctx.blackboard.set('data', { fallback: true });
+        ctx.blackboard.set("data", { fallback: true });
         return NodeStatus.SUCCESS;
       },
     }),
@@ -169,12 +167,12 @@ If the database query throws, `BaseNode` converts the exception to `FAILURE`, an
 Long-running async actions should check `context.signal` to stop cooperatively:
 
 ```typescript
-import { ActionNode, BehaviorTree, NodeStatus } from 'cartographer';
+import { ActionNode, BehaviorTree, NodeStatus } from "cartographer";
 
 const tree = new BehaviorTree({
-  name: 'cancellable',
+  name: "cancellable",
   root: new ActionNode({
-    name: 'long-running',
+    name: "long-running",
     action: async (ctx) => {
       // Poll for work, checking the abort signal each iteration
       while (!ctx.signal?.aborted) {
@@ -210,15 +208,11 @@ When `tree.abort()` is called, the abort cascades through the entire tree:
 This means abort reaches every node in the tree, regardless of depth:
 
 ```typescript
-import { AbortTrackingNode } from './helpers.js'; // extends BaseNode, sets this.aborted = true
+import { AbortTrackingNode } from "./helpers.js"; // extends BaseNode, sets this.aborted = true
 
 const parallel = new ParallelNode({
-  name: 'par',
-  children: [
-    new AbortTrackingNode('child-1'),
-    new AbortTrackingNode('child-2'),
-    new AbortTrackingNode('child-3'),
-  ],
+  name: "par",
+  children: [new AbortTrackingNode("child-1"), new AbortTrackingNode("child-2"), new AbortTrackingNode("child-3")],
 });
 
 await parallel.tick(ctx);
@@ -233,7 +227,7 @@ parallel.abort();
 
 ```typescript
 const timeout = new TimeoutNode({
-  name: 'capped',
+  name: "capped",
   child: slowAction,
   timeoutMs: 5000,
 });
@@ -275,12 +269,12 @@ If you skip `reset()`, the tree's abort signal will still be in the aborted stat
 
 ### When to use interrupt vs abort
 
-| Scenario | Use |
-|----------|-----|
-| User wants to cancel and redirect | `interrupt()` |
-| Agent is heading in the wrong direction | `interrupt()` |
-| Tree is stuck and needs a clean slate | `abort()` + `reset()` |
-| Shutting down the process | `abort()` |
+| Scenario                                | Use                   |
+| --------------------------------------- | --------------------- |
+| User wants to cancel and redirect       | `interrupt()`         |
+| Agent is heading in the wrong direction | `interrupt()`         |
+| Tree is stuck and needs a clean slate   | `abort()` + `reset()` |
+| Shutting down the process               | `abort()`             |
 
 ### Interrupt preserves progress
 
@@ -290,7 +284,7 @@ The key difference from `abort()` is what happens to composite state. In a seque
 - **With `interrupt()`**: A's `SUCCESS` is preserved. On the next tick, the sequence skips A and re-ticks B (which starts a fresh SDK call).
 
 ```typescript
-const tree = new BehaviorTree({ name: 'pipeline', root: mySequence });
+const tree = new BehaviorTree({ name: "pipeline", root: mySequence });
 await tree.tick(); // A succeeds, B starts agent call
 
 // Agent is taking too long — cancel without losing A's progress
@@ -309,9 +303,9 @@ await tree.tick(); // Skips A (cached), re-starts B
 - **Leaf nodes** (`ActionNode`) clear unsettled inflight state. `AgentNode` additionally aborts the active SDK controller but preserves `cachedStatus`.
 - **`BehaviorTree.interrupt()`** calls `root.interrupt()` and emits `tree:interrupt`. It does **not** trigger the `AbortController`, so `context.signal.aborted` remains `false`.
 
-### In the actor framework
+### In the application server
 
-The actor framework provides server-side interrupt support via `POST /api/interrupt` and client SDK methods. See [Actor Framework — Interrupts](guide-actor-framework.md#interrupts) for the full integration guide.
+The application server provides server-side interrupt support via `POST /api/interrupt` and client SDK methods. See [Application Server — Interrupts](guide-app-server.md#interrupts) for the full integration guide.
 
 ---
 
@@ -324,12 +318,12 @@ The actor framework provides server-side interrupt support via `POST /api/interr
 The scheduler stops on the first tick error:
 
 ```typescript
-import { TreeScheduler } from 'cartographer';
+import { TreeScheduler } from "cartographer";
 
 const scheduler = new TreeScheduler({
   tree,
-  schedule: { type: 'interval', delayMs: 1000 },
-  onError: 'stop', // default behavior
+  schedule: { type: "interval", delayMs: 1000 },
+  onError: "stop", // default behavior
 });
 ```
 
@@ -340,12 +334,12 @@ The scheduler logs the error via a `tick:error` event and keeps ticking:
 ```typescript
 const scheduler = new TreeScheduler({
   tree,
-  schedule: { type: 'interval', delayMs: 1000 },
-  onError: 'continue',
+  schedule: { type: "interval", delayMs: 1000 },
+  onError: "continue",
   maxCycles: 10,
 });
 
-scheduler.events.on('tick:error', ({ error, runCount }) => {
+scheduler.events.on("tick:error", ({ error, runCount }) => {
   console.error(`Tick ${runCount} failed:`, error.message);
 });
 
@@ -360,11 +354,11 @@ A function that receives the error and run count, and returns `'continue'` or `'
 ```typescript
 const scheduler = new TreeScheduler({
   tree,
-  schedule: { type: 'interval', delayMs: 1000 },
+  schedule: { type: "interval", delayMs: 1000 },
   onError: (error, runCount) => {
     console.error(`Error on run ${runCount}:`, error.message);
     // Stop after 3 consecutive errors
-    return runCount < 3 ? 'continue' : 'stop';
+    return runCount < 3 ? "continue" : "stop";
   },
 });
 ```
@@ -378,7 +372,7 @@ When the callback returns `'stop'`, the scheduler emits a `scheduler:stop` event
 ```typescript
 const scheduler = new TreeScheduler({
   tree,
-  schedule: { type: 'interval', delayMs: 100 },
+  schedule: { type: "interval", delayMs: 100 },
   maxCycles: 10,
   stopOnStatus: NodeStatus.SUCCESS,
 });
@@ -395,53 +389,49 @@ await scheduler.start();
 A production-grade resilient pipeline combines these patterns:
 
 ```typescript
-import {
-  TreeBuilder, TreeScheduler, NodeStatus,
-} from 'cartographer';
+import { TreeBuilder, TreeScheduler, NodeStatus } from "cartographer";
 
-const tree = new TreeBuilder('resilient-pipeline')
-  .sequence('main', (b) => {
+const tree = new TreeBuilder("resilient-pipeline")
+  .sequence("main", (b) => {
     // Guard: only proceed if enabled
-    b.condition('is-enabled', (ctx) =>
-      ctx.blackboard.get('enabled') === true,
-    );
+    b.condition("is-enabled", (ctx) => ctx.blackboard.get("enabled") === true);
 
     // Retry + timeout around the unreliable operation
-    b.retry('retry-fetch', { maxAttempts: 3, delayMs: 500 }, (b) => {
-      b.timeout('timeout-fetch', { timeoutMs: 5000 }, (b) => {
-        b.action('fetch-data', async (ctx) => {
+    b.retry("retry-fetch", { maxAttempts: 3, delayMs: 500 }, (b) => {
+      b.timeout("timeout-fetch", { timeoutMs: 5000 }, (b) => {
+        b.action("fetch-data", async (ctx) => {
           const data = await fetchFromApi();
-          ctx.blackboard.set('data', data);
+          ctx.blackboard.set("data", data);
           return NodeStatus.SUCCESS;
         });
       });
     });
 
     // Fallback processing
-    b.selector('process', (b) => {
-      b.action('fast-path', async (ctx) => {
-        const ok = await tryFastProcess(ctx.blackboard.get('data'));
+    b.selector("process", (b) => {
+      b.action("fast-path", async (ctx) => {
+        const ok = await tryFastProcess(ctx.blackboard.get("data"));
         return ok ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
       });
-      b.action('slow-path', async (ctx) => {
-        await slowProcess(ctx.blackboard.get('data'));
+      b.action("slow-path", async (ctx) => {
+        await slowProcess(ctx.blackboard.get("data"));
         return NodeStatus.SUCCESS;
       });
     });
   })
   .build();
 
-tree.blackboard.set('enabled', true);
+tree.blackboard.set("enabled", true);
 
 // Run on a schedule with error recovery
 const scheduler = new TreeScheduler({
   tree,
-  schedule: { type: 'interval', delayMs: 30_000 },
-  onError: 'continue',
+  schedule: { type: "interval", delayMs: 30_000 },
+  onError: "continue",
   abortOnStop: true,
 });
 
-tree.events.on('node:error', ({ node, error }) => {
+tree.events.on("node:error", ({ node, error }) => {
   console.error(`[${node.name}]`, error.message);
 });
 

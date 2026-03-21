@@ -20,7 +20,7 @@ Flips the child's terminal status.
 **Config:** `DecoratorConfig` (no extra fields).
 
 | Child returns | Inverter returns |
-|---------------|------------------|
+| ------------- | ---------------- |
 | SUCCESS       | FAILURE          |
 | FAILURE       | SUCCESS          |
 | RUNNING       | RUNNING          |
@@ -28,8 +28,8 @@ Flips the child's terminal status.
 **Builder:**
 
 ```typescript
-builder.inverter('not-busy', (b) => {
-  b.condition('is-busy', (ctx) => ctx.blackboard.get('busy') === true);
+builder.inverter("not-busy", (b) => {
+  b.condition("is-busy", (ctx) => ctx.blackboard.get("busy") === true);
 });
 ```
 
@@ -43,8 +43,8 @@ Repeats child execution a fixed number of times or until a target status is reac
 
 ```typescript
 interface RepeatConfig extends DecoratorConfig {
-  count?: number;            // Max iterations (default: Infinity)
-  untilStatus?: NodeStatus;  // Stop early when child returns this status
+  count?: number; // Max iterations (default: Infinity)
+  untilStatus?: NodeStatus; // Stop early when child returns this status
 }
 ```
 
@@ -54,18 +54,18 @@ interface RepeatConfig extends DecoratorConfig {
 - If the child returns `RUNNING`, immediately returns `RUNNING`. The iteration counter persists across ticks — when the child completes on a subsequent tick, the repeat resumes at the same iteration rather than restarting from zero.
 - If `untilStatus` is set and the child returns that status, returns that status immediately.
 - Otherwise returns the last child status after all iterations complete.
-- Counter resets on completion, `untilStatus` match, `reset()`, or `abort()`. Counter is *preserved* on `interrupt()` — see [Interrupt Behavior](#interrupt-behavior) below.
+- Counter resets on completion, `untilStatus` match, `reset()`, or `abort()`. Counter is _preserved_ on `interrupt()` — see [Interrupt Behavior](#interrupt-behavior) below.
 
 **Builder:**
 
 ```typescript
-builder.repeat('poll-3-times', { count: 3 }, (b) => {
-  b.action('check-status', checkStatus);
+builder.repeat("poll-3-times", { count: 3 }, (b) => {
+  b.action("check-status", checkStatus);
 });
 
 // Repeat until success
-builder.repeat('until-done', { untilStatus: NodeStatus.SUCCESS }, (b) => {
-  b.action('try-task', tryTask);
+builder.repeat("until-done", { untilStatus: NodeStatus.SUCCESS }, (b) => {
+  b.action("try-task", tryTask);
 });
 ```
 
@@ -79,8 +79,8 @@ Retries a failing child up to a maximum number of attempts with an optional dela
 
 ```typescript
 interface RetryConfig extends DecoratorConfig {
-  maxAttempts: number;  // Required
-  delayMs?: number;     // Delay between retries
+  maxAttempts: number; // Required
+  delayMs?: number; // Delay between retries
 }
 ```
 
@@ -95,8 +95,8 @@ interface RetryConfig extends DecoratorConfig {
 **Builder:**
 
 ```typescript
-builder.retry('retry-api', { maxAttempts: 3, delayMs: 1000 }, (b) => {
-  b.action('call-api', callApi);
+builder.retry("retry-api", { maxAttempts: 3, delayMs: 1000 }, (b) => {
+  b.action("call-api", callApi);
 });
 ```
 
@@ -109,16 +109,16 @@ Forces `SUCCESS` regardless of the child's result.
 **Config:** `DecoratorConfig` (no extra fields).
 
 | Child returns | AlwaysSucceed returns |
-|---------------|----------------------|
-| SUCCESS       | SUCCESS              |
-| FAILURE       | SUCCESS              |
-| RUNNING       | RUNNING              |
+| ------------- | --------------------- |
+| SUCCESS       | SUCCESS               |
+| FAILURE       | SUCCESS               |
+| RUNNING       | RUNNING               |
 
 **Builder:**
 
 ```typescript
-builder.alwaysSucceed('optional-step', (b) => {
-  b.action('log-analytics', logAnalytics);
+builder.alwaysSucceed("optional-step", (b) => {
+  b.action("log-analytics", logAnalytics);
 });
 ```
 
@@ -131,7 +131,7 @@ Forces `FAILURE` regardless of the child's result.
 **Config:** `DecoratorConfig` (no extra fields).
 
 | Child returns | AlwaysFail returns |
-|---------------|--------------------|
+| ------------- | ------------------ |
 | SUCCESS       | FAILURE            |
 | FAILURE       | FAILURE            |
 | RUNNING       | RUNNING            |
@@ -139,8 +139,8 @@ Forces `FAILURE` regardless of the child's result.
 **Builder:**
 
 ```typescript
-builder.alwaysFail('force-fail', (b) => {
-  b.action('some-action', someAction);
+builder.alwaysFail("force-fail", (b) => {
+  b.action("some-action", someAction);
 });
 ```
 
@@ -154,7 +154,7 @@ Aborts the child if execution exceeds a time limit.
 
 ```typescript
 interface TimeoutConfig extends DecoratorConfig {
-  timeoutMs: number;  // Required
+  timeoutMs: number; // Required
 }
 ```
 
@@ -169,8 +169,8 @@ interface TimeoutConfig extends DecoratorConfig {
 **Builder:**
 
 ```typescript
-builder.timeout('time-limited', { timeoutMs: 5000 }, (b) => {
-  b.action('slow-task', slowTask);
+builder.timeout("time-limited", { timeoutMs: 5000 }, (b) => {
+  b.action("slow-task", slowTask);
 });
 ```
 
@@ -198,11 +198,15 @@ interface GuardConfig extends DecoratorConfig {
 **Builder:**
 
 ```typescript
-builder.guard('auth-guard', {
-  condition: (ctx) => ctx.blackboard.has('authToken'),
-}, (b) => {
-  b.action('protected-action', protectedAction);
-});
+builder.guard(
+  "auth-guard",
+  {
+    condition: (ctx) => ctx.blackboard.has("authToken"),
+  },
+  (b) => {
+    b.action("protected-action", protectedAction);
+  },
+);
 ```
 
 ---
@@ -214,37 +218,34 @@ Converts child `FAILURE` to `RUNNING`, creating an explicit suspension point. `S
 **Factory:**
 
 ```typescript
-import { untilSuccess } from 'cartographer';
+import { untilSuccess } from "cartographer";
 
 const node = untilSuccess(childNode);
 ```
 
 | Child returns | UntilSuccess returns |
-|---------------|---------------------|
-| SUCCESS       | SUCCESS             |
-| FAILURE       | RUNNING             |
-| RUNNING       | RUNNING             |
+| ------------- | -------------------- |
+| SUCCESS       | SUCCESS              |
+| FAILURE       | RUNNING              |
+| RUNNING       | RUNNING              |
 
 **When to use:**
 
-`untilSuccess` is designed for the [actor framework](guide-actor-framework.md) where a tree processes one message at a time and suspends between messages. Wrapping an `actionReceived` node in `untilSuccess` tells the processing loop "keep this tree alive and wait for more input."
+`untilSuccess` is designed for the [application server](guide-app-server.md) where a tree processes one message at a time and suspends between messages. Wrapping an `actionReceived` node in `untilSuccess` tells the processing loop "keep this tree alive and wait for more input."
 
 **How it differs from RepeatNode:**
 
-`RepeatNode` with `untilStatus: NodeStatus.SUCCESS` loops *internally* within a single tick -- it re-ticks its child immediately after each failure and never returns `RUNNING` to the caller due to a child failure. `untilSuccess` returns `RUNNING` to the tree, which causes the `runToCompletion()` loop to detect the suspension (via `hasInflightWork() === false`) and save state.
+`RepeatNode` with `untilStatus: NodeStatus.SUCCESS` loops _internally_ within a single tick -- it re-ticks its child immediately after each failure and never returns `RUNNING` to the caller due to a child failure. `untilSuccess` returns `RUNNING` to the tree, which causes the `runToCompletion()` loop to detect the suspension (via `hasInflightWork() === false`) and save state.
 
 ```typescript
-import { untilSuccess, actionReceived } from 'cartographer';
-import { SelectorNode } from 'cartographer';
+import { untilSuccess, actionReceived } from "cartographer";
+import { SelectorNode } from "cartographer";
 
 // Wait for user to approve or reject
 const waitForDecision = untilSuccess(
   new SelectorNode({
-    name: 'decision',
-    children: [
-      actionReceived('approve'),
-      actionReceived('reject'),
-    ],
+    name: "decision",
+    children: [actionReceived("approve"), actionReceived("reject")],
   }),
 );
 ```
@@ -266,10 +267,10 @@ The remaining decorators (InverterNode, AlwaysSucceedNode, AlwaysFailNode, Until
 
 `RepeatNode` and `RetryNode` preserve their counters on interrupt — this is a key behavioral difference from `abort()`:
 
-| Decorator    | On `abort()`             | On `interrupt()`           |
-|--------------|--------------------------|----------------------------|
-| `RepeatNode` | Counter resets to 0      | Counter preserved          |
-| `RetryNode`  | Attempt counter resets   | Attempt counter preserved  |
+| Decorator    | On `abort()`           | On `interrupt()`          |
+| ------------ | ---------------------- | ------------------------- |
+| `RepeatNode` | Counter resets to 0    | Counter preserved         |
+| `RetryNode`  | Attempt counter resets | Attempt counter preserved |
 
 This means an interrupted retry resumes at the same attempt count, and an interrupted repeat resumes at the same iteration. The interrupted child restarts fresh (its inflight state is cleared), but the decorator does not count the interruption as a failed attempt or completed iteration.
 
@@ -282,9 +283,9 @@ This means an interrupted retry resumes at the same attempt count, and an interr
 Wrap a retry in a timeout to cap the total wall-clock time across all attempts:
 
 ```typescript
-builder.timeout('timed-retry', { timeoutMs: 10000 }, (b) => {
-  b.retry('retry-fetch', { maxAttempts: 3, delayMs: 2000 }, (b) => {
-    b.action('fetch-data', fetchData);
+builder.timeout("timed-retry", { timeoutMs: 10000 }, (b) => {
+  b.retry("retry-fetch", { maxAttempts: 3, delayMs: 2000 }, (b) => {
+    b.action("fetch-data", fetchData);
   });
 });
 ```
@@ -294,14 +295,18 @@ builder.timeout('timed-retry', { timeoutMs: 10000 }, (b) => {
 Gate an expensive agent call behind a budget check:
 
 ```typescript
-builder.guard('check-budget', {
-  condition: (ctx) => (ctx.blackboard.get<number>('spent') ?? 0) < 1.0,
-}, (b) => {
-  b.agent('expensive-agent', {
-    prompt: 'Analyze the data',
-    options: { maxBudgetUsd: 0.50 },
-  });
-});
+builder.guard(
+  "check-budget",
+  {
+    condition: (ctx) => (ctx.blackboard.get<number>("spent") ?? 0) < 1.0,
+  },
+  (b) => {
+    b.agent("expensive-agent", {
+      prompt: "Analyze the data",
+      options: { maxBudgetUsd: 0.5 },
+    });
+  },
+);
 ```
 
 ---

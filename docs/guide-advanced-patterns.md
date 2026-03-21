@@ -419,7 +419,7 @@ Every node exposes two methods for introspecting async work:
 At the tree level:
 
 ```typescript
-const tree = new BehaviorTree({ name: 'test', root: myRoot });
+const tree = new BehaviorTree({ name: "test", root: myRoot });
 await tree.tick();
 
 if (tree.hasInflightWork()) {
@@ -433,20 +433,20 @@ These are primarily used by `TreeActor.runToCompletion()` to distinguish between
 
 ## Content Hashing and Serialization
 
-The [actor framework](guide-actor-framework.md) serializes tree execution state between messages using content-based Merkle hashing.
+The [application server](guide-app-server.md) serializes tree execution state between messages using content-based Merkle hashing.
 
 ### Content Hashing
 
 Every node computes a deterministic hash from its type, name, configuration, and children's hashes:
 
 ```typescript
-import { computeContentHash } from 'cartographer';
+import { computeContentHash } from "cartographer";
 
 // Leaf nodes hash from type + name
-const hash = computeContentHash('ActionNode', 'fetch-data');
+const hash = computeContentHash("ActionNode", "fetch-data");
 
 // Composites include ordered children hashes
-const seqHash = computeContentHash('SequenceNode', [child1.contentHash(), child2.contentHash()]);
+const seqHash = computeContentHash("SequenceNode", [child1.contentHash(), child2.contentHash()]);
 ```
 
 The root hash (`tree.rootHash`) fingerprints the entire tree topology. Same factory output produces the same root hash.
@@ -454,7 +454,7 @@ The root hash (`tree.rootHash`) fingerprints the entire tree topology. Same fact
 ### Tree Serialization
 
 ```typescript
-import { serializeTree, restoreTree, buildHashIndex } from 'cartographer';
+import { serializeTree, restoreTree, buildHashIndex } from "cartographer";
 
 // Serialize: walks the tree, collects each node's state keyed by content hash
 const state = serializeTree(tree.root, tree.rootHash);
@@ -471,7 +471,7 @@ Duplicate content hashes (e.g., two `ActionNode` instances with the same name) a
 
 ## Next Steps
 
-- [Actor Framework](guide-actor-framework.md) — TreeActor, ActorServer, StateStore, and client SDK.
+- [Application Server](guide-app-server.md) — TreeActor, ActorServer, StateStore, and client SDK.
 - [TreeContext and Context Layering](guide-context.md) — How context overrides propagate through the tree.
 - [Elicitation](guide-elicitation.md) — Handling MCP server input requests.
 - [Building Trees](guide-building-trees.md) — Builder API, registry references, and direct instantiation compared side-by-side.

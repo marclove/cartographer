@@ -74,14 +74,14 @@ import type { TypedEventEmitter, TreeEvents } from "cartographer";
 
 ### Emitter interface
 
-| Method                    | Description                                    |
-| ------------------------- | ---------------------------------------------- |
-| `on<K>(event, listener)`  | Subscribe to an event.                         |
-| `off<K>(event, listener)` | Unsubscribe a listener.                        |
-| `emit<K>(event, data)`    | Emit an event (used internally).               |
-| `onAny(listener)`         | Subscribe to all events (wildcard listener).   |
-| `offAny(listener)`        | Unsubscribe a wildcard listener.               |
-| `removeAllListeners()`    | Clear all subscriptions.                       |
+| Method                    | Description                                  |
+| ------------------------- | -------------------------------------------- |
+| `on<K>(event, listener)`  | Subscribe to an event.                       |
+| `off<K>(event, listener)` | Unsubscribe a listener.                      |
+| `emit<K>(event, data)`    | Emit an event (used internally).             |
+| `onAny(listener)`         | Subscribe to all events (wildcard listener). |
+| `offAny(listener)`        | Unsubscribe a wildcard listener.             |
+| `removeAllListeners()`    | Clear all subscriptions.                     |
 
 ---
 
@@ -269,7 +269,10 @@ See [Elicitation](guide-agent-integration.md#elicitation) for how to provide han
 Fired when a `BehaviorTree` is constructed, after ID uniqueness validation passes.
 
 ```typescript
-{ tree: string; root: string }
+{
+  tree: string;
+  root: string;
+}
 ```
 
 ### `tree:tick`
@@ -277,7 +280,11 @@ Fired when a `BehaviorTree` is constructed, after ID uniqueness validation passe
 Fired after each `BehaviorTree.tick()` completes, with the final status and duration.
 
 ```typescript
-{ tree: string; status: NodeStatus; durationMs: number }
+{
+  tree: string;
+  status: NodeStatus;
+  durationMs: number;
+}
 ```
 
 ### `tree:reset`
@@ -285,7 +292,9 @@ Fired after each `BehaviorTree.tick()` completes, with the final status and dura
 Fired when `BehaviorTree.reset()` is called.
 
 ```typescript
-{ tree: string }
+{
+  tree: string;
+}
 ```
 
 ### `tree:abort`
@@ -293,7 +302,9 @@ Fired when `BehaviorTree.reset()` is called.
 Fired when `BehaviorTree.abort()` is called.
 
 ```typescript
-{ tree: string }
+{
+  tree: string;
+}
 ```
 
 ### `tree:interrupt`
@@ -301,7 +312,9 @@ Fired when `BehaviorTree.abort()` is called.
 Fired when `BehaviorTree.interrupt()` is called. Unlike `tree:abort`, the tree remains tickable without needing `reset()`.
 
 ```typescript
-{ tree: string }
+{
+  tree: string;
+}
 ```
 
 ### `tree:tick:skipped`
@@ -309,7 +322,9 @@ Fired when `BehaviorTree.interrupt()` is called. Unlike `tree:abort`, the tree r
 Fired when a scheduled tick is skipped because the previous tick is still in progress (requires `skipOnOverlap: true` on the scheduler).
 
 ```typescript
-{ timestamp: number }
+{
+  timestamp: number;
+}
 ```
 
 ### `blackboard:keys`
@@ -325,7 +340,12 @@ Fired when blackboard keys are enumerated.
 Fired when a value is read from the blackboard.
 
 ```typescript
-{ key: string; value: unknown; hit: boolean; source: string }
+{
+  key: string;
+  value: unknown;
+  hit: boolean;
+  source: string;
+}
 ```
 
 ### `blackboard:write`
@@ -354,10 +374,13 @@ Fired when an agent strategy makes a decision.
 
 ### `client:event`
 
-Fired by `emitToClient` nodes when they push data to the client. Used by the [actor framework](guide-actor-framework.md) SSE endpoint to deliver real-time updates.
+Fired by `emitToClient` nodes when they push data to the client. Used by the [application server](guide-app-server.md) SSE endpoint to deliver real-time updates.
 
 ```typescript
-{ name: string; data: unknown }
+{
+  name: string;
+  data: unknown;
+}
 ```
 
 ### `message:processed`
@@ -365,15 +388,20 @@ Fired by `emitToClient` nodes when they push data to the client. Used by the [ac
 Fired by `ActorServer` when a message completes processing successfully. Subscribers (including the client SDK's `actionAndWait`) use this to detect completion.
 
 ```typescript
-{ messageId: string; treeStatus: string }
+{
+  messageId: string;
+  treeStatus: string;
+}
 ```
 
 ### `message:interrupted`
 
-Fired by `ActorServer` when an in-progress message is interrupted via `POST /api/interrupt`. Fires *before* the `message:processed` event, giving the client context for why the tree is now suspended.
+Fired by `ActorServer` when an in-progress message is interrupted via `POST /api/interrupt`. Fires _before_ the `message:processed` event, giving the client context for why the tree is now suspended.
 
 ```typescript
-{ messageId: string }
+{
+  messageId: string;
+}
 ```
 
 ### `message:failed`
@@ -381,7 +409,10 @@ Fired by `ActorServer` when an in-progress message is interrupted via `POST /api
 Fired by `ActorServer` when processing a message throws an error.
 
 ```typescript
-{ messageId: string; error: string }
+{
+  messageId: string;
+  error: string;
+}
 ```
 
 ---

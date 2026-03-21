@@ -9,7 +9,7 @@ All decorators extend `BaseNode`. All provide `reset()` and `abort()` methods th
 ## InverterNode
 
 ```typescript
-import { InverterNode } from 'cartographer';
+import { InverterNode } from "cartographer";
 ```
 
 **Constructor:** `new InverterNode(config: DecoratorConfig)`
@@ -17,14 +17,14 @@ import { InverterNode } from 'cartographer';
 **DecoratorConfig:**
 
 | Field   | Type        | Required |
-|---------|-------------|----------|
+| ------- | ----------- | -------- |
 | `name`  | `string`    | Yes      |
 | `child` | `BTreeNode` | Yes      |
 
 **Status mapping:**
 
 | Child   | Output  |
-|---------|---------|
+| ------- | ------- |
 | SUCCESS | FAILURE |
 | FAILURE | SUCCESS |
 | RUNNING | RUNNING |
@@ -34,7 +34,7 @@ import { InverterNode } from 'cartographer';
 ## RepeatNode
 
 ```typescript
-import { RepeatNode } from 'cartographer';
+import { RepeatNode } from "cartographer";
 ```
 
 **Constructor:** `new RepeatNode(config: RepeatConfig)`
@@ -42,7 +42,7 @@ import { RepeatNode } from 'cartographer';
 **RepeatConfig:**
 
 | Field         | Type         | Required | Default    |
-|---------------|--------------|----------|------------|
+| ------------- | ------------ | -------- | ---------- |
 | `name`        | `string`     | Yes      | --         |
 | `child`       | `BTreeNode`  | Yes      | --         |
 | `count`       | `number`     | No       | `Infinity` |
@@ -55,7 +55,7 @@ import { RepeatNode } from 'cartographer';
 ## RetryNode
 
 ```typescript
-import { RetryNode } from 'cartographer';
+import { RetryNode } from "cartographer";
 ```
 
 **Constructor:** `new RetryNode(config: RetryConfig)`
@@ -63,7 +63,7 @@ import { RetryNode } from 'cartographer';
 **RetryConfig:**
 
 | Field         | Type        | Required | Default |
-|---------------|-------------|----------|---------|
+| ------------- | ----------- | -------- | ------- |
 | `name`        | `string`    | Yes      | --      |
 | `child`       | `BTreeNode` | Yes      | --      |
 | `maxAttempts` | `number`    | Yes      | --      |
@@ -76,7 +76,7 @@ import { RetryNode } from 'cartographer';
 ## AlwaysSucceedNode
 
 ```typescript
-import { AlwaysSucceedNode } from 'cartographer';
+import { AlwaysSucceedNode } from "cartographer";
 ```
 
 **Constructor:** `new AlwaysSucceedNode(config: DecoratorConfig)`
@@ -84,14 +84,14 @@ import { AlwaysSucceedNode } from 'cartographer';
 **DecoratorConfig:**
 
 | Field   | Type        | Required |
-|---------|-------------|----------|
+| ------- | ----------- | -------- |
 | `name`  | `string`    | Yes      |
 | `child` | `BTreeNode` | Yes      |
 
 **Status mapping:**
 
 | Child   | Output  |
-|---------|---------|
+| ------- | ------- |
 | SUCCESS | SUCCESS |
 | FAILURE | SUCCESS |
 | RUNNING | RUNNING |
@@ -101,7 +101,7 @@ import { AlwaysSucceedNode } from 'cartographer';
 ## AlwaysFailNode
 
 ```typescript
-import { AlwaysFailNode } from 'cartographer';
+import { AlwaysFailNode } from "cartographer";
 ```
 
 **Constructor:** `new AlwaysFailNode(config: DecoratorConfig)`
@@ -109,14 +109,14 @@ import { AlwaysFailNode } from 'cartographer';
 **DecoratorConfig:**
 
 | Field   | Type        | Required |
-|---------|-------------|----------|
+| ------- | ----------- | -------- |
 | `name`  | `string`    | Yes      |
 | `child` | `BTreeNode` | Yes      |
 
 **Status mapping:**
 
 | Child   | Output  |
-|---------|---------|
+| ------- | ------- |
 | SUCCESS | FAILURE |
 | FAILURE | FAILURE |
 | RUNNING | RUNNING |
@@ -126,7 +126,7 @@ import { AlwaysFailNode } from 'cartographer';
 ## TimeoutNode
 
 ```typescript
-import { TimeoutNode } from 'cartographer';
+import { TimeoutNode } from "cartographer";
 ```
 
 **Constructor:** `new TimeoutNode(config: TimeoutConfig)`
@@ -134,7 +134,7 @@ import { TimeoutNode } from 'cartographer';
 **TimeoutConfig:**
 
 | Field       | Type        | Required |
-|-------------|-------------|----------|
+| ----------- | ----------- | -------- |
 | `name`      | `string`    | Yes      |
 | `child`     | `BTreeNode` | Yes      |
 | `timeoutMs` | `number`    | Yes      |
@@ -146,18 +146,18 @@ import { TimeoutNode } from 'cartographer';
 ## GuardNode
 
 ```typescript
-import { GuardNode } from 'cartographer';
+import { GuardNode } from "cartographer";
 ```
 
 **Constructor:** `new GuardNode(config: GuardConfig)`
 
 **GuardConfig:**
 
-| Field       | Type                                                      | Required |
-|-------------|-----------------------------------------------------------|----------|
-| `name`      | `string`                                                  | Yes      |
-| `child`     | `BTreeNode`                                               | Yes      |
-| `condition` | `(context: TreeContext) => Promise<boolean> \| boolean`    | Yes      |
+| Field       | Type                                                    | Required |
+| ----------- | ------------------------------------------------------- | -------- |
+| `name`      | `string`                                                | Yes      |
+| `child`     | `BTreeNode`                                             | Yes      |
+| `condition` | `(context: TreeContext) => Promise<boolean> \| boolean` | Yes      |
 
 **Behavior:** Evaluates the condition before ticking the child. If the condition returns false or throws, calls `child.abort()` (to clear any in-flight state) and returns FAILURE. If the condition returns true, ticks the child and returns its status. Async conditions use the inflight pattern (return RUNNING on first tick, poll on subsequent ticks).
 
@@ -166,19 +166,19 @@ import { GuardNode } from 'cartographer';
 ## UntilSuccessNode
 
 ```typescript
-import { untilSuccess, UntilSuccessNode } from 'cartographer';
+import { untilSuccess, UntilSuccessNode } from "cartographer";
 ```
 
 **Factory:** `untilSuccess(child: BTreeNode): UntilSuccessNode`
 
 **Constructor:** `new UntilSuccessNode(config: DecoratorConfig)`
 
-**Behavior:** Converts child FAILURE to RUNNING, creating an explicit suspension point. SUCCESS and RUNNING from the child pass through unchanged. Designed for the [actor framework](../guide-actor-framework.md) where trees suspend between messages.
+**Behavior:** Converts child FAILURE to RUNNING, creating an explicit suspension point. SUCCESS and RUNNING from the child pass through unchanged. Designed for the [application server](../guide-app-server.md) where trees suspend between messages.
 
 | Child returns | UntilSuccess returns |
-|---------------|---------------------|
-| SUCCESS       | SUCCESS             |
-| FAILURE       | RUNNING             |
-| RUNNING       | RUNNING             |
+| ------------- | -------------------- |
+| SUCCESS       | SUCCESS              |
+| FAILURE       | RUNNING              |
+| RUNNING       | RUNNING              |
 
 Distinct from `RepeatNode` with `untilStatus: SUCCESS` — RepeatNode loops internally within a single tick and never returns RUNNING due to child failure. UntilSuccessNode returns RUNNING to the caller so the processing loop can detect the suspension.

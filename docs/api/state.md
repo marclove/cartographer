@@ -1,6 +1,6 @@
 # State API Reference
 
-Persistence primitives for saving tree session state, acquiring distributed locks, and streaming events. Used by the [actor framework](../guide-actor-framework.md) to survive restarts and coordinate across replicas.
+Persistence primitives for saving tree session state, acquiring distributed locks, and streaming events. Used by the [application server](../guide-app-server.md) to survive restarts and coordinate across replicas.
 
 ---
 
@@ -14,16 +14,16 @@ Contract for state persistence, locking, and event streaming. Two implementation
 
 ### Methods
 
-| Method         | Signature                                                                    | Description                                                           |
-| -------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `getState`     | `(key: string): Promise<TreeSessionState \| null>`                           | Retrieve the session state for a key, or `null` if none exists.       |
-| `saveState`    | `(key: string, state: TreeSessionState): Promise<void>`                      | Persist session state under the given key.                            |
-| `deleteState`  | `(key: string): Promise<void>`                                               | Remove persisted state for a key.                                     |
-| `listKeys`     | `(): Promise<string[]>`                                                      | List all stored session keys.                                         |
-| `acquireLock`  | `(key: string, requestId: string, ttlMs: number): Promise<boolean>`          | Try to acquire a lock. Returns `true` on success, `false` if held.    |
-| `releaseLock`  | `(key: string, requestId: string): Promise<void>`                            | Release a lock. Only succeeds if `requestId` matches the holder.      |
-| `appendEvents` | `(key: string, events: TreeEvent[]): Promise<void>`                          | Append events to the stream for a key.                                |
-| `readEvents`   | `(key: string, lastEventId?: string): AsyncIterable<TreeEvent>`              | Read events from a key's stream, yielding new events as they arrive.  |
+| Method         | Signature                                                           | Description                                                          |
+| -------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `getState`     | `(key: string): Promise<TreeSessionState \| null>`                  | Retrieve the session state for a key, or `null` if none exists.      |
+| `saveState`    | `(key: string, state: TreeSessionState): Promise<void>`             | Persist session state under the given key.                           |
+| `deleteState`  | `(key: string): Promise<void>`                                      | Remove persisted state for a key.                                    |
+| `listKeys`     | `(): Promise<string[]>`                                             | List all stored session keys.                                        |
+| `acquireLock`  | `(key: string, requestId: string, ttlMs: number): Promise<boolean>` | Try to acquire a lock. Returns `true` on success, `false` if held.   |
+| `releaseLock`  | `(key: string, requestId: string): Promise<void>`                   | Release a lock. Only succeeds if `requestId` matches the holder.     |
+| `appendEvents` | `(key: string, events: TreeEvent[]): Promise<void>`                 | Append events to the stream for a key.                               |
+| `readEvents`   | `(key: string, lastEventId?: string): AsyncIterable<TreeEvent>`     | Read events from a key's stream, yielding new events as they arrive. |
 
 ---
 
@@ -35,13 +35,13 @@ import type { TreeSessionState } from "cartographer";
 
 Persisted snapshot of a tree's session, saved and restored by `TreeActor`.
 
-| Field           | Type                   | Description                                                        |
-| --------------- | ---------------------- | ------------------------------------------------------------------ |
-| `blackboard`    | `Record<string, unknown>` | Serialized blackboard key-value pairs.                          |
-| `treeState`     | `SerializedTreeState`  | Serialized node execution state (statuses, composite cycle state). |
-| `createdAt`     | `number`               | Unix timestamp when the session was created.                       |
-| `lastMessageAt` | `number`               | Unix timestamp of the most recent message processed.               |
-| `held`          | `boolean` (optional)   | When `true`, the tree is held after interrupt — tick messages are no-ops. |
+| Field           | Type                      | Description                                                               |
+| --------------- | ------------------------- | ------------------------------------------------------------------------- |
+| `blackboard`    | `Record<string, unknown>` | Serialized blackboard key-value pairs.                                    |
+| `treeState`     | `SerializedTreeState`     | Serialized node execution state (statuses, composite cycle state).        |
+| `createdAt`     | `number`                  | Unix timestamp when the session was created.                              |
+| `lastMessageAt` | `number`                  | Unix timestamp of the most recent message processed.                      |
+| `held`          | `boolean` (optional)      | When `true`, the tree is held after interrupt — tick messages are no-ops. |
 
 ---
 
@@ -53,11 +53,11 @@ import type { TreeEvent } from "cartographer";
 
 A single persisted event from a tree session's event stream.
 
-| Field       | Type      | Description                       |
-| ----------- | --------- | --------------------------------- |
-| `id`        | `string`  | Unique event identifier.          |
-| `type`      | `string`  | Event type (e.g. `"node:exit"`).  |
-| `data`      | `unknown` | Event payload.                    |
+| Field       | Type      | Description                            |
+| ----------- | --------- | -------------------------------------- |
+| `id`        | `string`  | Unique event identifier.               |
+| `type`      | `string`  | Event type (e.g. `"node:exit"`).       |
+| `data`      | `unknown` | Event payload.                         |
 | `timestamp` | `number`  | Unix timestamp when event was emitted. |
 
 ---
@@ -76,9 +76,9 @@ In-memory `StateStore` for development and testing. All data lives in `Map` obje
 new InMemoryStateStore(options?: { maxEvents?: number })
 ```
 
-| Option      | Type     | Default | Description                                    |
-| ----------- | -------- | ------- | ---------------------------------------------- |
-| `maxEvents` | `number` | `10000` | Maximum events retained per session stream.    |
+| Option      | Type     | Default | Description                                 |
+| ----------- | -------- | ------- | ------------------------------------------- |
+| `maxEvents` | `number` | `10000` | Maximum events retained per session stream. |
 
 ### Behavior
 
@@ -121,21 +121,21 @@ new RedisStateStore(options: RedisStateStoreOptions)
 
 ### RedisStateStoreOptions
 
-| Field       | Type     | Required | Default           | Description                                    |
-| ----------- | -------- | -------- | ----------------- | ---------------------------------------------- |
-| `redis`     | `Redis`  | Yes      | —                 | An existing `ioredis` client instance.         |
-| `maxEvents` | `number` | No       | `10000`           | Maximum events retained per stream (`XTRIM`).  |
-| `keyPrefix` | `string` | No       | `"cartographer:"` | Prefix applied to all Redis keys.              |
+| Field       | Type     | Required | Default           | Description                                   |
+| ----------- | -------- | -------- | ----------------- | --------------------------------------------- |
+| `redis`     | `Redis`  | Yes      | —                 | An existing `ioredis` client instance.        |
+| `maxEvents` | `number` | No       | `10000`           | Maximum events retained per stream (`XTRIM`). |
+| `keyPrefix` | `string` | No       | `"cartographer:"` | Prefix applied to all Redis keys.             |
 
 ### Key Layout
 
 All Redis keys are prefixed with `keyPrefix` (default `cartographer:`):
 
-| Pattern                    | Redis Type | Purpose               |
-| -------------------------- | ---------- | --------------------- |
-| `{prefix}state:{key}`     | String     | JSON-serialized state |
-| `{prefix}lock:{key}`      | String     | Distributed lock      |
-| `{prefix}events:{key}`    | Stream     | Event stream          |
+| Pattern                | Redis Type | Purpose               |
+| ---------------------- | ---------- | --------------------- |
+| `{prefix}state:{key}`  | String     | JSON-serialized state |
+| `{prefix}lock:{key}`   | String     | Distributed lock      |
+| `{prefix}events:{key}` | Stream     | Event stream          |
 
 ### Behavior
 
@@ -148,9 +148,9 @@ All Redis keys are prefixed with `keyPrefix` (default `cartographer:`):
 
 Implements all `StateStore` methods, plus:
 
-| Method  | Signature            | Description                          |
-| ------- | -------------------- | ------------------------------------ |
-| `close` | `(): Promise<void>`  | Disconnect the Redis client.         |
+| Method  | Signature           | Description                  |
+| ------- | ------------------- | ---------------------------- |
+| `close` | `(): Promise<void>` | Disconnect the Redis client. |
 
 ### Example
 

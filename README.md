@@ -6,7 +6,7 @@ Cartographer is a TypeScript framework for building applications where AI agents
 
 Most agentic frameworks are designed for fully-automated pipelines or local CLI/TUI tools. Cartographer takes a different approach: it's an application framework for production systems where humans and AI collaborate. The behavior tree gives you stronger guarantees than unconstrained agent loops — sequences, selectors, guards, and timeouts enforce workflow structure while agents decide tactics at strategic decision points. You can always explain exactly what path the tree took and why.
 
-The actor framework turns trees into persistent HTTP services with SSE event streams and client SDKs for React, Svelte, or plain fetch. Build real applications where frontends connect to AI-driven backends in real time — contract negotiation tools where agents draft and humans approve, multi-step onboarding flows that adapt to each user, fraud investigation workbenches that surface evidence and wait for analyst decisions, collaborative writing environments, logistics coordinators that replan routes when constraints change, or clinical trial matching systems where AI screens candidates and physicians make final calls.
+The application server turns trees into persistent HTTP services with SSE event streams and client SDKs for React, Svelte, or plain fetch. Build real applications where frontends connect to AI-driven backends in real time — contract negotiation tools where agents draft and humans approve, multi-step onboarding flows that adapt to each user, fraud investigation workbenches that surface evidence and wait for analyst decisions, collaborative writing environments, logistics coordinators that replan routes when constraints change, or clinical trial matching systems where AI screens candidates and physicians make final calls.
 
 ```bash
 npm install cartographer
@@ -17,22 +17,22 @@ npm install cartographer
 A support ticket pipeline that classifies incoming tickets, routes them to specialized agents, retries on failure, and optionally escalates urgent cases:
 
 ```typescript
-import { z } from 'zod/v4';
-import { TreeBuilder, NodeStatus } from 'cartographer';
+import { z } from "zod/v4";
+import { TreeBuilder, NodeStatus } from "cartographer";
 
-const tree = new TreeBuilder('support-pipeline')
-  .sequence('triage', (b) => {
+const tree = new TreeBuilder("support-pipeline")
+  .sequence("triage", (b) => {
     // Step 1: AI classifies the ticket
-    b.agent('classify', {
-      prompt: (ctx) => `Classify this support ticket:\n${ctx.blackboard.get('ticket')}`,
+    b.agent("classify", {
+      prompt: (ctx) => `Classify this support ticket:\n${ctx.blackboard.get("ticket")}`,
       options: {
-        model: 'claude-haiku-4-5',
+        model: "claude-haiku-4-5",
         outputFormat: {
-          type: 'json_schema',
+          type: "json_schema",
           schema: z.toJSONSchema(
             z.object({
-              category: z.enum(['billing', 'technical', 'general']),
-              urgency: z.enum(['low', 'medium', 'high']),
+              category: z.enum(["billing", "technical", "general"]),
+              urgency: z.enum(["low", "medium", "high"]),
             }),
           ) as any,
         },
@@ -40,58 +40,62 @@ const tree = new TreeBuilder('support-pipeline')
     });
 
     // Step 2: Route to the right handler — first match wins
-    b.selector('route', (b) => {
-      b.sequence('billing-path', (b) => {
-        b.condition('is-billing', (ctx) => {
-          const c = ctx.blackboard.get<{ category: string }>('classify:output');
-          return c?.category === 'billing';
+    b.selector("route", (b) => {
+      b.sequence("billing-path", (b) => {
+        b.condition("is-billing", (ctx) => {
+          const c = ctx.blackboard.get<{ category: string }>("classify:output");
+          return c?.category === "billing";
         });
-        b.retry('billing-retry', { maxAttempts: 2 }, (b) => {
-          b.agent('handle-billing', {
-            prompt: (ctx) => `Draft a billing resolution for:\n${ctx.blackboard.get('ticket')}`,
-            options: { model: 'claude-sonnet-4-6' },
+        b.retry("billing-retry", { maxAttempts: 2 }, (b) => {
+          b.agent("handle-billing", {
+            prompt: (ctx) => `Draft a billing resolution for:\n${ctx.blackboard.get("ticket")}`,
+            options: { model: "claude-sonnet-4-6" },
           });
         });
       });
 
-      b.sequence('technical-path', (b) => {
-        b.condition('is-technical', (ctx) => {
-          const c = ctx.blackboard.get<{ category: string }>('classify:output');
-          return c?.category === 'technical';
+      b.sequence("technical-path", (b) => {
+        b.condition("is-technical", (ctx) => {
+          const c = ctx.blackboard.get<{ category: string }>("classify:output");
+          return c?.category === "technical";
         });
-        b.agent('diagnose', {
-          prompt: (ctx) => `Diagnose this technical issue:\n${ctx.blackboard.get('ticket')}`,
-          options: { model: 'claude-sonnet-4-6', maxTurns: 10 },
+        b.agent("diagnose", {
+          prompt: (ctx) => `Diagnose this technical issue:\n${ctx.blackboard.get("ticket")}`,
+          options: { model: "claude-sonnet-4-6", maxTurns: 10 },
         });
       });
 
       // Default path — always succeeds as the final branch
-      b.agent('handle-general', {
-        prompt: (ctx) => `Draft a helpful response to:\n${ctx.blackboard.get('ticket')}`,
-        options: { model: 'claude-haiku-4-5' },
+      b.agent("handle-general", {
+        prompt: (ctx) => `Draft a helpful response to:\n${ctx.blackboard.get("ticket")}`,
+        options: { model: "claude-haiku-4-5" },
       });
     });
 
     // Step 3: Escalation runs only for urgent tickets; wrapped so it
     // can't fail the pipeline even if the agent errors
-    b.alwaysSucceed('optional-escalation', (b) => {
-      b.guard('urgency-gate', {
-        condition: (ctx) => {
-          const c = ctx.blackboard.get<{ urgency: string }>('classify:output');
-          return c?.urgency === 'high';
+    b.alwaysSucceed("optional-escalation", (b) => {
+      b.guard(
+        "urgency-gate",
+        {
+          condition: (ctx) => {
+            const c = ctx.blackboard.get<{ urgency: string }>("classify:output");
+            return c?.urgency === "high";
+          },
         },
-      }, (b) => {
-        b.agent('escalate', {
-          prompt: 'Summarize the ticket and recommended actions for the on-call team.',
-          options: { model: 'claude-haiku-4-5' },
-        });
-      });
+        (b) => {
+          b.agent("escalate", {
+            prompt: "Summarize the ticket and recommended actions for the on-call team.",
+            options: { model: "claude-haiku-4-5" },
+          });
+        },
+      );
     });
   })
   .build();
 
 // Run the tree
-tree.blackboard.set('ticket', 'I was charged twice for my subscription last month.');
+tree.blackboard.set("ticket", "I was charged twice for my subscription last month.");
 const { status, blackboard } = await tree.run();
 ```
 
@@ -105,47 +109,51 @@ This tree is fully deterministic in its control flow. The routing, retries, guar
 
 **Observable by default.** Every node tick, agent call, tool use, blackboard mutation, and strategy decision emits a typed event. Stream these to dashboards, logging systems, or client applications over SSE. Production-grade NDJSON structured logging makes every decision traceable and queryable. A real-time dashboard provides tree visualization, an event timeline, and a blackboard inspector.
 
-**Persistent, interactive sessions.** The actor framework turns trees into long-running, message-driven applications. State serializes between requests. Frontends connect via a client SDK with SSE streaming. Trees can pause and wait for user input, making human-in-the-loop workflows a first-class pattern.
+**Persistent, interactive sessions.** The application server turns trees into long-running, message-driven services. State serializes between requests. Frontends connect via a client SDK with SSE streaming. Trees can pause and wait for user input, making human-in-the-loop workflows a first-class pattern.
 
 **Full Claude Agent SDK integration.** Agent nodes invoke Claude with structured output, tool use, budget controls, and MCP servers. A built-in MCP server gives agents read/write access to the workflow's shared state, so agents can both consume and produce data that other nodes use. Agent strategies let AI make runtime control flow decisions — selecting which branch to take or reordering children — within the tree's structural constraints.
 
 ## Building Interactive Applications
 
-Cartographer's actor framework turns workflows into persistent HTTP services. Trees can pause, wait for user decisions, and resume — enabling applications where humans and agents collaborate in real time.
+Cartographer's application server turns workflows into persistent HTTP services. Trees can pause, wait for user decisions, and resume — enabling applications where humans and agents collaborate in real time.
 
 ```typescript
 import {
-  ActorServer, BehaviorTree, SequenceNode, SelectorNode,
-  NodeStatus, actionReceived, untilSuccess, emitToClient,
-} from 'cartographer';
+  ActorServer,
+  BehaviorTree,
+  SequenceNode,
+  SelectorNode,
+  NodeStatus,
+  actionReceived,
+  untilSuccess,
+  emitToClient,
+} from "cartographer";
 
 const server = new ActorServer({
-  createTree: () => new BehaviorTree({
-    name: 'review-flow',
-    root: new SequenceNode({
-      name: 'main',
-      children: [
-        // Agent analyzes the document (AgentNode omitted for brevity)
-        // ...
+  createTree: () =>
+    new BehaviorTree({
+      name: "review-flow",
+      root: new SequenceNode({
+        name: "main",
+        children: [
+          // Agent analyzes the document (AgentNode omitted for brevity)
+          // ...
 
-        // Send findings to the connected client
-        emitToClient('show-review', (ctx) => ({
-          findings: ctx.blackboard.get('analysis'),
-        })),
+          // Send findings to the connected client
+          emitToClient("show-review", (ctx) => ({
+            findings: ctx.blackboard.get("analysis"),
+          })),
 
-        // Pause the tree and wait for a user decision
-        untilSuccess(
-          new SelectorNode({
-            name: 'await-decision',
-            children: [
-              actionReceived('approve'),
-              actionReceived('reject'),
-            ],
-          }),
-        ),
-      ],
+          // Pause the tree and wait for a user decision
+          untilSuccess(
+            new SelectorNode({
+              name: "await-decision",
+              children: [actionReceived("approve"), actionReceived("reject")],
+            }),
+          ),
+        ],
+      }),
     }),
-  }),
   port: 3148,
 });
 
@@ -155,10 +163,8 @@ await server.start();
 On the client side, React hooks connect your UI to the running tree. State streams in over SSE; actions flow back over HTTP. No manual event wiring — hooks handle the lifecycle.
 
 ```tsx
-import { useState } from 'react';
-import {
-  CartographerProvider, useAction, useClientEvent, useTreeStatus,
-} from '@cartographer/react';
+import { useState } from "react";
+import { CartographerProvider, useAction, useClientEvent, useTreeStatus } from "@cartographer/react";
 
 function App() {
   return (
@@ -170,25 +176,27 @@ function App() {
 
 function ReviewApp() {
   const [findings, setFindings] = useState<string[] | null>(null);
-  const approve = useAction('approve');
-  const reject = useAction('reject');
+  const approve = useAction("approve");
+  const reject = useAction("reject");
   const tree = useTreeStatus();
 
   // The tree pushes findings to the client when analysis is done
-  useClientEvent('show-review', (data) => {
+  useClientEvent("show-review", (data) => {
     setFindings((data as { findings: string[] }).findings);
   });
 
-  if (!findings) return <p>Analyzing document{tree?.status === 'running' ? '...' : ''}</p>;
+  if (!findings) return <p>Analyzing document{tree?.status === "running" ? "..." : ""}</p>;
 
   return (
     <div>
       <h2>Review Findings</h2>
       <ul>
-        {findings.map((f, i) => <li key={i}>{f}</li>)}
+        {findings.map((f, i) => (
+          <li key={i}>{f}</li>
+        ))}
       </ul>
-      <button onClick={() => approve.send({ comment: 'Ship it' })} disabled={approve.pending}>
-        {approve.pending ? 'Submitting...' : 'Approve'}
+      <button onClick={() => approve.send({ comment: "Ship it" })} disabled={approve.pending}>
+        {approve.pending ? "Submitting..." : "Approve"}
       </button>
       <button onClick={() => reject.send()} disabled={reject.pending}>
         Reject
@@ -207,12 +215,12 @@ State persists across requests. The tree rehydrates from a state store on each m
 `TreeScheduler` runs trees on intervals or cron schedules, with overlap protection, cycle limits, and configurable error policies:
 
 ```typescript
-import { TreeScheduler } from 'cartographer';
+import { TreeScheduler } from "cartographer";
 
 const scheduler = new TreeScheduler({
   tree,
-  schedule: { type: 'interval', delayMs: 60_000 },
-  onError: 'continue',
+  schedule: { type: "interval", delayMs: 60_000 },
+  onError: "continue",
 });
 
 await scheduler.start();
@@ -220,12 +228,12 @@ await scheduler.start();
 
 ## Packages
 
-| Package | Description |
-|---------|-------------|
-| `cartographer` | Core framework — nodes, composites, decorators, strategies, scheduler, actor, server, CLI |
-| `@cartographer/client` | Browser/Node client SDK for ActorServer (fetch + EventSource) |
-| `@cartographer/react` | React 19 hooks for connecting components to behavior trees |
-| `@cartographer/svelte` | Svelte 5 runes for connecting components to behavior trees |
+| Package                | Description                                                                               |
+| ---------------------- | ----------------------------------------------------------------------------------------- |
+| `cartographer`         | Core framework — nodes, composites, decorators, strategies, scheduler, actor, server, CLI |
+| `@cartographer/client` | Browser/Node client SDK for ActorServer (fetch + EventSource)                             |
+| `@cartographer/react`  | React 19 hooks for connecting components to behavior trees                                |
+| `@cartographer/svelte` | Svelte 5 runes for connecting components to behavior trees                                |
 
 ## Getting Started
 
@@ -236,17 +244,17 @@ npm install cartographer
 Requires Node.js 18+. An Anthropic API key is required for agent features (set `ANTHROPIC_API_KEY`).
 
 ```typescript
-import { TreeBuilder, NodeStatus } from 'cartographer';
+import { TreeBuilder, NodeStatus } from "cartographer";
 
-const tree = new TreeBuilder('hello')
-  .sequence('main', (b) => {
-    b.action('greet', (ctx) => {
-      ctx.blackboard.set('message', 'Hello from Cartographer');
+const tree = new TreeBuilder("hello")
+  .sequence("main", (b) => {
+    b.action("greet", (ctx) => {
+      ctx.blackboard.set("message", "Hello from Cartographer");
       return NodeStatus.SUCCESS;
     });
-    b.agent('expand', {
-      prompt: (ctx) => `Elaborate on: ${ctx.blackboard.get('message')}`,
-      options: { model: 'claude-haiku-4-5' },
+    b.agent("expand", {
+      prompt: (ctx) => `Elaborate on: ${ctx.blackboard.get("message")}`,
+      options: { model: "claude-haiku-4-5" },
     });
   })
   .build();
@@ -275,7 +283,7 @@ Comprehensive guides are available in the [`docs/`](docs/) directory:
 - [State and Observability](docs/guide-blackboard-and-events.md) — Shared state and the event system
 - [Context Layering](docs/guide-context.md) — TreeContext propagation and per-subtree overrides
 - [Error Handling](docs/guide-error-handling.md) — Error containment, recovery patterns, abort signals
-- [Actor Framework](docs/guide-actor-framework.md) — Persistent sessions, HTTP server, client SDK
+- [Application Server](docs/guide-app-server.md) — Persistent sessions, HTTP server, client SDK
 - [Scheduling](docs/guide-scheduler.md) — Interval, cron, and one-shot execution
 - [CLI Runner](docs/guide-cli.md) — Running, inspecting, and scaffolding trees
 - [Elicitation](docs/guide-elicitation.md) — Handling MCP server input requests
@@ -286,6 +294,7 @@ Comprehensive guides are available in the [`docs/`](docs/) directory:
 - [API Reference](docs/api/index.md) — Complete API documentation
 
 Two complete example applications are included:
+
 - [`apps/content-pipeline/`](apps/content-pipeline/) — Multi-agent support ticket triage with routing, retries, and structured output
 - [`apps/scheduled-monitor/`](apps/scheduled-monitor/) — Health monitoring with incident management on a scheduled loop
 

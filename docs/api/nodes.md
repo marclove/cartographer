@@ -22,10 +22,10 @@ Called via `super(name)` or `super(name, id)` in subclasses. When `id` is omitte
 
 ### Properties
 
-| Property | Type                | Description                                                                 |
-| -------- | ------------------- | --------------------------------------------------------------------------- |
+| Property | Type                | Description                                                                |
+| -------- | ------------------- | -------------------------------------------------------------------------- |
 | `id`     | `string` (readonly) | Unique identifier — auto-generated UUID unless a custom `id` was provided. |
-| `name`   | `string` (readonly) | Human-readable name, set via constructor.                                   |
+| `name`   | `string` (readonly) | Human-readable name, set via constructor.                                  |
 
 ### Public Methods
 
@@ -243,7 +243,7 @@ const coder = new AgentNode({
 import { actionReceived, ActionReceivedNode } from "cartographer";
 ```
 
-Synchronous, non-reactive leaf node for consuming action messages from the blackboard in the [actor framework](../guide-actor-framework.md).
+Synchronous, non-reactive leaf node for consuming action messages from the blackboard in the [application server](../guide-app-server.md).
 
 ### Factory
 
@@ -253,9 +253,9 @@ const node = actionReceived(name: string, options?: ActionReceivedOptions);
 
 ### ActionReceivedOptions
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `mapPayload` | `(payload: unknown, blackboard: Blackboard) => void` | No | Callback to extract data from the consumed action payload. |
+| Field        | Type                                                 | Required | Description                                                |
+| ------------ | ---------------------------------------------------- | -------- | ---------------------------------------------------------- |
+| `mapPayload` | `(payload: unknown, blackboard: Blackboard) => void` | No       | Callback to extract data from the consumed action payload. |
 
 ### Behavior
 

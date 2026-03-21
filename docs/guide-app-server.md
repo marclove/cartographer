@@ -1,6 +1,6 @@
-# Actor Framework
+# Application Server
 
-The actor framework turns Cartographer's behavior trees into persistent, message-driven applications. Instead of ticking a tree in a loop, you define a tree factory and let the framework handle state persistence, HTTP endpoints, and client communication.
+The application server turns Cartographer's behavior trees into persistent, message-driven services. Instead of ticking a tree in a loop, you define a tree factory and let the server handle state persistence, HTTP endpoints, and client communication.
 
 This guide covers the full stack: `TreeActor` for processing, `ActorServer` for HTTP, `StateStore` for persistence, and the client SDK for browser/Node.js consumers.
 
@@ -8,7 +8,7 @@ This guide covers the full stack: `TreeActor` for processing, `ActorServer` for 
 
 ## Overview
 
-A traditional Cartographer tree lives in memory and runs until its process ends. The actor framework changes this:
+A traditional Cartographer tree lives in memory and runs until its process ends. The application server changes this:
 
 1. A **tree factory** creates a fresh tree for every incoming message.
 2. **TreeActor** loads persisted state, hydrates the tree, processes one message to completion, then serializes and saves the result.
@@ -452,7 +452,7 @@ try {
 
 ## Application Nodes
 
-The actor framework introduces three specialized nodes designed for message-driven trees.
+The application server introduces three specialized nodes designed for message-driven trees.
 
 ### actionReceived
 
@@ -526,7 +526,7 @@ This is distinct from `RepeatNode` with `untilStatus: NodeStatus.SUCCESS`. `Repe
 
 ## Serialization and Content Hashing
 
-The actor framework serializes and restores tree execution state across messages. This is transparent — you do not need to manage it unless you are building custom integrations.
+The application server serializes and restores tree execution state across messages. This is transparent — you do not need to manage it unless you are building custom integrations.
 
 ### Content Hashing
 

@@ -1,6 +1,6 @@
 # Leaf Nodes
 
-Leaf nodes sit at the edges of a behavior tree. They do the actual work -- checking conditions, performing actions, or delegating to an AI agent. This guide covers the built-in leaf node types (including the actor framework nodes `actionReceived` and `emitToClient`) and explains how to create custom nodes by extending `BaseNode`.
+Leaf nodes sit at the edges of a behavior tree. They do the actual work -- checking conditions, performing actions, or delegating to an AI agent. This guide covers the built-in leaf node types (including the application server nodes `actionReceived` and `emitToClient`) and explains how to create custom nodes by extending `BaseNode`.
 
 ---
 
@@ -27,14 +27,14 @@ interface ActionNodeConfig {
 ### Example
 
 ```typescript
-import { ActionNode, NodeStatus } from 'cartographer';
+import { ActionNode, NodeStatus } from "cartographer";
 
 const fetchData = new ActionNode({
-  name: 'fetch-data',
+  name: "fetch-data",
   action: async (ctx) => {
     try {
-      const response = await fetch(ctx.blackboard.get<string>('apiUrl')!);
-      ctx.blackboard.set('data', await response.json());
+      const response = await fetch(ctx.blackboard.get<string>("apiUrl")!);
+      ctx.blackboard.set("data", await response.json());
       return NodeStatus.SUCCESS;
     } catch {
       return NodeStatus.FAILURE;
@@ -69,11 +69,11 @@ interface ConditionNodeConfig {
 ### Example
 
 ```typescript
-import { ConditionNode } from 'cartographer';
+import { ConditionNode } from "cartographer";
 
 const hasApiKey = new ConditionNode({
-  name: 'has-api-key',
-  condition: (ctx) => ctx.blackboard.has('apiKey'),
+  name: "has-api-key",
+  condition: (ctx) => ctx.blackboard.has("apiKey"),
 });
 ```
 
@@ -96,14 +96,14 @@ Every AgentNode automatically:
 ### Example
 
 ```typescript
-import { AgentNode } from 'cartographer';
+import { AgentNode } from "cartographer";
 
 const classifier = new AgentNode({
-  name: 'classify-intent',
-  prompt: (ctx) => `Classify this text: ${ctx.blackboard.get<string>('input')}`,
+  name: "classify-intent",
+  prompt: (ctx) => `Classify this text: ${ctx.blackboard.get<string>("input")}`,
   options: {
-    model: 'claude-haiku-4-5-20251001',
-    effort: 'low',
+    model: "claude-haiku-4-5-20251001",
+    effort: "low",
   },
 });
 ```
@@ -114,14 +114,14 @@ For the full `AgentNodeConfig` reference and advanced patterns, see [Agent Integ
 
 ## ActionReceivedNode
 
-A synchronous, non-reactive node that checks and consumes an action key from the blackboard. Designed for the [actor framework](guide-actor-framework.md) where user actions are delivered as blackboard entries.
+A synchronous, non-reactive node that checks and consumes an action key from the blackboard. Designed for the [application server](guide-app-server.md) where user actions are delivered as blackboard entries.
 
 ### Factory
 
 ```typescript
-import { actionReceived } from 'cartographer';
+import { actionReceived } from "cartographer";
 
-const node = actionReceived('approve');
+const node = actionReceived("approve");
 ```
 
 ### Behavior
@@ -136,9 +136,9 @@ The node extends `BaseNode` directly (not `ActionNode` or `ConditionNode`). This
 ### Optional payload mapping
 
 ```typescript
-const node = actionReceived('approve', {
+const node = actionReceived("approve", {
   mapPayload: (payload, blackboard) => {
-    blackboard.set('review:decision', (payload as any).decision);
+    blackboard.set("review:decision", (payload as any).decision);
   },
 });
 ```
@@ -149,15 +149,15 @@ The `mapPayload` callback runs after the action key is consumed, letting you ext
 
 ## EmitToClientNode
 
-Sends structured data to the client via a dual write. Designed for the [actor framework](guide-actor-framework.md) where trees need to push UI updates to connected clients.
+Sends structured data to the client via a dual write. Designed for the [application server](guide-app-server.md) where trees need to push UI updates to connected clients.
 
 ### Factory
 
 ```typescript
-import { emitToClient } from 'cartographer';
+import { emitToClient } from "cartographer";
 
-const node = emitToClient('ui:show_review', (ctx) => ({
-  findings: ctx.blackboard.get('analysis'),
+const node = emitToClient("ui:show_review", (ctx) => ({
+  findings: ctx.blackboard.get("analysis"),
 }));
 ```
 
@@ -207,8 +207,8 @@ If `execute()` throws, the node catches the error, emits both `node:error` and `
 Extend `BaseNode` and implement the abstract `execute()` method:
 
 ```typescript
-import { BaseNode, NodeStatus } from 'cartographer';
-import type { TreeContext } from 'cartographer';
+import { BaseNode, NodeStatus } from "cartographer";
+import type { TreeContext } from "cartographer";
 
 class LogNode extends BaseNode {
   private message: string;

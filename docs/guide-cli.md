@@ -41,7 +41,7 @@ Tree: my-tree — SUCCESS (3ms)
 Every tree file must default-export a factory function. The CLI calls this function with a `RunContext` and expects a `TreeRunConfig` back.
 
 ```typescript
-import type { RunContext, TreeRunConfig } from 'cartographer';
+import type { RunContext, TreeRunConfig } from "cartographer";
 
 export default function (ctx: RunContext): TreeRunConfig {
   // ...build and return your tree
@@ -54,43 +54,43 @@ The factory pattern defers tree construction until the CLI has loaded environmen
 
 ### RunContext
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `env` | `Record<string, string \| undefined>` | `process.env` merged with any `--env-file` values. |
-| `args` | `string[]` | Positional arguments after the tree file path. |
+| Field  | Type                                  | Description                                        |
+| ------ | ------------------------------------- | -------------------------------------------------- |
+| `env`  | `Record<string, string \| undefined>` | `process.env` merged with any `--env-file` values. |
+| `args` | `string[]`                            | Positional arguments after the tree file path.     |
 
 ### TreeRunConfig
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `tree` | `BehaviorTree` | (required) | The constructed behavior tree to run. |
-| `schedule` | `SchedulerConfig['schedule']` | — | Optional schedule. Omit for a single run. |
-| `maxCycles` | `number` | — | Maximum number of completed cycles (terminal statuses). |
-| `stopOnStatus` | `NodeStatus` | — | Stop the scheduler when the tree returns this status. |
-| `onError` | `SchedulerConfig['onError']` | — | Error handling policy for scheduled runs. |
+| Field          | Type                          | Default    | Description                                             |
+| -------------- | ----------------------------- | ---------- | ------------------------------------------------------- |
+| `tree`         | `BehaviorTree`                | (required) | The constructed behavior tree to run.                   |
+| `schedule`     | `SchedulerConfig['schedule']` | —          | Optional schedule. Omit for a single run.               |
+| `maxCycles`    | `number`                      | —          | Maximum number of completed cycles (terminal statuses). |
+| `stopOnStatus` | `NodeStatus`                  | —          | Stop the scheduler when the tree returns this status.   |
+| `onError`      | `SchedulerConfig['onError']`  | —          | Error handling policy for scheduled runs.               |
 
 ### Example: reading environment variables
 
 ```typescript
-import type { RunContext, TreeRunConfig } from 'cartographer';
-import { BehaviorTree, SequenceNode, ActionNode, NodeStatus } from 'cartographer';
+import type { RunContext, TreeRunConfig } from "cartographer";
+import { BehaviorTree, SequenceNode, ActionNode, NodeStatus } from "cartographer";
 
 export default function (ctx: RunContext): TreeRunConfig {
-  const apiKey = ctx.env['API_KEY'];
-  if (!apiKey) throw new Error('API_KEY is required');
+  const apiKey = ctx.env["API_KEY"];
+  if (!apiKey) throw new Error("API_KEY is required");
 
   const tree = new BehaviorTree({
-    name: 'api-caller',
+    name: "api-caller",
     root: new SequenceNode({
-      name: 'main',
+      name: "main",
       children: [
         new ActionNode({
-          name: 'call-api',
+          name: "call-api",
           action: async (context) => {
-            const res = await fetch('https://api.example.com/data', {
+            const res = await fetch("https://api.example.com/data", {
               headers: { Authorization: `Bearer ${apiKey}` },
             });
-            context.blackboard.set('response', await res.json());
+            context.blackboard.set("response", await res.json());
             return res.ok ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
           },
         }),
@@ -125,14 +125,14 @@ The CLI calls `tree.run()` once, prints output, and exits with a status-based ex
 **Scheduled mode** (factory returns a `schedule`):
 
 ```typescript
-import type { RunContext, TreeRunConfig } from 'cartographer';
-import { TreeBuilder, NodeStatus } from 'cartographer';
+import type { RunContext, TreeRunConfig } from "cartographer";
+import { TreeBuilder, NodeStatus } from "cartographer";
 
 export default function (ctx: RunContext): TreeRunConfig {
-  const tree = new TreeBuilder('health-check')
-    .sequence('check', (b) => {
-      b.action('ping', async () => {
-        const res = await fetch(ctx.env['HEALTH_URL']!);
+  const tree = new TreeBuilder("health-check")
+    .sequence("check", (b) => {
+      b.action("ping", async () => {
+        const res = await fetch(ctx.env["HEALTH_URL"]!);
         return res.ok ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
       });
     })
@@ -140,9 +140,9 @@ export default function (ctx: RunContext): TreeRunConfig {
 
   return {
     tree,
-    schedule: { type: 'interval', delayMs: 30_000 },
+    schedule: { type: "interval", delayMs: 30_000 },
     stopOnStatus: NodeStatus.FAILURE,
-    onError: 'continue',
+    onError: "continue",
   };
 }
 ```
@@ -187,12 +187,12 @@ Generates a TypeScript file with the factory contract, a simple sequence, and co
 
 ## Output Modes
 
-| Flag | Mode | Description |
-|------|------|-------------|
-| (default) | Text | Indented, symbol-annotated output. |
-| `--json` | JSON | One JSON object per line (NDJSON). |
+| Flag        | Mode    | Description                                                                  |
+| ----------- | ------- | ---------------------------------------------------------------------------- |
+| (default)   | Text    | Indented, symbol-annotated output.                                           |
+| `--json`    | JSON    | One JSON object per line (NDJSON).                                           |
 | `--verbose` | Verbose | Text mode with additional agent events (`agent:thinking`, `agent:tool_use`). |
-| `--quiet` | Quiet | Errors and final status line only. |
+| `--quiet`   | Quiet   | Errors and final status line only.                                           |
 
 ### Text Mode
 
@@ -209,12 +209,12 @@ The default output uses indentation to reflect tree depth and symbols to indicat
 Tree: my-tree — FAILURE (17ms)
 ```
 
-| Symbol | Meaning |
-|--------|---------|
-| `▶` | Node entered |
-| `✓` | Node succeeded |
-| `✗` | Node failed (or error) |
-| `…` | Node returned RUNNING |
+| Symbol | Meaning                |
+| ------ | ---------------------- |
+| `▶`    | Node entered           |
+| `✓`    | Node succeeded         |
+| `✗`    | Node failed (or error) |
+| `…`    | Node returned RUNNING  |
 
 ### JSON Mode
 
@@ -287,11 +287,11 @@ In **serve mode** (`--serve`), the signal triggers a clean shutdown: the tick-lo
 
 ### Exit codes (batch mode)
 
-| Code | Meaning |
-|------|---------|
-| `0` | Tree returned `SUCCESS`. |
-| `1` | Tree returned `FAILURE`, or a runtime error occurred. |
-| `2` | Tree returned `RUNNING`, or execution was interrupted by a signal. |
+| Code | Meaning                                                            |
+| ---- | ------------------------------------------------------------------ |
+| `0`  | Tree returned `SUCCESS`.                                           |
+| `1`  | Tree returned `FAILURE`, or a runtime error occurred.              |
+| `2`  | Tree returned `RUNNING`, or execution was interrupted by a signal. |
 
 In serve mode, the process exits with code `0` on clean shutdown.
 
@@ -305,9 +305,9 @@ When the factory returns a `schedule` field, the CLI automatically wraps executi
 export default function (ctx: RunContext): TreeRunConfig {
   return {
     tree,
-    schedule: { type: 'cron', expression: '*/5 * * * *' },
+    schedule: { type: "cron", expression: "*/5 * * * *" },
     maxCycles: 100,
-    onError: 'continue',
+    onError: "continue",
   };
 }
 ```
@@ -318,7 +318,7 @@ For full details on schedule types and behavior, see the [Scheduler guide](guide
 
 ## Serve Mode
 
-The `--serve` flag starts an ActorServer alongside tree execution, turning your tree into a persistent service that accepts messages over HTTP. This is the bridge between batch tree execution and the [Actor Framework](guide-actor-framework.md).
+The `--serve` flag starts an ActorServer alongside tree execution, turning your tree into a persistent service that accepts messages over HTTP. This is the bridge between batch tree execution and the [Application Server](guide-app-server.md).
 
 ```bash
 # Tick every 2 seconds + accept HTTP messages + dashboard
@@ -336,14 +336,14 @@ When `--serve` is active, the CLI starts an ActorServer that:
 
 ### Serve mode flags
 
-| Flag | Description |
-|------|-------------|
-| `--serve` | Enable serve mode. Requires `--tick-interval` or `--no-tick`. |
-| `--tick-interval <ms>` | Auto-tick the tree on this interval. |
-| `--no-tick` | Disable auto-ticking; the tree only runs when messages arrive. |
-| `--port <number>` | Port for the ActorServer (default: 3147). |
-| `--no-dashboard` | Disable the dashboard server. |
-| `--dashboard-port <number>` | Port for the dashboard (default: 3148). |
+| Flag                        | Description                                                    |
+| --------------------------- | -------------------------------------------------------------- |
+| `--serve`                   | Enable serve mode. Requires `--tick-interval` or `--no-tick`.  |
+| `--tick-interval <ms>`      | Auto-tick the tree on this interval.                           |
+| `--no-tick`                 | Disable auto-ticking; the tree only runs when messages arrive. |
+| `--port <number>`           | Port for the ActorServer (default: 3147).                      |
+| `--no-dashboard`            | Disable the dashboard server.                                  |
+| `--dashboard-port <number>` | Port for the dashboard (default: 3148).                        |
 
 The `--tick-interval` or `--no-tick` flag is required with `--serve` -- the tick rate must be explicit. All other serve flags (`--port`, `--no-dashboard`, `--dashboard-port`) also require `--serve`.
 
@@ -374,13 +374,13 @@ Tree: health-monitor — SUCCESS (47ms)
 
 Open `http://localhost:3148` for a real-time dashboard view of tree execution, blackboard state, and event timeline.
 
-For full details on the ActorServer HTTP API and message types, see the [Actor Framework guide](guide-actor-framework.md).
+For full details on the ActorServer HTTP API and message types, see the [Application Server guide](guide-app-server.md).
 
 ---
 
 ## Where to go next
 
 - [API Reference: CLI](api/cli.md) -- full type signatures for `RunContext`, `TreeRunConfig`, `FormatterOptions`, and `createFormatter`.
-- [Actor Framework](guide-actor-framework.md) -- message-driven tree execution, state persistence, and the HTTP API exposed by `--serve`.
+- [Application Server](guide-app-server.md) -- message-driven tree execution, state persistence, and the HTTP API exposed by `--serve`.
 - [Scheduler](guide-scheduler.md) -- interval, cron, and one-shot scheduling in depth.
 - [Blackboard and Events](guide-blackboard-and-events.md) -- the event system that the CLI formatter consumes.

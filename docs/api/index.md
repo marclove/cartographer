@@ -127,7 +127,7 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `emitMessageEvents`            | Emits granular `agent:*` observability events for a raw SDK message. Used internally by `AgentNode` and agent strategies; available for custom strategy implementations.                                      |
 | `createStrategyMessageHandler` | Creates a message handler for strategy SDK calls that emits per-message observability events plus `agent:response`/`agent:error` lifecycle events. Intended as the `onMessage` callback to `queryStructured`. |
 
-## [Actor Framework](actor.md)
+## [Application Server](actor.md)
 
 | Export                     | Description                                                      |
 | -------------------------- | ---------------------------------------------------------------- |
