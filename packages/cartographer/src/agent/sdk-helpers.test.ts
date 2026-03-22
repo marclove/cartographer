@@ -1,100 +1,108 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { z } from 'zod/v4';
+import { describe, it, expect, vi } from 'vitest';
+import { NodeStatus } from '../types.js';
+import type { BTreeNode, TreeContext } from '../types.js';
+import { EventEmitter } from '../core/event-emitter.js';
+import { InMemoryBlackboard } from '../core/blackboard.js';
+import type { TreeEvents } from '../types.js';
+import { buildStrategyPrompt, wrapElicitation } from './sdk-helpers.js';
+import { Agent } from './agent.js';
+import type { AgentMessage, AgentSendOptions, AgentInfo } from './agent.js';
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: vi.fn(),
-}));
-
-import { queryStructured } from './sdk-helpers.js';
-import { query } from '@anthropic-ai/claude-agent-sdk';
-
-const mockQuery = vi.mocked(query);
-
-const TestSchema = z.object({ value: z.string() });
-
-async function* mockMessages(messages: unknown[]) {
-  for (const msg of messages) {
-    yield msg;
-  }
+class StubAgent extends Agent {
+  get sessionId(): string | null { return null; }
+  async *send(): AsyncIterable<AgentMessage> { yield { type: 'result', subtype: 'success', output: 'ok' }; }
+  getInfo(): AgentInfo { return { name: this.name }; }
+  async close(): Promise<void> {}
 }
 
-const defaultConfig = { prompt: 'test', options: {} };
+function mockNode(name: string): BTreeNode {
+  return {
+    id: name, name,
+    tick: async () => NodeStatus.SUCCESS,
+    reset: () => {}, abort: () => {},
+  };
+}
 
-describe('queryStructured - abort signal bridging', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+function createContext(): TreeContext {
+  return {
+    blackboard: new InMemoryBlackboard(),
+    events: new EventEmitter<TreeEvents>(),
+  };
+}
+
+describe('buildStrategyPrompt', () => {
+  it('includes base prompt, children, and blackboard state', () => {
+    const ctx = createContext();
+    ctx.blackboard.set('key', 'value');
+
+    const result = buildStrategyPrompt(
+      { prompt: 'Pick the best order', agent: new StubAgent({ name: 'test' }) },
+      [mockNode('a'), mockNode('b')],
+      ctx,
+    );
+
+    expect(result).toContain('Pick the best order');
+    expect(result).toContain('"name": "a"');
+    expect(result).toContain('"name": "b"');
+    expect(result).toContain('"key": "value"');
   });
 
-  it('passes an AbortController to the SDK when a signal is provided', async () => {
-    let capturedAbortController: AbortController | undefined;
+  it('uses childDescriptions when provided', () => {
+    const result = buildStrategyPrompt(
+      {
+        prompt: 'Order',
+        childDescriptions: { a: 'First option', b: 'Second option' },
+        agent: new StubAgent({ name: 'test' }),
+      },
+      [mockNode('a'), mockNode('b')],
+      createContext(),
+    );
 
-    mockQuery.mockImplementation(({ options }: any) => {
-      capturedAbortController = options.abortController;
-      return mockMessages([
-        { type: 'result', subtype: 'success', structured_output: { value: 'ok' } },
-      ]) as any;
-    });
-
-    const ac = new AbortController();
-    await queryStructured('test prompt', TestSchema, defaultConfig, undefined, ac.signal);
-
-    expect(capturedAbortController).toBeInstanceOf(AbortController);
-    expect(capturedAbortController!.signal.aborted).toBe(false);
+    expect(result).toContain('"description": "First option"');
+    expect(result).toContain('"description": "Second option"');
   });
 
-  it('does not pass an AbortController when no signal is provided', async () => {
-    let capturedOptions: any;
+  it('supports dynamic prompt function', () => {
+    const ctx = createContext();
+    ctx.blackboard.set('mode', 'fast');
 
-    mockQuery.mockImplementation(({ options }: any) => {
-      capturedOptions = options;
-      return mockMessages([
-        { type: 'result', subtype: 'success', structured_output: { value: 'ok' } },
-      ]) as any;
-    });
+    const result = buildStrategyPrompt(
+      {
+        prompt: (children, c) => `Run ${children.length} steps in ${c.blackboard.get('mode')} mode`,
+        agent: new StubAgent({ name: 'test' }),
+      },
+      [mockNode('a'), mockNode('b')],
+      ctx,
+    );
 
-    await queryStructured('test prompt', TestSchema, defaultConfig);
+    expect(result).toContain('Run 2 steps in fast mode');
+  });
+});
 
-    expect(capturedOptions.abortController).toBeUndefined();
+describe('wrapElicitation', () => {
+  it('delegates to the provided handler', async () => {
+    const handler = async () => ({ action: 'accept' as const, content: { token: 'abc' } });
+    const node = mockNode('test');
+    const events = new EventEmitter<TreeEvents>();
+    const wrapped = wrapElicitation(handler, node, events);
+
+    const result = await wrapped({} as any, { signal: new AbortController().signal });
+    expect(result).toEqual({ action: 'accept', content: { token: 'abc' } });
   });
 
-  it('aborting the signal triggers the controller passed to the SDK', async () => {
-    let capturedAbortController: AbortController | undefined;
-    let resolveMessage!: () => void;
+  it('declines and emits event when no handler is provided', async () => {
+    const node = mockNode('test');
+    const events = new EventEmitter<TreeEvents>();
+    const spy = (events as any)._listeners?.['agent:elicitation_declined'] ?? [];
+    const declinedSpy = vi.fn();
+    events.on('agent:elicitation_declined', declinedSpy);
 
-    mockQuery.mockImplementation(({ options }: any) => {
-      capturedAbortController = options.abortController;
-      return (async function* () {
-        await new Promise<void>((resolve) => { resolveMessage = resolve; });
-        yield { type: 'result', subtype: 'success', structured_output: { value: 'ok' } };
-      })() as any;
-    });
+    const wrapped = wrapElicitation(undefined, node, events);
+    const result = await wrapped({ serverName: 'test' } as any, { signal: new AbortController().signal });
 
-    const ac = new AbortController();
-    const promise = queryStructured('test prompt', TestSchema, defaultConfig, undefined, ac.signal);
-
-    // Abort the source signal — the bridged controller should reflect it
-    ac.abort();
-    expect(capturedAbortController!.signal.aborted).toBe(true);
-
-    resolveMessage();
-    await promise;
-  });
-
-  it('immediately aborts the controller when signal is already aborted', async () => {
-    let capturedAbortController: AbortController | undefined;
-
-    mockQuery.mockImplementation(({ options }: any) => {
-      capturedAbortController = options.abortController;
-      return mockMessages([
-        { type: 'result', subtype: 'success', structured_output: { value: 'ok' } },
-      ]) as any;
-    });
-
-    const ac = new AbortController();
-    ac.abort();
-
-    await queryStructured('test prompt', TestSchema, defaultConfig, undefined, ac.signal);
-
-    expect(capturedAbortController!.signal.aborted).toBe(true);
+    expect(result).toEqual({ action: 'decline' });
+    expect(declinedSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ node, request: { serverName: 'test' } }),
+    );
   });
 });

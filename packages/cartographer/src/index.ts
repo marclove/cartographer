@@ -74,9 +74,15 @@ export { TreeRegistry } from './config/registry.js';
 // Scheduler
 export { TreeScheduler } from './scheduler/tree-scheduler.js';
 
-// Agent integration
+// Agent abstraction
+export { Agent } from './agent/agent.js';
+export type { AgentConfig, AgentSendOptions, AgentMessage, AgentInfo, AgentUsage } from './agent/agent.js';
+export { ClaudeSDKAgent } from './agent/claude-sdk-agent.js';
+export type { ClaudeSDKAgentConfig } from './agent/claude-sdk-agent.js';
+
+// Agent utilities
 export { createBlackboardMcpServer } from './agent/blackboard-mcp.js';
-export { emitMessageEvents, createStrategyMessageHandler, wrapElicitation } from './agent/sdk-helpers.js';
+export { wrapElicitation, buildStrategyPrompt } from './agent/sdk-helpers.js';
 
 // Logging
 export { createTreeLogger } from './tree-logger.js';
