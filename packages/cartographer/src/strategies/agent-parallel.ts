@@ -1,9 +1,10 @@
 import { z } from 'zod/v4';
 import type { ParallelStrategy, ParallelPolicy, BTreeNode, TreeContext, AgentStrategyConfig } from '../types.js';
-import { queryStructured, buildStrategyPrompt, createStrategyMessageHandler, wrapElicitation } from '../agent/sdk-helpers.js';
+import { buildStrategyPrompt } from '../agent/sdk-helpers.js';
+import type { AgentMessage } from '../agent/agent.js';
 
 /**
- * The schema Claude must conform to when returning a policy decision.
+ * The schema the agent must conform to when returning a policy decision.
  * `policy` maps to the {@link ParallelPolicy} fields the `ParallelNode` evaluates.
  * `reasoning` is a brief explanation logged via the `strategy:decision` event.
  */
@@ -17,109 +18,21 @@ const PolicySchema = z.object({
 });
 
 /**
- * A {@link ParallelStrategy} that asks Claude to decide the success/failure
+ * A {@link ParallelStrategy} that asks an Agent to decide the success/failure
  * policy for a {@link ParallelNode} at runtime.
  *
- * On each tick (or once per reset cycle when `cache: true`), Claude receives
- * a prompt that includes the child node names, any descriptions supplied via
- * `childDescriptions`, and a JSON snapshot of the current blackboard. Claude
- * returns a {@link ParallelPolicy} specifying how many children must succeed
- * (or fail) for the parallel node to resolve.
- *
- * If the SDK call fails, the strategy falls back to the safest default:
+ * If the agent call fails, the strategy falls back to the safest default:
  * requiring *all* children to succeed (`{ successCount: children.length }`).
- *
- * **Risk-adaptive policy:**
- * ```ts
- * // The blackboard holds 'riskLevel': 'low' | 'medium' | 'high'.
- * // Claude uses it to decide whether a simple majority or unanimity is needed.
- * const checks = new ParallelNode({
- *   name: 'validation-checks',
- *   children: [checkSchema, checkAuth, checkRateLimit, checkQuota],
- *   strategy: new AgentParallelStrategy({
- *     prompt: 'Decide how many validations must pass given the current risk level on the blackboard',
- *     childDescriptions: {
- *       checkSchema:    'Validates the request payload structure',
- *       checkAuth:      'Verifies authentication credentials',
- *       checkRateLimit: 'Enforces per-user rate limits',
- *       checkQuota:     'Checks account usage quotas',
- *     },
- *   }),
- * });
- * ```
- *
- * **Dynamic prompt with blackboard access:**
- * ```ts
- * const dynamic = new ParallelNode({
- *   name: 'dynamic-parallel',
- *   children: [nodeA, nodeB, nodeC],
- *   strategy: new AgentParallelStrategy({
- *     prompt: (children, context) => {
- *       const env = context.blackboard.get<string>('environment');
- *       return `In ${env} environment, decide the minimum success threshold for these checks`;
- *     },
- *     options: { model: 'claude-haiku-4-5-20251001', effort: 'low' },
- *   }),
- * });
- * ```
- *
- * **Caching the policy across ticks:**
- * ```ts
- * // Claude is called only on the first tick after construction or reset().
- * // Subsequent ticks reuse the same policy without an SDK call.
- * const cached = new ParallelNode({
- *   name: 'cached-parallel',
- *   children: [nodeA, nodeB, nodeC],
- *   strategy: new AgentParallelStrategy({
- *     prompt: 'Decide the success threshold for this run',
- *     cache: true,
- *   }),
- * });
- * ```
- *
- * **Observing decisions:**
- * ```ts
- * tree.events.on('strategy:decision', ({ strategy, decision }) => {
- *   if (strategy === 'agent-parallel') {
- *     const { policy, reasoning } = decision as { policy: ParallelPolicy; reasoning: string };
- *     console.log('Policy:', policy);
- *     console.log('Reasoning:', reasoning);
- *   }
- * });
- * ```
  */
 export class AgentParallelStrategy implements ParallelStrategy {
-  /**
-   * Cached result from a previous `policy()` call.
-   * `null` when caching is disabled or `reset()` has been called.
-   */
   private cachedPolicy: ParallelPolicy | null = null;
 
   constructor(private config: AgentStrategyConfig) {}
 
-  /**
-   * Clear the cached policy so the next tick calls the SDK again.
-   *
-   * Only has an effect when `cache: true` was set in the config.
-   */
   reset(): void {
     this.cachedPolicy = null;
   }
 
-  /**
-   * Return the {@link ParallelPolicy} Claude recommends for this tick.
-   *
-   * Builds a prompt from the config and current blackboard state, calls the
-   * SDK, and returns the policy from Claude's structured response. Falls back
-   * to `{ successCount: children.length }` (all children must succeed) if
-   * the SDK call fails.
-   *
-   * Elicitation is handled consistently with `AgentNode`: the handler is
-   * resolved as `config.options.onElicitation ?? context.onElicitation`,
-   * wrapped via {@link wrapElicitation}, and forwarded to the SDK. If no
-   * handler exists, elicitation requests are declined and an
-   * `agent:elicitation_declined` event is emitted.
-   */
   async policy(children: BTreeNode[], context: TreeContext): Promise<ParallelPolicy> {
     if (this.config.cache && this.cachedPolicy !== null) {
       return this.cachedPolicy;
@@ -129,20 +42,32 @@ export class AgentParallelStrategy implements ParallelStrategy {
     const nodeProxy = children[0] ?? ({ id: '', name: '' } as any);
     context.events.emit('agent:prompt', { node: nodeProxy, prompt });
 
-    const handler = createStrategyMessageHandler(nodeProxy, context.events);
-    const elicitationHandler = this.config.options?.onElicitation ?? context.onElicitation;
-    const wrappedElicitation = wrapElicitation(elicitationHandler, nodeProxy, context.events);
-    const result = await queryStructured(prompt, PolicySchema, this.config, handler, context.signal, wrappedElicitation);
+    const { $schema, ...jsonSchema } = z.toJSONSchema(PolicySchema) as Record<string, unknown>;
 
-    // SDK call failed — fall back to the strictest default (all must succeed)
-    // so the parallel node remains safe and predictable.
+    let result: z.infer<typeof PolicySchema> | null = null;
+
+    try {
+      for await (const msg of this.config.agent.send(prompt, {
+        signal: context.signal,
+        onMessage: (msg: AgentMessage) => this.emitAgentEvent(msg, nodeProxy, context),
+        outputSchema: jsonSchema,
+        onElicitation: context.onElicitation,
+      })) {
+        if (msg.type === 'result') {
+          if (msg.subtype === 'success') {
+            result = msg.output as z.infer<typeof PolicySchema>;
+          }
+        }
+      }
+    } catch {
+      return { successCount: children.length };
+    }
+
     if (!result) {
       return { successCount: children.length };
     }
 
     context.events.emit('strategy:decision', {
-      // The strategy doesn't have a reference to the parent composite node,
-      // so the first child is used as a proxy identifier in the event payload.
       composite: children[0] ?? ({ id: '', name: '' } as any),
       strategy: 'agent-parallel',
       decision: result,
@@ -150,5 +75,33 @@ export class AgentParallelStrategy implements ParallelStrategy {
 
     if (this.config.cache) this.cachedPolicy = result.policy;
     return result.policy;
+  }
+
+  private emitAgentEvent(msg: AgentMessage, node: BTreeNode, context: TreeContext): void {
+    switch (msg.type) {
+      case 'thinking':
+        context.events.emit('agent:thinking', { node, thinking: msg.content });
+        break;
+      case 'text':
+        context.events.emit('agent:text', { node, text: msg.content });
+        break;
+      case 'tool_use':
+        context.events.emit('agent:tool_use', { node, tool: msg.name, input: msg.input });
+        break;
+      case 'result':
+        if (msg.subtype === 'success') {
+          context.events.emit('agent:response', { node, result: msg.output, cost: msg.cost });
+        } else {
+          (context.events.emit as any)('agent:error', { node, errors: msg.errors, cost: msg.cost });
+        }
+        break;
+      case 'provider_event': {
+        const d = msg.data as Record<string, unknown>;
+        const eventMap: Record<string, string> = { stream: 'agent:stream', tool_progress: 'agent:tool_progress', init: 'agent:init', status: 'agent:status', rate_limit: 'agent:rate_limit' };
+        const eventName = eventMap[msg.subtype];
+        if (eventName) (context.events.emit as any)(eventName, { node, ...d });
+        break;
+      }
+    }
   }
 }
