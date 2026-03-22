@@ -72,6 +72,9 @@ abstract class Agent {
 
   constructor(config: AgentConfig) { ... }
 
+  /** The active session ID, or null if no session has been created yet. */
+  abstract get sessionId(): string | null;
+
   /**
    * Send a prompt and return an async iterable of response messages
    * scoped to this turn. Each call starts a new turn; conversation
