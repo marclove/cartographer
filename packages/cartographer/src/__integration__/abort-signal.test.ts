@@ -7,17 +7,26 @@ import { RetryNode } from '../decorators/retry.js';
 import { TreeScheduler } from '../scheduler/tree-scheduler.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { createContext, AbortTrackingNode } from './helpers.js';
-
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: vi.fn(),
-  createSdkMcpServer: vi.fn(() => ({})),
-  tool: vi.fn((_name: string, _desc: string, _schema: unknown, handler: unknown) => handler),
-}));
-
 import { AgentNode } from '../nodes/agent.js';
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { Agent } from '../agent/agent.js';
+import type { AgentMessage, AgentSendOptions, AgentInfo } from '../agent/agent.js';
 
-const mockQuery = vi.mocked(query);
+class StubAgent extends Agent {
+  private _onSend?: (options?: AgentSendOptions) => void;
+  get sessionId(): string | null { return null; }
+
+  onSend(fn: (options?: AgentSendOptions) => void): void {
+    this._onSend = fn;
+  }
+
+  async *send(_prompt: string, options?: AgentSendOptions): AsyncIterable<AgentMessage> {
+    this._onSend?.(options);
+    yield { type: 'result', subtype: 'success', output: 'done', cost: 0.01 };
+  }
+
+  getInfo(): AgentInfo { return { name: this.name }; }
+  async close(): Promise<void> {}
+}
 
 describe('Abort Signal Integration', () => {
   it('sequence resumes at RUNNING child after abort — second child is never reached', async () => {
@@ -133,27 +142,27 @@ describe('Abort Signal Integration', () => {
   });
 
   it('BehaviorTree.abort() cancels AgentNode in-flight SDK call via context.signal', async () => {
-    let capturedAbortController: AbortController | undefined;
+    let capturedSignal: AbortSignal | undefined;
     let resolveMessage!: () => void;
 
-    mockQuery.mockImplementation(({ options }: any) => {
-      capturedAbortController = options.abortController;
-      return (async function* () {
-        await new Promise<void>((resolve) => { resolveMessage = resolve; });
-        yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
-      })() as any;
-    });
+    const agent = new StubAgent({ name: 'agent' });
+    // Override send to capture the signal and block until resolved
+    agent.send = async function* (_prompt: string, options?: AgentSendOptions) {
+      capturedSignal = options?.signal;
+      await new Promise<void>((resolve) => { resolveMessage = resolve; });
+      yield { type: 'result', subtype: 'success', output: 'done', cost: 0.01 } as AgentMessage;
+    };
 
     const tree = new BehaviorTree({
       name: 'agent-abort-test',
-      root: new AgentNode({ name: 'agent', prompt: 'Do work' }),
+      root: new AgentNode({ name: 'agent', agent, prompt: 'Do work' }),
     });
 
     const tickPromise = tree.tick();
 
     // The SDK call is in-flight — abort the tree (not the node directly)
     tree.abort();
-    expect(capturedAbortController!.signal.aborted).toBe(true);
+    expect(capturedSignal!.aborted).toBe(true);
 
     resolveMessage();
     await tickPromise;

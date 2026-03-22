@@ -6,6 +6,7 @@ import { SequenceNode } from '../../composites/sequence.js';
 import { receive } from '../../nodes/receive.js';
 import { untilSuccess } from '../../decorators/until-success.js';
 import { NodeStatus } from '../../types.js';
+import { ClaudeSDKAgent } from '../../agent/claude-sdk-agent.js';
 import { setupTest, waitForEvent, waitForBlackboard } from '../helpers.js';
 
 describe('agent interrupt and redirect (live)', () => {
@@ -32,6 +33,7 @@ describe('agent interrupt and redirect (live)', () => {
               // Agent researches — reads topic from blackboard via dynamic prompt
               new AgentNode({
                 name: 'research',
+                agent: new ClaudeSDKAgent({ name: 'research' }),
                 prompt: (ctx) => {
                   const topic = ctx.blackboard.get('research:topic');
                   return (

@@ -9,6 +9,7 @@ import { emitToClient } from '../../nodes/emit-to-client.js';
 import { receive } from '../../nodes/receive.js';
 import { untilSuccess } from '../../decorators/until-success.js';
 import { NodeStatus } from '../../types.js';
+import { ClaudeSDKAgent } from '../../agent/claude-sdk-agent.js';
 import { setupTest, waitForBlackboard } from '../helpers.js';
 
 describe('agent structured pipeline (live)', () => {
@@ -37,13 +38,8 @@ describe('agent structured pipeline (live)', () => {
               // Agent classifies with structured output
               new AgentNode({
                 name: 'classify',
-                prompt: (ctx) =>
-                  `Classify the following document into a category. ` +
-                  `Return a JSON object with "category" (string), "confidence" (number 0-1), ` +
-                  `and "tags" (array of strings). Be very confident in your classification.\n\n` +
-                  `Document: ${ctx.blackboard.get('document')}`,
-                blackboardNamespace: 'classifier',
-                options: {
+                agent: new ClaudeSDKAgent({
+                  name: 'classify',
                   model: 'claude-haiku-4-5-20251001',
                   effort: 'low',
                   outputFormat: {
@@ -58,7 +54,13 @@ describe('agent structured pipeline (live)', () => {
                       required: ['category', 'confidence', 'tags'],
                     },
                   },
-                },
+                }),
+                prompt: (ctx) =>
+                  `Classify the following document into a category. ` +
+                  `Return a JSON object with "category" (string), "confidence" (number 0-1), ` +
+                  `and "tags" (array of strings). Be very confident in your classification.\n\n` +
+                  `Document: ${ctx.blackboard.get('document')}`,
+                blackboardNamespace: 'classifier',
               }),
 
               // Branch on confidence

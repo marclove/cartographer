@@ -3,6 +3,7 @@ import { z } from 'zod/v4';
 import { NodeStatus } from '../../types.js';
 import { AgentNode } from '../../nodes/agent.js';
 import { TreeBuilder } from '../../builder/tree-builder.js';
+import { ClaudeSDKAgent } from '../../agent/claude-sdk-agent.js';
 import { createContext, collectEvents } from '../helpers.js';
 import { createTreeLogger } from '../../tree-logger.js';
 
@@ -20,15 +21,16 @@ describe('Agent Structured Mode Integration', { timeout: 90_000 }, () => {
 
     const agent = new AgentNode({
       name: 'sentiment-classifier',
-      prompt: 'Classify the sentiment of: "I absolutely love this product, it changed my life!"',
-      options: {
+      agent: new ClaudeSDKAgent({
+        name: 'sentiment-classifier',
         model: 'claude-haiku-4-5-20251001',
         effort: 'low',
         outputFormat: {
           type: 'json_schema',
           schema: z.toJSONSchema(SentimentSchema) as any,
         },
-      },
+      }),
+      prompt: 'Classify the sentiment of: "I absolutely love this product, it changed my life!"',
     });
 
     const ctx = createContext();
@@ -68,17 +70,18 @@ describe('Agent Structured Mode Integration', { timeout: 90_000 }, () => {
           return NodeStatus.SUCCESS;
         });
         b.agent('summarizer', {
-          prompt: (ctx) => {
-            const text = ctx.blackboard.get<string>('input-text');
-            return `Summarize this text in one short sentence and count the words in the original text: "${text}"`;
-          },
-          options: {
+          agent: new ClaudeSDKAgent({
+            name: 'summarizer',
             model: 'claude-haiku-4-5-20251001',
             effort: 'low',
             outputFormat: {
               type: 'json_schema',
               schema: z.toJSONSchema(SummarySchema) as any,
             },
+          }),
+          prompt: (ctx) => {
+            const text = ctx.blackboard.get<string>('input-text');
+            return `Summarize this text in one short sentence and count the words in the original text: "${text}"`;
           },
         });
         b.condition('check-result', (ctx) => {
