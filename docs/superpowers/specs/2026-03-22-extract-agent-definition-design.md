@@ -151,65 +151,59 @@ ACP does not support structured output natively. When `outputSchema` is set, an 
 Lives in `src/agent/claude-sdk-agent.ts`. Wraps the Claude Agent SDK using the V1 stable API.
 
 ```ts
-interface ClaudeSDKAgentConfig extends AgentConfig {
-  /** Model identifier (e.g., 'claude-haiku-4-5'). */
-  model?: string;
-  /**
-   * System prompt for the agent. Takes precedence over
-   * options.systemPrompt if both are provided.
-   */
-  systemPrompt?: string;
-  /** SDK options: tools, MCP servers, maxTurns, effort, budget, permissions, etc. */
-  options?: Partial<Options>;
-}
+type ClaudeSDKAgentConfig = AgentConfig & Partial<Options>;
+```
+
+All SDK options (`model`, `systemPrompt`, `effort`, `maxTurns`, `mcpServers`, `allowedTools`, `maxBudgetUsd`, etc.) are top-level alongside `name` from `AgentConfig`. No nesting.
 
 class ClaudeSDKAgent extends Agent {
-  private queryInstance: Query | null = null;
-  private messageQueue: AsyncQueue<SDKUserMessage>;
+private queryInstance: Query | null = null;
+private messageQueue: AsyncQueue<SDKUserMessage>;
 
-  constructor(config: ClaudeSDKAgentConfig) {
-    // Validates reserved MCP server name "blackboard" is not used
-    // in config.options.mcpServers (moved from AgentNode constructor)
-  }
-
-  send(prompt: string, options?: AgentSendOptions): AsyncIterable<AgentMessage> {
-    // Returns an AsyncIterable that, when iterated:
-    //
-    // 1. Lazily creates the SDK query on first send() (not in constructor).
-    //    The blackboard MCP server from this first call is included in the
-    //    initial query() options — no setMcpServers() needed for the first turn.
-    // 2. On subsequent sends, if the blackboard namespace changed, updates
-    //    MCP servers via queryInstance.setMcpServers().
-    // 3. If outputSchema provided, sets SDK outputFormat option and strips
-    //    $schema meta-property (Zod's toJSONSchema() adds it, SDK rejects it).
-    // 4. If onElicitation provided, wraps with wrapElicitation()
-    // 5. Bridges abort signal to SDK AbortController
-    // 6. Builds SDKUserMessage from prompt string
-    // 7. Pushes onto messageQueue (triggers the SDK query to process it)
-    // 8. For each SDK response message, maps to AgentMessage, invokes
-    //    onMessage callback if provided, then yields the message
-    // 9. Completes after yielding the result message
-    //
-    // The async iterable is scoped to this turn — it completes after
-    // yielding the result message. The underlying SDK query stays alive
-    // for subsequent send() calls.
-    //
-    // Internally, a private method iterates the SDK query's async generator,
-    // maps SDKMessage → AgentMessage, and demuxes messages into per-turn
-    // iterables. The class itself is NOT async-iterable — only the return
-    // value of send() is.
-  }
-
-  getInfo(): AgentInfo {
-    // Returns { name, model, tools, mcpServers } from config
-  }
-
-  async close(): Promise<void> {
-    this.queryInstance?.close();
-    this.queryInstance = null;
-  }
+constructor(config: ClaudeSDKAgentConfig) {
+// Validates reserved MCP server name "blackboard" is not used
+// in config.options.mcpServers (moved from AgentNode constructor)
 }
-```
+
+send(prompt: string, options?: AgentSendOptions): AsyncIterable<AgentMessage> {
+// Returns an AsyncIterable that, when iterated:
+//
+// 1. Lazily creates the SDK query on first send() (not in constructor).
+// The blackboard MCP server from this first call is included in the
+// initial query() options — no setMcpServers() needed for the first turn.
+// 2. On subsequent sends, if the blackboard namespace changed, updates
+// MCP servers via queryInstance.setMcpServers().
+// 3. If outputSchema provided, sets SDK outputFormat option and strips
+// $schema meta-property (Zod's toJSONSchema() adds it, SDK rejects it).
+// 4. If onElicitation provided, wraps with wrapElicitation()
+// 5. Bridges abort signal to SDK AbortController
+// 6. Builds SDKUserMessage from prompt string
+// 7. Pushes onto messageQueue (triggers the SDK query to process it)
+// 8. For each SDK response message, maps to AgentMessage, invokes
+// onMessage callback if provided, then yields the message
+// 9. Completes after yielding the result message
+//
+// The async iterable is scoped to this turn — it completes after
+// yielding the result message. The underlying SDK query stays alive
+// for subsequent send() calls.
+//
+// Internally, a private method iterates the SDK query's async generator,
+// maps SDKMessage → AgentMessage, and demuxes messages into per-turn
+// iterables. The class itself is NOT async-iterable — only the return
+// value of send() is.
+}
+
+getInfo(): AgentInfo {
+// Returns { name, model, tools, mcpServers } from config
+}
+
+async close(): Promise<void> {
+this.queryInstance?.close();
+this.queryInstance = null;
+}
+}
+
+````
 
 What moves from AgentNode into ClaudeSDKAgent:
 
@@ -234,7 +228,7 @@ class AsyncQueue<T> implements AsyncIterable<T> {
   async *[Symbol.asyncIterator](): AsyncIterableIterator<T>; // yields items as they arrive
   close(): void; // signal no more items; iterator completes
 }
-```
+````
 
 This is a standard concurrency primitive (~30 lines). It will live in `src/agent/async-queue.ts`.
 
@@ -357,7 +351,7 @@ b.agent("classify", {
 const classifyAgent = new ClaudeSDKAgent({
   name: "classify",
   model: "claude-haiku-4-5",
-  options: { effort: "low" },
+  effort: "low",
 });
 
 b.agent("classify", {
@@ -373,7 +367,7 @@ const supportAgent = new ClaudeSDKAgent({
   name: "support",
   model: "claude-haiku-4-5",
   systemPrompt: "You are a customer support agent.",
-  options: { maxTurns: 5 },
+  maxTurns: 5,
 });
 
 const tree = new TreeBuilder("support-flow")
@@ -420,9 +414,9 @@ The Agent's lifecycle is managed by its creator, not by individual nodes or the 
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `src/nodes/agent.ts`                      | Remove SDK logic, delegate to `Agent`                                                                      |
 | `src/types.ts`                            | `AgentNodeConfig.agent: Agent` replaces `.options`; `AgentStrategyConfig.agent: Agent` replaces `.options` |
-| `src/strategies/agent-selection.ts`       | Use `agent.send()` with `outputSchema`, convert Zod schema with `z.toJSONSchema()`                                            |
-| `src/strategies/agent-execution.ts`       | Use `agent.send()` with `outputSchema`, convert Zod schema with `z.toJSONSchema()`                                            |
-| `src/strategies/agent-parallel.ts`        | Use `agent.send()` with `outputSchema`, convert Zod schema with `z.toJSONSchema()`                                            |
+| `src/strategies/agent-selection.ts`       | Use `agent.send()` with `outputSchema`, convert Zod schema with `z.toJSONSchema()`                         |
+| `src/strategies/agent-execution.ts`       | Use `agent.send()` with `outputSchema`, convert Zod schema with `z.toJSONSchema()`                         |
+| `src/strategies/agent-parallel.ts`        | Use `agent.send()` with `outputSchema`, convert Zod schema with `z.toJSONSchema()`                         |
 | `src/builder/tree-builder.ts`             | Builder `agent()` signature changes                                                                        |
 | `src/agent/sdk-helpers.ts`                | `emitMessageEvents` becomes `ClaudeSDKAgent` internal; `wrapElicitation` and `buildStrategyPrompt` remain  |
 | `src/agent/blackboard-mcp.ts`             | Unchanged, consumed by `ClaudeSDKAgent` instead of `AgentNode`                                             |
@@ -438,20 +432,20 @@ The Agent's lifecycle is managed by its creator, not by individual nodes or the 
 
 ### Public API
 
-| Export                                                                                               | Status                                                            |
-| ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `Agent`                                                                                              | New                                                               |
-| `ClaudeSDKAgent`                                                                                     | New                                                               |
-| `AgentMessage`, `AgentConfig`, `AgentInfo`, `ClaudeSDKAgentConfig`, `AgentSendOptions`, `AgentUsage` | New types                                                         |
-| `AgentNodeConfig`                                                                                    | Changed (`agent: Agent` replaces `options: Partial<Options>`)     |
-| `AgentStrategyConfig`                                                                                | Changed (`agent: Agent` replaces `options: Partial<Options>`)     |
-| `emitMessageEvents`                                                                                  | Removed from public API (becomes `ClaudeSDKAgent` internal)       |
+| Export                                                                                               | Status                                                                   |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `Agent`                                                                                              | New                                                                      |
+| `ClaudeSDKAgent`                                                                                     | New                                                                      |
+| `AgentMessage`, `AgentConfig`, `AgentInfo`, `ClaudeSDKAgentConfig`, `AgentSendOptions`, `AgentUsage` | New types                                                                |
+| `AgentNodeConfig`                                                                                    | Changed (`agent: Agent` replaces `options: Partial<Options>`)            |
+| `AgentStrategyConfig`                                                                                | Changed (`agent: Agent` replaces `options: Partial<Options>`)            |
+| `emitMessageEvents`                                                                                  | Removed from public API (becomes `ClaudeSDKAgent` internal)              |
 | `queryStructured`                                                                                    | Removed from public API (replaced by `agent.send()` with `outputSchema`) |
 | `createStrategyMessageHandler`                                                                       | Removed from public API (replaced by `onMessage` in `AgentSendOptions`)  |
-| `wrapElicitation`                                                                                    | Kept (cross-provider utility)                                     |
-| `OnElicitation`, `ElicitationRequest`                                                                | Kept (re-exported types)                                          |
-| `createBlackboardMcpServer`                                                                          | Kept                                                              |
-| `buildStrategyPrompt`                                                                                | Kept                                                              |
+| `wrapElicitation`                                                                                    | Kept (cross-provider utility)                                            |
+| `OnElicitation`, `ElicitationRequest`                                                                | Kept (re-exported types)                                                 |
+| `createBlackboardMcpServer`                                                                          | Kept                                                                     |
+| `buildStrategyPrompt`                                                                                | Kept                                                                     |
 
 ## Breaking Changes
 
