@@ -1,5 +1,6 @@
 import type { z } from 'zod';
-import type { Options, OnElicitation, ElicitationRequest, ModelUsage } from '@anthropic-ai/claude-agent-sdk';
+import type { OnElicitation, ElicitationRequest, ModelUsage } from '@anthropic-ai/claude-agent-sdk';
+import type { Agent } from './agent/agent.js';
 import type { NodeState } from './core/serialization.js';
 
 // --- Node Status ---
@@ -499,13 +500,13 @@ export interface ParallelStrategy {
  *     'use-cache': 'Returns cached results if available',
  *   },
  *   cache: true, // Reuse the first decision until reset()
- *   options: { model: 'claude-haiku-4-5-20251001', effort: 'low' },
+ *   agent: new ClaudeSDKAgent({ name: 'strategy', model: 'claude-haiku-4-5-20251001', effort: 'low' }),
  * };
  * ```
  */
 export interface AgentStrategyConfig {
   /**
-   * The prompt sent to Claude for the ordering/policy decision.
+   * The prompt sent to the agent for the ordering/policy decision.
    *
    * Can be a static string or a function that receives the children and
    * context for dynamic prompt construction. The framework appends child
@@ -528,20 +529,12 @@ export interface AgentStrategyConfig {
    *
    * This flag controls whether the cached decision persists after a cycle
    * completes and a new one begins. When `true`, the strategy returns the
-   * same result without calling the SDK again until `reset()` is called.
+   * same result without calling the agent again until `reset()` is called.
    */
   cache?: boolean;
 
-  /**
-   * SDK options passed directly to the Claude Agent SDK `query()` call.
-   *
-   * Use this to configure model, effort, thinking, tools, MCP servers,
-   * and [any other SDK option](https://platform.claude.com/docs/en/agent-sdk/typescript#options).
-   * Defaults applied when not set:
-   * - `model`: `'sonnet'`
-   * - `effort`: `'low'`
-   */
-  options?: Partial<Options>;
+  /** The Agent instance used for strategy decisions. */
+  agent: Agent;
 }
 
 // --- Node Configs ---
@@ -674,15 +667,18 @@ export interface AgentNodeConfig {
   /** Human-readable name for this agent node. */
   name: string;
 
+  /** The Agent instance used to process prompts. */
+  agent: Agent;
+
   /**
-   * The prompt sent to Claude. Can be a static string or a function that
+   * The prompt sent to the agent. Can be a static string or a function that
    * receives the tree context for dynamic prompt construction.
    */
   prompt: string | ((context: TreeContext) => string);
 
   /**
    * Maps the output to a `NodeStatus`. If omitted, the node returns
-   * `SUCCESS` when the SDK call succeeds.
+   * `SUCCESS` when the agent call succeeds.
    */
   mapResult?: (output: unknown, context: TreeContext) => NodeStatus;
 
@@ -695,19 +691,10 @@ export interface AgentNodeConfig {
 
   /**
    * When `true`, the agent caches its result after the first successful
-   * execution and returns it on subsequent ticks without calling the SDK
+   * execution and returns it on subsequent ticks without calling the agent
    * again. The cache is cleared when `reset()` is called.
    */
   cache?: boolean;
-
-  /**
-   * SDK options passed directly to the Claude Agent SDK `query()` call.
-   *
-   * Use this to configure model, effort, thinking, tools, MCP servers,
-   * system prompt, output format, budget limits, and [any other SDK option](https://platform.claude.com/docs/en/agent-sdk/typescript#options).
-   * The blackboard MCP server and its tools are always injected automatically.
-   */
-  options?: Partial<Options>;
 }
 
 // --- Composite Configs ---
