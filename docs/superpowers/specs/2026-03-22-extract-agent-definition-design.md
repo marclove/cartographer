@@ -241,7 +241,9 @@ This is distinct from `queryInstance.close()`, which terminates the SDK subproce
 
 If the query becomes unresponsive after interrupt (e.g., the SDK subprocess crashes), `ClaudeSDKAgent` recreates the query on the next `send()` using `resume: sessionId` to restore conversation history from the persisted session.
 
-When a turn's iterable is abandoned via `for await...of` break (without an abort signal), remaining messages from that turn are drained and discarded. The queue advances to the next pending send.
+**Queued-but-not-started turns**: if the signal fires before the SDK has pulled the message from the queue (e.g., Node B is aborted while Node A is still processing), the turn is dropped preemptively — the message is removed from the queue, and Node B's iterable completes without yielding any messages. The SDK never sees the cancelled prompt, so no resources are wasted and the conversation history is not polluted.
+
+**Iterable abandoned via break** (without an abort signal): remaining messages from the in-flight turn are drained and discarded. The queue advances to the next pending send.
 
 #### AsyncQueue Utility
 
