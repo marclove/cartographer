@@ -41,16 +41,25 @@ interface AgentSendOptions {
   /** Elicitation handler for interactive input requests. */
   onElicitation?: OnElicitation;
   /**
-   * Called for each AgentMessage as it is produced. Provides a unified
-   * observability hook for both send() and query() — callers use this
-   * to emit BT events, log messages, or feed dashboards without needing
-   * to iterate messages themselves.
-   *
-   * For send(): invoked for each message before it is yielded by the
-   * returned iterable. For query(): invoked for each intermediate message
-   * as the default implementation (or provider override) collects the result.
+   * Called for each AgentMessage as it is produced. Invoked for each
+   * message before it is yielded by the returned iterable. Provides
+   * a unified observability hook — callers use this to emit BT events,
+   * log messages, or feed dashboards without needing to handle
+   * observability separately from result extraction.
    */
   onMessage?: (msg: AgentMessage) => void;
+  /**
+   * JSON schema for structured output. When set, the provider uses
+   * native schema validation if available (e.g., ClaudeSDKAgent sets
+   * the SDK's outputFormat option). Providers without native support
+   * include the schema in the prompt and parse the result text as JSON
+   * internally. Either way, the result message's output contains parsed
+   * JSON conforming to the schema.
+   *
+   * This is a JSON Schema object, not a Zod schema. Callers using Zod
+   * should convert via z.toJSONSchema() before calling.
+   */
+  outputSchema?: JSONSchema;
 }
 
 abstract class Agent {
@@ -62,23 +71,13 @@ abstract class Agent {
    * Send a prompt and return an async iterable of response messages
    * scoped to this turn. Each call starts a new turn; conversation
    * history accumulates across turns within the same Agent instance.
+   *
+   * When options.outputSchema is set, the provider uses native structured
+   * output validation if available; otherwise it includes the schema in
+   * the prompt and parses the result as JSON. The result message's output
+   * will contain the parsed object in either case.
    */
   abstract send(prompt: string, options?: AgentSendOptions): AsyncIterable<AgentMessage>;
-
-  /**
-   * One-shot structured query. Default implementation includes the JSON
-   * schema in the prompt, calls send(), collects messages until a result,
-   * parses the output as JSON, and returns the typed result.
-   *
-   * Concrete classes can override for provider-native structured output
-   * (e.g., ClaudeSDKAgent uses the SDK's outputFormat option).
-   *
-   * The schema parameter is a JSON Schema object, not a Zod schema.
-   * Callers using Zod should convert via z.toJSONSchema() before calling.
-   */
-  async query<T>(prompt: string, schema: JSONSchema, options?: AgentSendOptions): Promise<T> {
-    // Default: include schema in prompt, send, iterate to result, parse JSON
-  }
 
   /**
    * Return provider-agnostic metadata for dashboard introspection.
@@ -105,10 +104,9 @@ Key decisions:
 - **`blackboard` in `AgentSendOptions`, not the constructor** — namespace may differ between AgentNodes sharing the same Agent, and strategies don't need it.
 - **`signal` in `AgentSendOptions`** — AgentNode bridges the tree's abort signal per-tick.
 - **`onElicitation` in `AgentSendOptions`** — both Claude SDK and ACP support elicitation; AgentNode passes `context.onElicitation` through.
-- **`onMessage` in `AgentSendOptions`** — unified observability hook for both `send()` and `query()`. The Agent invokes it for each message as it's produced. Callers use it to emit BT events, removing the need for separate observability patterns per call style.
-- **`query()` takes `JSONSchema`, not Zod** — provider-agnostic (ACP won't know about Zod). Strategies convert with `z.toJSONSchema()` at the call site.
-- **`query()` has a default implementation** — concrete classes must only implement `send` + `close` + `getInfo`. They can override `query()` for provider-native structured output.
-- **`query()` error contract** — the default implementation throws if the agent's text output cannot be parsed as valid JSON conforming to the schema. The error includes the raw text and the schema for debugging. `ClaudeSDKAgent` avoids this by using the SDK's native `outputFormat` validation.
+- **`onMessage` in `AgentSendOptions`** — unified observability hook. The Agent invokes it for each message as it's produced, before yielding it. Callers use it to emit BT events, removing the need for separate observability patterns.
+- **`outputSchema` in `AgentSendOptions`** — when set, the provider uses native structured output validation if available (ClaudeSDKAgent sets the SDK's `outputFormat`). Providers without native support include the schema in the prompt and parse the result text as JSON internally. The result message's `output` always contains parsed JSON when `outputSchema` is set. Takes `JSONSchema`, not Zod — provider-agnostic (ACP won't know about Zod). Callers convert with `z.toJSONSchema()`.
+- **No separate `query()` method** — structured output is handled through `send()` via `outputSchema`. One method, one pattern. Concrete classes only implement `send` + `close` + `getInfo`.
 - **`close()` returns `Promise<void>`** — cleanup may be async (e.g., closing an ACP session involves network calls).
 - **`getInfo()` provides dashboard introspection** — returns a provider-agnostic `AgentInfo` with common fields (name, model, tools) and an index signature for provider-specific metadata. AgentNode's `agentOptions` getter delegates to `this.config.agent.getInfo()`.
 
@@ -119,13 +117,13 @@ Discriminated union yielded by the async iterable returned from `send()`. Provid
 ```ts
 type AgentMessage =
   // Core messages — all providers must synthesize these
-  | { type: 'thinking'; content: string }
-  | { type: 'text'; content: string }
-  | { type: 'tool_use'; name: string; input?: unknown }
-  | { type: 'result'; subtype: 'success'; output: unknown; cost?: number; usage?: AgentUsage }
-  | { type: 'result'; subtype: 'error'; errors?: unknown[]; cost?: number; usage?: AgentUsage }
+  | { type: "thinking"; content: string }
+  | { type: "text"; content: string }
+  | { type: "tool_use"; name: string; input?: unknown }
+  | { type: "result"; subtype: "success"; output: unknown; cost?: number; usage?: AgentUsage }
+  | { type: "result"; subtype: "error"; errors?: unknown[]; cost?: number; usage?: AgentUsage }
   // Provider-specific observability — forwarded but not required
-  | { type: 'provider_event'; subtype: string; data: unknown };
+  | { type: "provider_event"; subtype: string; data: unknown };
 
 interface AgentUsage {
   inputTokens?: number;
@@ -137,16 +135,16 @@ interface AgentUsage {
 
 Provider mapping:
 
-| AgentMessage type | Claude SDK source | ACP source |
-|---|---|---|
-| `thinking` | Thinking content block | `agent_thought_chunk` notification |
-| `text` | Text content block | `agent_message_chunk` notification |
-| `tool_use` | `tool_use` content block (name + input) | `tool_call` notification (title + rawInput, observational) |
+| AgentMessage type  | Claude SDK source                          | ACP source                                                   |
+| ------------------ | ------------------------------------------ | ------------------------------------------------------------ |
+| `thinking`         | Thinking content block                     | `agent_thought_chunk` notification                           |
+| `text`             | Text content block                         | `agent_message_chunk` notification                           |
+| `tool_use`         | `tool_use` content block (name + input)    | `tool_call` notification (title + rawInput, observational)   |
 | `result` (success) | `result` message with `subtype: 'success'` | Synthesized from `StopReason: 'end_turn'` + accumulated text |
-| `result` (error) | `result` message with error subtype | Synthesized from `StopReason: 'refusal'/'cancelled'` etc. |
-| `provider_event` | Stream deltas, init, status, rate_limit | `tool_call_update`, `usage_update`, `plan`, etc. |
+| `result` (error)   | `result` message with error subtype        | Synthesized from `StopReason: 'refusal'/'cancelled'` etc.    |
+| `provider_event`   | Stream deltas, init, status, rate_limit    | `tool_call_update`, `usage_update`, `plan`, etc.             |
 
-ACP does not support structured output natively. The default `query()` implementation handles this via prompt engineering + JSON parsing. `ClaudeSDKAgent` overrides with the SDK's `outputFormat` option for reliable schema-validated output.
+ACP does not support structured output natively. When `outputSchema` is set, an ACP agent implementation would include the schema in the prompt and parse the result text as JSON. `ClaudeSDKAgent` uses the SDK's native `outputFormat` option for reliable schema-validated output.
 
 ### ClaudeSDKAgent
 
@@ -182,11 +180,15 @@ class ClaudeSDKAgent extends Agent {
     //    initial query() options — no setMcpServers() needed for the first turn.
     // 2. On subsequent sends, if the blackboard namespace changed, updates
     //    MCP servers via queryInstance.setMcpServers().
-    // 3. If onElicitation provided, wraps with wrapElicitation()
-    // 4. Bridges abort signal to SDK AbortController
-    // 5. Builds SDKUserMessage from prompt string
-    // 6. Pushes onto messageQueue (triggers the SDK query to process it)
-    // 7. Yields mapped AgentMessages from SDK responses until result
+    // 3. If outputSchema provided, sets SDK outputFormat option and strips
+    //    $schema meta-property (Zod's toJSONSchema() adds it, SDK rejects it).
+    // 4. If onElicitation provided, wraps with wrapElicitation()
+    // 5. Bridges abort signal to SDK AbortController
+    // 6. Builds SDKUserMessage from prompt string
+    // 7. Pushes onto messageQueue (triggers the SDK query to process it)
+    // 8. For each SDK response message, maps to AgentMessage, invokes
+    //    onMessage callback if provided, then yields the message
+    // 9. Completes after yielding the result message
     //
     // The async iterable is scoped to this turn — it completes after
     // yielding the result message. The underlying SDK query stays alive
@@ -197,14 +199,6 @@ class ClaudeSDKAgent extends Agent {
     // iterables. The class itself is NOT async-iterable — only the return
     // value of send() is.
   }
-
-  /**
-   * Override: uses SDK query() with outputFormat for schema-validated output.
-   * Spins up a separate one-shot query() call (not the multi-turn session).
-   * Strips $schema from the JSON schema before passing to the SDK (Zod's
-   * toJSONSchema() adds it, but the SDK does not accept it).
-   */
-  override async query<T>(prompt: string, schema: JSONSchema, options?: AgentSendOptions): Promise<T> { ... }
 
   getInfo(): AgentInfo {
     // Returns { name, model, tools, mcpServers } from config
@@ -222,7 +216,7 @@ What moves from AgentNode into ClaudeSDKAgent:
 - All SDK imports and `query()` calls
 - Blackboard MCP server creation (`createBlackboardMcpServer`)
 - Reserved "blackboard" MCP server name validation (constructor)
-- `$schema` stripping from `outputFormat` (ClaudeSDKAgent concern only — the abstract `Agent.query()` default implementation does not use `outputFormat`, so stripping is not needed there)
+- `$schema` stripping from `outputFormat` (ClaudeSDKAgent concern — applied in `send()` when `outputSchema` is provided)
 - The `sdkAbortHandlerInstalled` unhandled rejection workaround
 - `AbortController` bridging
 - Elicitation wrapping (via `wrapElicitation`)
@@ -236,9 +230,9 @@ Multi-turn conversation is supported via the V1 `AsyncIterable<SDKUserMessage>` 
 
 ```ts
 class AsyncQueue<T> implements AsyncIterable<T> {
-  push(item: T): void;           // enqueue an item (non-blocking)
-  async *[Symbol.asyncIterator](): AsyncIterableIterator<T>;  // yields items as they arrive
-  close(): void;                 // signal no more items; iterator completes
+  push(item: T): void; // enqueue an item (non-blocking)
+  async *[Symbol.asyncIterator](): AsyncIterableIterator<T>; // yields items as they arrive
+  close(): void; // signal no more items; iterator completes
 }
 ```
 
@@ -252,7 +246,7 @@ AgentNode shrinks to BT-only concerns. No longer imports or knows about the Clau
 interface AgentNodeConfig {
   id?: string;
   name: string;
-  agent: Agent;                                        // replaces options: Partial<Options>
+  agent: Agent; // replaces options: Partial<Options>
   prompt: string | ((context: TreeContext) => string);
   mapResult?: (output: unknown, context: TreeContext) => NodeStatus;
   blackboardNamespace?: string;
@@ -314,7 +308,7 @@ interface AgentStrategyConfig {
   prompt: string | ((children: BTreeNode[], context: TreeContext) => string);
   childDescriptions?: Record<string, string>;
   cache?: boolean;
-  agent: Agent;                // replaces options: Partial<Options>
+  agent: Agent; // replaces options: Partial<Options>
 }
 ```
 
@@ -330,21 +324,23 @@ const result = await queryStructured(prompt, OrderingSchema, {
 To:
 
 ```ts
-const result = await this.config.agent.query<Ordering>(
-  prompt,
-  z.toJSONSchema(OrderingSchema),
-  {
-    signal: context.signal,
-    onMessage: (msg) => emitAgentEvent(msg, this, context),
-  },
-);
+let result: Ordering | null = null;
+for await (const msg of this.config.agent.send(prompt, {
+  signal: context.signal,
+  onMessage: (msg) => emitAgentEvent(msg, this, context),
+  outputSchema: z.toJSONSchema(OrderingSchema),
+})) {
+  if (msg.type === "result" && msg.subtype === "success") {
+    result = msg.output as Ordering;
+  }
+}
 ```
 
 `buildStrategyPrompt()` remains unchanged — it constructs the composite prompt from children descriptions and blackboard state, which is strategy logic.
 
 #### Strategy Event Emission
 
-Strategies retain full observability. The `onMessage` callback in `AgentSendOptions` is invoked for each intermediate message during `query()`, so strategies emit the same fine-grained `agent:*` events (thinking, text, tool_use, etc.) as before. The `createStrategyMessageHandler` helper is no longer needed — `onMessage` replaces it.
+Strategies retain full observability. The `onMessage` callback in `AgentSendOptions` is invoked for each message during `send()`, so strategies emit the same fine-grained `agent:*` events (thinking, text, tool_use, etc.) as before. The `createStrategyMessageHandler` helper is no longer needed — `onMessage` replaces it.
 
 ### Builder API
 
@@ -352,19 +348,19 @@ The builder's `agent()` method changes signature:
 
 ```ts
 // Before
-b.agent('classify', {
+b.agent("classify", {
   prompt: classifyPrompt,
-  options: { model: 'claude-haiku-4-5', effort: 'low' },
+  options: { model: "claude-haiku-4-5", effort: "low" },
 });
 
 // After
 const classifyAgent = new ClaudeSDKAgent({
-  name: 'classify',
-  model: 'claude-haiku-4-5',
-  options: { effort: 'low' },
+  name: "classify",
+  model: "claude-haiku-4-5",
+  options: { effort: "low" },
 });
 
-b.agent('classify', {
+b.agent("classify", {
   agent: classifyAgent,
   prompt: classifyPrompt,
 });
@@ -374,24 +370,24 @@ Multi-turn reuse (the motivating use case):
 
 ```ts
 const supportAgent = new ClaudeSDKAgent({
-  name: 'support',
-  model: 'claude-haiku-4-5',
-  systemPrompt: 'You are a customer support agent.',
+  name: "support",
+  model: "claude-haiku-4-5",
+  systemPrompt: "You are a customer support agent.",
   options: { maxTurns: 5 },
 });
 
-const tree = new TreeBuilder('support-flow')
-  .sequence('conversation', (b) => {
-    b.agent('handle-ticket', {
+const tree = new TreeBuilder("support-flow")
+  .sequence("conversation", (b) => {
+    b.agent("handle-ticket", {
       agent: supportAgent,
-      prompt: (ctx) => `Handle this ticket: ${ctx.blackboard.get('ticket')}`,
+      prompt: (ctx) => `Handle this ticket: ${ctx.blackboard.get("ticket")}`,
     });
 
-    b.receive('customer-reply', { command: 'customer:message' });
+    b.receive("customer-reply", { command: "customer:message" });
 
-    b.agent('follow-up', {
+    b.agent("follow-up", {
       agent: supportAgent,
-      prompt: (ctx) => `Customer replied: ${ctx.blackboard.get('customer-reply:payload')}`,
+      prompt: (ctx) => `Customer replied: ${ctx.blackboard.get("customer-reply:payload")}`,
     });
   })
   .build();
@@ -412,56 +408,56 @@ The Agent's lifecycle is managed by its creator, not by individual nodes or the 
 
 ### New Files
 
-| File | Contents |
-|---|---|
-| `src/agent/agent.ts` | Abstract `Agent` class, `AgentMessage`, `AgentConfig`, `AgentSendOptions`, `AgentUsage` |
-| `src/agent/claude-sdk-agent.ts` | `ClaudeSDKAgent`, `ClaudeSDKAgentConfig` |
-| `src/agent/async-queue.ts` | `AsyncQueue<T>` — push/pull async iterable queue used by `ClaudeSDKAgent` |
+| File                            | Contents                                                                                |
+| ------------------------------- | --------------------------------------------------------------------------------------- |
+| `src/agent/agent.ts`            | Abstract `Agent` class, `AgentMessage`, `AgentConfig`, `AgentSendOptions`, `AgentUsage` |
+| `src/agent/claude-sdk-agent.ts` | `ClaudeSDKAgent`, `ClaudeSDKAgentConfig`                                                |
+| `src/agent/async-queue.ts`      | `AsyncQueue<T>` — push/pull async iterable queue used by `ClaudeSDKAgent`               |
 
 ### Modified Files
 
-| File | Change |
-|---|---|
-| `src/nodes/agent.ts` | Remove SDK logic, delegate to `Agent` |
-| `src/types.ts` | `AgentNodeConfig.agent: Agent` replaces `.options`; `AgentStrategyConfig.agent: Agent` replaces `.options` |
-| `src/strategies/agent-selection.ts` | Use `agent.query()`, convert Zod schema with `z.toJSONSchema()` |
-| `src/strategies/agent-execution.ts` | Use `agent.query()`, convert Zod schema with `z.toJSONSchema()` |
-| `src/strategies/agent-parallel.ts` | Use `agent.query()`, convert Zod schema with `z.toJSONSchema()` |
-| `src/builder/tree-builder.ts` | Builder `agent()` signature changes |
-| `src/agent/sdk-helpers.ts` | `emitMessageEvents` becomes `ClaudeSDKAgent` internal; `wrapElicitation` and `buildStrategyPrompt` remain |
-| `src/agent/blackboard-mcp.ts` | Unchanged, consumed by `ClaudeSDKAgent` instead of `AgentNode` |
-| `src/server/actor-server.ts` | Update `agentOptions` introspection to work with `Agent` abstraction |
-| `src/server/api-handlers.ts` | Update agent info serialization for dashboard API |
-| `src/index.ts` | Updated exports |
-| `apps/content-pipeline/tree.ts` | Updated to use `ClaudeSDKAgent` |
-| `apps/scheduled-monitor/tree.ts` | Updated to use `ClaudeSDKAgent` |
-| `src/nodes/agent.test.ts` | Update tests for new AgentNode config shape |
-| `src/strategies/agent-strategies.test.ts` | Update tests for Agent.query() |
-| `src/agent/sdk-helpers.test.ts` | Remove tests for moved functions; keep wrapElicitation/buildStrategyPrompt tests |
-| `src/__integration__/*.test.ts` | Update integration tests to construct ClaudeSDKAgent |
+| File                                      | Change                                                                                                     |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `src/nodes/agent.ts`                      | Remove SDK logic, delegate to `Agent`                                                                      |
+| `src/types.ts`                            | `AgentNodeConfig.agent: Agent` replaces `.options`; `AgentStrategyConfig.agent: Agent` replaces `.options` |
+| `src/strategies/agent-selection.ts`       | Use `agent.send()` with `outputSchema`, convert Zod schema with `z.toJSONSchema()`                                            |
+| `src/strategies/agent-execution.ts`       | Use `agent.send()` with `outputSchema`, convert Zod schema with `z.toJSONSchema()`                                            |
+| `src/strategies/agent-parallel.ts`        | Use `agent.send()` with `outputSchema`, convert Zod schema with `z.toJSONSchema()`                                            |
+| `src/builder/tree-builder.ts`             | Builder `agent()` signature changes                                                                        |
+| `src/agent/sdk-helpers.ts`                | `emitMessageEvents` becomes `ClaudeSDKAgent` internal; `wrapElicitation` and `buildStrategyPrompt` remain  |
+| `src/agent/blackboard-mcp.ts`             | Unchanged, consumed by `ClaudeSDKAgent` instead of `AgentNode`                                             |
+| `src/server/actor-server.ts`              | Update `agentOptions` introspection to work with `Agent` abstraction                                       |
+| `src/server/api-handlers.ts`              | Update agent info serialization for dashboard API                                                          |
+| `src/index.ts`                            | Updated exports                                                                                            |
+| `apps/content-pipeline/tree.ts`           | Updated to use `ClaudeSDKAgent`                                                                            |
+| `apps/scheduled-monitor/tree.ts`          | Updated to use `ClaudeSDKAgent`                                                                            |
+| `src/nodes/agent.test.ts`                 | Update tests for new AgentNode config shape                                                                |
+| `src/strategies/agent-strategies.test.ts` | Update tests for `agent.send()` with `outputSchema`                                                        |
+| `src/agent/sdk-helpers.test.ts`           | Remove tests for moved functions; keep wrapElicitation/buildStrategyPrompt tests                           |
+| `src/__integration__/*.test.ts`           | Update integration tests to construct ClaudeSDKAgent                                                       |
 
 ### Public API
 
-| Export | Status |
-|---|---|
-| `Agent` | New |
-| `ClaudeSDKAgent` | New |
-| `AgentMessage`, `AgentConfig`, `AgentInfo`, `ClaudeSDKAgentConfig`, `AgentSendOptions`, `AgentUsage` | New types |
-| `AgentNodeConfig` | Changed (`agent: Agent` replaces `options: Partial<Options>`) |
-| `AgentStrategyConfig` | Changed (`agent: Agent` replaces `options: Partial<Options>`) |
-| `emitMessageEvents` | Removed from public API (becomes `ClaudeSDKAgent` internal) |
-| `queryStructured` | Removed from public API (replaced by `Agent.query()`) |
-| `createStrategyMessageHandler` | Removed from public API (strategies use `agent.query()` directly) |
-| `wrapElicitation` | Kept (cross-provider utility) |
-| `OnElicitation`, `ElicitationRequest` | Kept (re-exported types) |
-| `createBlackboardMcpServer` | Kept |
-| `buildStrategyPrompt` | Kept |
+| Export                                                                                               | Status                                                            |
+| ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `Agent`                                                                                              | New                                                               |
+| `ClaudeSDKAgent`                                                                                     | New                                                               |
+| `AgentMessage`, `AgentConfig`, `AgentInfo`, `ClaudeSDKAgentConfig`, `AgentSendOptions`, `AgentUsage` | New types                                                         |
+| `AgentNodeConfig`                                                                                    | Changed (`agent: Agent` replaces `options: Partial<Options>`)     |
+| `AgentStrategyConfig`                                                                                | Changed (`agent: Agent` replaces `options: Partial<Options>`)     |
+| `emitMessageEvents`                                                                                  | Removed from public API (becomes `ClaudeSDKAgent` internal)       |
+| `queryStructured`                                                                                    | Removed from public API (replaced by `agent.send()` with `outputSchema`) |
+| `createStrategyMessageHandler`                                                                       | Removed from public API (replaced by `onMessage` in `AgentSendOptions`)  |
+| `wrapElicitation`                                                                                    | Kept (cross-provider utility)                                     |
+| `OnElicitation`, `ElicitationRequest`                                                                | Kept (re-exported types)                                          |
+| `createBlackboardMcpServer`                                                                          | Kept                                                              |
+| `buildStrategyPrompt`                                                                                | Kept                                                              |
 
 ## Breaking Changes
 
 - `AgentNodeConfig` and `AgentStrategyConfig` change shape — `options: Partial<Options>` replaced with `agent: Agent`.
 - Builder API requires an `Agent` instance rather than inline SDK options.
 - `emitMessageEvents` removed from public exports.
-- `queryStructured` removed from public exports.
+- `queryStructured` removed from public exports (replaced by `agent.send()` with `outputSchema`).
 - `createStrategyMessageHandler` removed from public exports (replaced by `onMessage` callback in `AgentSendOptions`).
 - Both example apps require updates.
