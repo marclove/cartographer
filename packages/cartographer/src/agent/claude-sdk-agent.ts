@@ -4,7 +4,7 @@ import { Agent } from './agent.js';
 import type { AgentConfig, AgentMessage, AgentSendOptions, AgentInfo } from './agent.js';
 import { AsyncQueue } from './async-queue.js';
 import { createBlackboardMcpServer } from './blackboard-mcp.js';
-import { wrapElicitation } from './sdk-helpers.js';
+import type { OnElicitation } from '@anthropic-ai/claude-agent-sdk';
 
 /**
  * Configuration for a ClaudeSDKAgent.
@@ -227,10 +227,21 @@ export class ClaudeSDKAgent extends Agent {
       allowedTools.push('mcp__blackboard__*');
     }
 
-    // Resolve elicitation
-    const wrappedElicitation = sendOptions?.onElicitation
-      ? wrapElicitation(sendOptions.onElicitation, { id: this.name, name: this.name } as any, { emit: () => {} } as any)
-      : undefined;
+    // Elicitation: always provide a handler so the SDK never hangs.
+    // Delegates to the user handler if one was provided; otherwise auto-
+    // declines and emits a provider_event so the BT layer can fire
+    // agent:elicitation_declined.
+    const userElicitation = sendOptions?.onElicitation;
+    const self = this;
+    const onElicitation: OnElicitation = async (request, opts) => {
+      if (userElicitation) return userElicitation(request, opts);
+      self._activeTurnOnMessage?.({
+        type: 'provider_event',
+        subtype: 'elicitation_declined',
+        data: { request },
+      });
+      return { action: 'decline' as const };
+    };
 
     // Handle outputSchema → outputFormat conversion, strip $schema in both paths
     let outputFormat = userOptions.outputFormat;
@@ -252,7 +263,7 @@ export class ClaudeSDKAgent extends Agent {
       allowedTools,
       permissionMode: restOptions.permissionMode ?? 'default',
       ...(outputFormat && { outputFormat }),
-      ...(wrappedElicitation && { onElicitation: wrappedElicitation }),
+      onElicitation,
     };
 
     return query({ prompt: this.messageQueue as any, options } as any);

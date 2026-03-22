@@ -282,6 +282,25 @@ describe('AgentNode - observability events', () => {
     );
   });
 
+  it('emits agent:elicitation_declined via provider_event', async () => {
+    const agent = createAgent([
+      { type: 'provider_event', subtype: 'elicitation_declined', data: { request: { prompt: 'Allow?' } } },
+      { type: 'result', subtype: 'success', output: 'done' },
+    ]);
+
+    const node = new AgentNode({ name: 'elicit', agent, prompt: 'Work' });
+    const ctx = createContext();
+    const declineSpy = vi.fn();
+    ctx.events.on('agent:elicitation_declined', declineSpy);
+    await node.tick(ctx);
+    await flush();
+    await node.tick(ctx);
+
+    expect(declineSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ request: { prompt: 'Allow?' } }),
+    );
+  });
+
   it('emits agent:response on success result', async () => {
     const agent = createAgent([
       { type: 'result', subtype: 'success', output: 'done', cost: 0.03 },

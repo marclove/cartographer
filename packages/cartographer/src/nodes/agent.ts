@@ -256,6 +256,7 @@ export class AgentNode extends BaseNode {
           init: 'agent:init',
           status: 'agent:status',
           rate_limit: 'agent:rate_limit',
+          elicitation_declined: 'agent:elicitation_declined',
         };
         const eventName = eventMap[msg.subtype];
         if (eventName) {
