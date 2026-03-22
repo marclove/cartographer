@@ -232,11 +232,16 @@ export class ClaudeSDKAgent extends Agent {
       ? wrapElicitation(sendOptions.onElicitation, { id: this.name, name: this.name } as any, { emit: () => {} } as any)
       : undefined;
 
-    // Handle outputSchema → outputFormat conversion
+    // Handle outputSchema → outputFormat conversion, strip $schema in both paths
     let outputFormat = userOptions.outputFormat;
     if (sendOptions?.outputSchema) {
       const { $schema, ...schema } = sendOptions.outputSchema;
       outputFormat = { type: 'json_schema', schema } as any;
+    } else if (outputFormat && 'schema' in outputFormat) {
+      const { $schema, ...schema } = (outputFormat as any).schema as Record<string, unknown>;
+      if ($schema) {
+        outputFormat = { ...outputFormat, schema } as typeof outputFormat;
+      }
     }
 
     const { onElicitation: _e, mcpServers: _m, allowedTools: _a, outputFormat: _o, ...restOptions } = userOptions;
