@@ -46,6 +46,11 @@ interface AgentSendOptions {
    * a unified observability hook — callers use this to emit BT events,
    * log messages, or feed dashboards without needing to handle
    * observability separately from result extraction.
+   *
+   * The Agent catches and swallows errors thrown by this callback —
+   * a failing handler must not crash the agent loop or starve
+   * queued turns. Errors are emitted as provider_event messages
+   * with subtype 'onMessage_error' so they remain observable.
    */
   onMessage?: (msg: AgentMessage) => void;
   /**
