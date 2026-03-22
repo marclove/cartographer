@@ -5,7 +5,7 @@ import { ActionNode } from '../nodes/action.js';
 import { InMemoryStateStore } from '../state/in-memory-state-store.js';
 import { NodeStatus } from '../types.js';
 import { untilSuccess } from '../decorators/until-success.js';
-import { actionReceived } from '../nodes/action-received.js';
+import { receive } from '../nodes/receive.js';
 
 describe('TreeActor', () => {
   it('processes a tick message and saves state', async () => {
@@ -27,7 +27,7 @@ describe('TreeActor', () => {
     expect(saved!.treeState.rootHash).toBeDefined();
   });
 
-  it('processes an action message — writes to blackboard then ticks', async () => {
+  it('processes a command message — writes to blackboard then ticks', async () => {
     let receivedValue: unknown;
     const store = new InMemoryStateStore();
     const actor = new TreeActor({
@@ -36,7 +36,7 @@ describe('TreeActor', () => {
         root: new ActionNode({
           name: 'check',
           action: async (ctx) => {
-            receivedValue = ctx.blackboard.get('actions:approve');
+            receivedValue = ctx.blackboard.get('commands:approve');
             return NodeStatus.SUCCESS;
           },
         }),
@@ -45,7 +45,7 @@ describe('TreeActor', () => {
       stateKey: 'default',
     });
 
-    await actor.process({ type: 'action', name: 'approve', payload: { docId: '123' } });
+    await actor.process({ type: 'command', name: 'approve', payload: { docId: '123' } });
     expect(receivedValue).toEqual({ docId: '123' });
   });
 
@@ -54,13 +54,13 @@ describe('TreeActor', () => {
     const actor = new TreeActor({
       createTree: () => new BehaviorTree({
         name: 'test',
-        root: untilSuccess(actionReceived('approve')),
+        root: untilSuccess(receive('approve')),
       }),
       stateStore: store,
       stateKey: 'default',
     });
 
-    // No action present → actionReceived returns FAILURE → untilSuccess returns RUNNING
+    // No action present → receive returns FAILURE → untilSuccess returns RUNNING
     const result = await actor.process({ type: 'tick' });
     expect(result.treeStatus).toBe(NodeStatus.RUNNING);
   });

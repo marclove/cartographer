@@ -4,7 +4,7 @@ import { ActionNode } from '../nodes/action.js';
 import { ConditionNode } from '../nodes/condition.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { SelectorNode } from '../composites/selector.js';
-import { actionReceived } from '../nodes/action-received.js';
+import { receive } from '../nodes/receive.js';
 import { untilSuccess } from '../decorators/until-success.js';
 import { NodeStatus } from '../types.js';
 import { setupTest, waitForEvent } from './helpers.js';
@@ -42,13 +42,13 @@ describe('multi-step action workflow', () => {
                 new SelectorNode({
                   name: 'wait-decision',
                   children: [
-                    actionReceived('approve', {
+                    receive('approve', {
                       mapPayload: (payload, bb) => {
                         bb.set('decision', 'approve');
                         bb.set('decision:comment', (payload as any)?.comment ?? '');
                       },
                     }),
-                    actionReceived('reject', {
+                    receive('reject', {
                       mapPayload: (payload, bb) => {
                         bb.set('decision', 'reject');
                         bb.set('decision:reason', (payload as any)?.reason ?? '');
@@ -96,7 +96,7 @@ describe('multi-step action workflow', () => {
 
     // 1. Start the pipeline — analyze runs, findings emitted, suspends at untilSuccess
     const findingsPromise = waitForEvent(harness.client, 'ui:findings', 1);
-    const step1Result = await harness.client.actionAndWait('tick');
+    const step1Result = await harness.client.commandAndWait('tick');
     expect(step1Result.treeStatus).toBe('running');
 
     // Verify: tree is RUNNING (suspended), findings event arrived
@@ -111,7 +111,7 @@ describe('multi-step action workflow', () => {
     expect(bb1['analysis']).toBeDefined();
 
     // 2. Send approval action — resumes, approve consumed, publish runs
-    const result = await harness.client.actionAndWait('approve', { comment: 'Ship it' });
+    const result = await harness.client.commandAndWait('approve', { comment: 'Ship it' });
     expect(result.treeStatus).toBe('success');
 
     // 3. Verify final blackboard state

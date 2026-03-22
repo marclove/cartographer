@@ -237,29 +237,29 @@ const coder = new AgentNode({
 
 ---
 
-## ActionReceivedNode
+## ReceiveNode
 
 ```typescript
-import { actionReceived, ActionReceivedNode } from "cartographer";
+import { receive, ReceiveNode } from "cartographer";
 ```
 
-Synchronous, non-reactive leaf node for consuming action messages from the blackboard in the [application server](../guide-app-server.md).
+Synchronous, non-reactive leaf node that receives and consumes inbound commands from the blackboard in the [application server](../guide-app-server.md).
 
 ### Factory
 
 ```typescript
-const node = actionReceived(name: string, options?: ActionReceivedOptions);
+const node = receive(name: string, options?: ReceiveOptions);
 ```
 
-### ActionReceivedOptions
+### ReceiveOptions
 
 | Field        | Type                                                 | Required | Description                                                |
 | ------------ | ---------------------------------------------------- | -------- | ---------------------------------------------------------- |
-| `mapPayload` | `(payload: unknown, blackboard: Blackboard) => void` | No       | Callback to extract data from the consumed action payload. |
+| `mapPayload` | `(payload: unknown, blackboard: Blackboard) => void` | No       | Callback to extract data from the consumed command payload. |
 
 ### Behavior
 
-- Checks `actions:<name>` on the blackboard. If present, deletes the key and returns `SUCCESS`. If absent, returns `FAILURE`.
+- Checks `commands:<name>` on the blackboard. If present, deletes the key and returns `SUCCESS`. If absent, returns `FAILURE`.
 - Never returns `RUNNING` (synchronous, no inflight state).
 - Non-reactive: cached in composite `completedMap`, preventing consume-on-read double-execution.
 

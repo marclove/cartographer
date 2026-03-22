@@ -3,7 +3,7 @@ import { BehaviorTree } from '../../core/behavior-tree.js';
 import { ActionNode } from '../../nodes/action.js';
 import { AgentNode } from '../../nodes/agent.js';
 import { SequenceNode } from '../../composites/sequence.js';
-import { actionReceived } from '../../nodes/action-received.js';
+import { receive } from '../../nodes/receive.js';
 import { untilSuccess } from '../../decorators/until-success.js';
 import { NodeStatus } from '../../types.js';
 import { setupTest, waitForEvent, waitForBlackboard } from '../helpers.js';
@@ -21,7 +21,7 @@ describe('agent interrupt and redirect (live)', () => {
             children: [
               // Wait for topic to be set
               untilSuccess(
-                actionReceived('set-topic', {
+                receive('set-topic', {
                   mapPayload: (payload, bb) => {
                     topicSetCount++;
                     bb.set('research:topic', (payload as any)?.topic ?? 'unknown');
@@ -68,7 +68,7 @@ describe('agent interrupt and redirect (live)', () => {
     // The blackboard isn't persisted until runToCompletion finishes, so we can't
     // use waitForBlackboard here. A fixed delay is the appropriate strategy —
     // we need the agent to be mid-API-call, not just started.
-    await harness.client.action('set-topic', { topic: 'quantum computing basics' });
+    await harness.client.command('set-topic', { topic: 'quantum computing basics' });
     await new Promise((r) => setTimeout(r, 3000));
 
     // 2. Interrupt the agent mid-research.

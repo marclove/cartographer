@@ -16,9 +16,9 @@ Creates a client connected to an `ActorServer` at the given URL.
 
 ### Message Methods
 
-#### `action(name: string, payload?: unknown): Promise<{ id: string }>`
+#### `command(name: string, payload?: unknown): Promise<{ id: string }>`
 
-Sends an action message. Shorthand for `POST /api/actions/:name`.
+Sends a command message. Shorthand for `POST /api/commands/:name`.
 
 #### `write(key: string, value: unknown): Promise<{ id: string }>`
 
@@ -28,9 +28,9 @@ Writes a value to the blackboard. Shorthand for `POST /api/blackboard/:key`.
 
 Sends any message type via `POST /api/messages`.
 
-#### `actionAndWait(name: string, payload?: unknown): Promise<{ messageId, treeStatus }>`
+#### `commandAndWait(name: string, payload?: unknown): Promise<{ messageId, treeStatus }>`
 
-Sends an action and waits for the corresponding `message:processed` or `message:failed` event via SSE. Requires `connect()` to be called first.
+Sends a command and waits for the corresponding `message:processed` or `message:failed` event via SSE. Requires `connect()` to be called first.
 
 ### Control Methods
 
@@ -42,11 +42,11 @@ Interrupts the currently processing message. Bypasses the lock. Returns `{ inter
 
 Clears the held state so the next tick processes normally. Returns `{ resumed: true }` if the tree was held, `{ resumed: false }` if not. Calls `POST /api/resume`.
 
-#### `interruptAndAction(name: string, payload?: unknown): Promise<{ id: string }>`
+#### `interruptAndCommand(name: string, payload?: unknown): Promise<{ id: string }>`
 
-Convenience method that interrupts the current processing, waits for the lock to release, then sends a new action. The action clears the held state implicitly.
+Convenience method that interrupts the current processing, waits for the lock to release, then sends a new command. The command clears the held state implicitly.
 
-If nothing is being processed (`interrupted === false`), the action is sent immediately without waiting. If processing was active, the method waits for the interrupted message's `message:processed` or `message:failed` SSE event before sending the follow-up action. This requires `connect()` to have been called first (same requirement as `actionAndWait()`).
+If nothing is being processed (`interrupted === false`), the command is sent immediately without waiting. If processing was active, the method waits for the interrupted message's `message:processed` or `message:failed` SSE event before sending the follow-up command. This requires `connect()` to have been called first (same requirement as `commandAndWait()`).
 
 ### Read Methods
 
@@ -80,7 +80,7 @@ Unsubscribe a handler.
 
 #### `connect(): void`
 
-Opens an `EventSource` connection to `GET /api/events`. No-op if already connected. In Node.js, requires an `EventSource` polyfill (e.g., the `eventsource` package) or the `--experimental-eventsource` flag (Node 22+). If `globalThis.EventSource` is undefined, `connect()` silently returns without error. This means `actionAndWait()` and `interruptAndAction()` (when processing is active) will hang indefinitely in environments without `EventSource` — ensure EventSource is available before calling `connect()`.
+Opens an `EventSource` connection to `GET /api/events`. No-op if already connected. In Node.js, requires an `EventSource` polyfill (e.g., the `eventsource` package) or the `--experimental-eventsource` flag (Node 22+). If `globalThis.EventSource` is undefined, `connect()` silently returns without error. This means `commandAndWait()` and `interruptAndCommand()` (when processing is active) will hang indefinitely in environments without `EventSource` — ensure EventSource is available before calling `connect()`.
 
 #### `disconnect(): void`
 

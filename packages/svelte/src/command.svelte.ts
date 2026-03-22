@@ -2,14 +2,14 @@ import { onDestroy } from 'svelte';
 import { getClient } from './context.js';
 
 /**
- * Reactive handle for a named behavior-tree action.
+ * Reactive handle for a named behavior-tree command.
  *
- * Returned by {@link createAction}. Provides fire-and-forget (`send`) and
+ * Returned by {@link createCommand}. Provides fire-and-forget (`send`) and
  * awaitable (`sendAndWait`) methods, plus a reactive `pending` flag that
- * tracks whether any dispatched action is still in flight or awaiting
+ * tracks whether any dispatched command is still in flight or awaiting
  * server-side completion.
  */
-export interface ActionRef {
+export interface CommandRef {
   /**
    * `true` while at least one HTTP request is in flight **or** a dispatched
    * message ID has not yet received a `message:processed` / `message:failed`
@@ -18,26 +18,26 @@ export interface ActionRef {
   readonly pending: boolean;
 
   /**
-   * Fires the action over HTTP and returns once the server acknowledges it.
+   * Fires the command over HTTP and returns once the server acknowledges it.
    *
    * The returned `id` is tracked internally — `pending` remains `true` until
    * the corresponding `message:processed` or `message:failed` SSE event
    * arrives.
    *
-   * @param payload - Optional data forwarded to the server action handler.
+   * @param payload - Optional data forwarded to the server command handler.
    * @returns The server-assigned message ID.
    */
   send(payload?: unknown): Promise<{ id: string }>;
 
   /**
-   * Fires the action and waits for the server to finish processing it.
+   * Fires the command and waits for the server to finish processing it.
    *
    * Performs the same HTTP call as {@link send}, but the returned promise does
    * not resolve until the `message:processed` SSE event arrives (or rejects
    * on `message:failed`). Useful when subsequent UI logic depends on the
    * tree run completing.
    *
-   * @param payload - Optional data forwarded to the server action handler.
+   * @param payload - Optional data forwarded to the server command handler.
    * @returns The message ID and final tree status once processing completes.
    * @throws If the server reports `message:failed`.
    */
@@ -45,7 +45,7 @@ export interface ActionRef {
 }
 
 /**
- * Creates a reactive {@link ActionRef} for the given named action.
+ * Creates a reactive {@link CommandRef} for the given named command.
  *
  * Registers `message:processed` and `message:failed` SSE listeners at
  * creation time and tears them down automatically via Svelte's `onDestroy`.
@@ -54,10 +54,10 @@ export interface ActionRef {
  * component's `<script>` block) inside a `<Cartographer>` provider so that
  * the client context and lifecycle hooks are available.
  *
- * @param name - The action name recognized by the server-side tree.
- * @returns A reactive handle for dispatching and tracking the action.
+ * @param name - The command name recognized by the server-side tree.
+ * @returns A reactive handle for dispatching and tracking the command.
  */
-export function createAction(name: string): ActionRef {
+export function createCommand(name: string): CommandRef {
   const client = getClient();
 
   let pending = $state(false);
@@ -93,7 +93,7 @@ export function createAction(name: string): ActionRef {
 
   const onFailed = (data: unknown) => {
     const d = data as { messageId: string; error?: string };
-    settle(d.messageId, new Error(d.error ?? 'Action failed'));
+    settle(d.messageId, new Error(d.error ?? 'Command failed'));
   };
 
   client.on('message:processed', onProcessed);
@@ -108,11 +108,11 @@ export function createAction(name: string): ActionRef {
     waitResolvers.clear();
   });
 
-  async function submitAction(payload?: unknown): Promise<string> {
+  async function submitCommand(payload?: unknown): Promise<string> {
     inflight += 1;
     pending = true;
     try {
-      const result = await client.action(name, payload);
+      const result = await client.command(name, payload);
       inflight -= 1;
       pendingIds.add(result.id);
       return result.id;
@@ -128,11 +128,11 @@ export function createAction(name: string): ActionRef {
       return pending;
     },
     async send(payload?: unknown): Promise<{ id: string }> {
-      const id = await submitAction(payload);
+      const id = await submitCommand(payload);
       return { id };
     },
     async sendAndWait(payload?: unknown): Promise<{ messageId: string; treeStatus: string }> {
-      const id = await submitAction(payload);
+      const id = await submitCommand(payload);
       return new Promise<{ messageId: string; treeStatus: string }>((resolve, reject) => {
         waitResolvers.set(id, { resolve, reject });
       });

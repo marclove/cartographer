@@ -385,7 +385,7 @@ Fired by `emitToClient` nodes when they push data to the client. Used by the [ap
 
 ### `message:processed`
 
-Fired by `ActorServer` when a message completes processing successfully. Subscribers (including the client SDK's `actionAndWait`) use this to detect completion.
+Fired by `ActorServer` when a message completes processing successfully. Subscribers (including the client SDK's `commandAndWait`) use this to detect completion.
 
 ```typescript
 {

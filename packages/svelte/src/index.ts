@@ -9,7 +9,7 @@ export { getConnectionStatus, getTreeStatus } from './status.svelte.js';
 export { getBlackboard, getBlackboardSnapshot } from './blackboard.svelte.js';
 
 // Factories
-export { createAction } from './action.svelte.js';
+export { createCommand } from './command.svelte.js';
 
 // Event subscriptions
 export { onClientEvent, onTreeEvent } from './events.svelte.js';
@@ -18,7 +18,7 @@ export { onClientEvent, onTreeEvent } from './events.svelte.js';
 export type { TreeStatusInfo, ConnectionStatus } from './types.js';
 export type { BlackboardRef, BlackboardSnapshotRef } from './blackboard.svelte.js';
 export type { ConnectionStatusRef, TreeStatusRef } from './status.svelte.js';
-export type { ActionRef } from './action.svelte.js';
+export type { CommandRef } from './command.svelte.js';
 
 // Test utilities
 export { createMockClient, createTestContext } from './test-utils.svelte.js';

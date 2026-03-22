@@ -55,7 +55,7 @@ describe('TreeActor held state', () => {
     expect(state?.held).toBe(true);
   });
 
-  it('action message clears held and processes normally', async () => {
+  it('command message clears held and processes normally', async () => {
     const createTree = createSimpleTree();
     const store = new InMemoryStateStore();
     await seedHeldState(store, createTree);
@@ -67,7 +67,7 @@ describe('TreeActor held state', () => {
     });
 
     const result = await actor.process({
-      type: 'action',
+      type: 'command',
       name: 'go',
       payload: {},
     });

@@ -36,7 +36,7 @@ describe('client:event SSE bridging', () => {
     // exits early when two consecutive sync actions both settle before
     // hasInflightWork() is checked. All work IS complete; see runToCompletion
     // in tree-actor.ts for context.
-    await harness.client.actionAndWait('tick');
+    await harness.client.commandAndWait('tick');
 
     const receivedEvents = await eventsPromise;
     expect(receivedEvents).toHaveLength(1);
@@ -70,7 +70,7 @@ describe('client:event SSE bridging', () => {
 
     const eventsPromise = waitForEvent(harness.client, 'ui:step', 3);
 
-    const result = await harness.client.actionAndWait('tick');
+    const result = await harness.client.commandAndWait('tick');
     expect(result.treeStatus).toBe('success');
 
     const receivedEvents = await eventsPromise;
@@ -87,7 +87,7 @@ describe('client:event SSE bridging', () => {
         }),
     });
 
-    await harness.client.actionAndWait('tick');
+    await harness.client.commandAndWait('tick');
     const bb = await harness.client.blackboard();
     expect(bb['clientEvents:ui:status']).toEqual({ ready: true });
   });

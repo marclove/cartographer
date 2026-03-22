@@ -156,12 +156,12 @@ describe('ActorServer write endpoints', () => {
     expect(res.status).toBe(400);
   });
 
-  it('POST /api/actions/:name returns 202', async () => {
+  it('POST /api/commands/:name returns 202', async () => {
     const store = new InMemoryStateStore();
     server = new ActorServer({ createTree: makeTree, stateStore: store, port: 0 });
     port = (await server.start()).port;
 
-    const res = await fetch(`http://localhost:${port}/api/actions/approve`, {
+    const res = await fetch(`http://localhost:${port}/api/commands/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ docId: '123' }),
@@ -458,11 +458,11 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
     expect(s.topologyPolicy).toBe('reset');
   });
 
-  it('POST /api/actions/:name routes correctly and returns 202', async () => {
+  it('POST /api/commands/:name routes correctly and returns 202', async () => {
     server = new ActorServer({ createTree: makeTree, port: 0 });
     port = (await server.start()).port;
 
-    const res = await fetch(`http://localhost:${port}/api/actions/some-action`, {
+    const res = await fetch(`http://localhost:${port}/api/commands/some-action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: 'value' }),
@@ -473,14 +473,14 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
     expect(body.status).toBe('processing');
   });
 
-  it('POST /api/messages returns 400 for action type without name', async () => {
+  it('POST /api/messages returns 400 for command type without name', async () => {
     server = new ActorServer({ createTree: makeTree, port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'action' }),
+      body: JSON.stringify({ type: 'command' }),
     });
     expect(res.status).toBe(400);
     const body = await res.json();

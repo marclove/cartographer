@@ -20,8 +20,8 @@ describe('@cartographer/svelte exports', () => {
     expect(typeof pkg.getTreeStatus).toBe('function');
   });
 
-  it('exports createAction', () => {
-    expect(typeof pkg.createAction).toBe('function');
+  it('exports createCommand', () => {
+    expect(typeof pkg.createCommand).toBe('function');
   });
 
   it('exports event subscription functions', () => {

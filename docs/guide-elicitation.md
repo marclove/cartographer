@@ -31,6 +31,8 @@ A handler returns `{ action, content? }` where `action` is one of:
 - `'decline'` — Refuse the request (the MCP server must handle the refusal).
 - `'cancel'` — Cancel the entire operation.
 
+> **Note:** The `action` field here is part of the Agent SDK's elicitation protocol and refers to the *response disposition* (accept, decline, or cancel). It is unrelated to Cartographer's action nodes.
+
 ---
 
 ## Handler Levels

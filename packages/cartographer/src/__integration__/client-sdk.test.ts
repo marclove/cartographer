@@ -33,12 +33,12 @@ describe('CartographerClient', () => {
     await server?.stop();
   });
 
-  it('action() sends POST and returns message ID', async () => {
+  it('command() sends POST and returns message ID', async () => {
     server = new ActorServer({ createTree: makeTree, port: 0 });
     port = (await server.start()).port;
     const client = createCartographerClient(`http://localhost:${port}`);
 
-    const result = await client.action('test', { x: 1 });
+    const result = await client.command('test', { x: 1 });
     expect(result.id).toBeDefined();
   });
 
@@ -111,18 +111,18 @@ describe('CartographerClient', () => {
     await expect(client.send({} as any)).rejects.toThrow();
   });
 
-  it('action() throws ConflictError on 409 when server is busy', async () => {
+  it('command() throws ConflictError on 409 when server is busy', async () => {
     server = new ActorServer({ createTree: makeSlowTree, port: 0 });
     port = (await server.start()).port;
     const client = createCartographerClient(`http://localhost:${port}`);
 
-    // Start a slow action that will hold the lock
-    await client.action('first');
+    // Start a slow command that will hold the lock
+    await client.command('first');
     // Give the server a moment to start processing
     await new Promise((r) => setTimeout(r, 50));
 
-    // Second action should hit 409
-    await expect(client.action('second')).rejects.toThrow(ConflictError);
+    // Second command should hit 409
+    await expect(client.command('second')).rejects.toThrow(ConflictError);
   });
 });
 
@@ -293,14 +293,14 @@ describe('CartographerClient event listeners', () => {
   });
 });
 
-describe('CartographerClient actionAndWait', () => {
+describe('CartographerClient commandAndWait', () => {
   let server: ActorServer;
 
   afterEach(async () => {
     await server?.stop();
   });
 
-  it('actionAndWait() resolves with messageId and treeStatus on success', async () => {
+  it('commandAndWait() resolves with messageId and treeStatus on success', async () => {
     server = new ActorServer({ createTree: makeTree, port: 0 });
     const { port } = await server.start();
     const client = createCartographerClient(`http://localhost:${port}`);
@@ -308,7 +308,7 @@ describe('CartographerClient actionAndWait', () => {
     client.connect();
     await new Promise((r) => setTimeout(r, 100));
 
-    const result = await client.actionAndWait('test', { x: 1 });
+    const result = await client.commandAndWait('test', { x: 1 });
     expect(result.messageId).toBeDefined();
     expect(typeof result.messageId).toBe('string');
     expect(result.treeStatus).toBe('success');
@@ -316,7 +316,7 @@ describe('CartographerClient actionAndWait', () => {
     client.disconnect();
   });
 
-  it('actionAndWait() rejects with Error via message:failed', async () => {
+  it('commandAndWait() rejects with Error via message:failed', async () => {
     // To trigger message:failed, we need the actor to throw at the server level.
     // A topology mismatch with 'fail' policy causes this.
     const store = new InMemoryStateStore();
@@ -333,7 +333,7 @@ describe('CartographerClient actionAndWait', () => {
     server = new ActorServer({ createTree: tree1, stateStore: store, port: 0 });
     let { port } = await server.start();
     const client1 = createCartographerClient(`http://localhost:${port}`);
-    await client1.action('seed');
+    await client1.command('seed');
     await new Promise((r) => setTimeout(r, 100));
     await server.stop();
 
@@ -345,12 +345,12 @@ describe('CartographerClient actionAndWait', () => {
     client2.connect();
     await new Promise((r) => setTimeout(r, 100));
 
-    await expect(client2.actionAndWait('test')).rejects.toThrow(/topology/i);
+    await expect(client2.commandAndWait('test')).rejects.toThrow(/topology/i);
 
     client2.disconnect();
   });
 
-  it('actionAndWait() cleans up listeners after resolving', async () => {
+  it('commandAndWait() cleans up listeners after resolving', async () => {
     server = new ActorServer({ createTree: makeTree, port: 0 });
     const { port } = await server.start();
     const client = createCartographerClient(`http://localhost:${port}`);
@@ -359,10 +359,10 @@ describe('CartographerClient actionAndWait', () => {
     await new Promise((r) => setTimeout(r, 100));
 
     // First call should resolve
-    await client.actionAndWait('test');
+    await client.commandAndWait('test');
 
     // Second call should also work (listeners from first call are cleaned up)
-    const result = await client.actionAndWait('test');
+    const result = await client.commandAndWait('test');
     expect(result.treeStatus).toBe('success');
 
     client.disconnect();

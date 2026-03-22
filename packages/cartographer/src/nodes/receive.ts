@@ -3,13 +3,13 @@ import { NodeStatus } from '../types.js';
 import type { TreeContext, Blackboard } from '../types.js';
 import { computeContentHash } from '../core/content-hash.js';
 
-export interface ActionReceivedOptions {
+export interface ReceiveOptions {
   mapPayload?: (payload: unknown, blackboard: Blackboard) => void;
 }
 
 /**
- * A synchronous, non-reactive node that checks and consumes action keys
- * from the blackboard.
+ * A synchronous, non-reactive node that receives and consumes an inbound
+ * command from the blackboard.
  *
  * Extends BaseNode directly (not ActionNode or ConditionNode) to ensure:
  * - Non-reactive: sequences cache its SUCCESS in completedMap
@@ -18,25 +18,25 @@ export interface ActionReceivedOptions {
  * Critical invariant: consume-on-read safety depends on faithful
  * completedMap serialization.
  */
-export class ActionReceivedNode extends BaseNode {
-  private readonly actionName: string;
+export class ReceiveNode extends BaseNode {
+  private readonly commandName: string;
   private readonly mapPayload?: (payload: unknown, blackboard: Blackboard) => void;
 
-  constructor(actionName: string, options?: ActionReceivedOptions) {
-    super(`actionReceived:${actionName}`);
-    this.actionName = actionName;
+  constructor(commandName: string, options?: ReceiveOptions) {
+    super(`receive:${commandName}`);
+    this.commandName = commandName;
     this.mapPayload = options?.mapPayload;
   }
 
   protected async execute(context: TreeContext): Promise<NodeStatus> {
-    const key = `actions:${this.actionName}`;
+    const key = `commands:${this.commandName}`;
     const payload = context.blackboard.get(key);
 
     if (payload === undefined) {
       return NodeStatus.FAILURE;
     }
 
-    // Consume the action
+    // Consume the command
     context.blackboard.delete(key);
 
     if (this.mapPayload) {
@@ -47,11 +47,11 @@ export class ActionReceivedNode extends BaseNode {
   }
 
   protected override computeHash(): string {
-    return computeContentHash('ActionReceivedNode', this.actionName);
+    return computeContentHash('ReceiveNode', this.commandName);
   }
 }
 
 /** Factory function. */
-export function actionReceived(name: string, options?: ActionReceivedOptions): ActionReceivedNode {
-  return new ActionReceivedNode(name, options);
+export function receive(name: string, options?: ReceiveOptions): ReceiveNode {
+  return new ReceiveNode(name, options);
 }

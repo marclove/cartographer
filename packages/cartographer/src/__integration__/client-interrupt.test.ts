@@ -45,7 +45,7 @@ describe('CartographerClient interrupt/resume', () => {
     client = createCartographerClient(`http://localhost:${port}`);
 
     // Start slow work
-    await client.action('go');
+    await client.command('go');
     await new Promise((r) => setTimeout(r, 50));
 
     // Interrupt
@@ -101,32 +101,32 @@ describe('CartographerClient interrupt/resume', () => {
     expect(result.resumed).toBe(false);
   });
 
-  it('interruptAndAction() waits for SSE confirmation before sending action', async () => {
+  it('interruptAndCommand() waits for SSE confirmation before sending command', async () => {
     const store = new InMemoryStateStore();
     server = new ActorServer({ createTree: makeSlowTree, stateStore: store, port: 0 });
     const { port } = await server.start();
     client = createCartographerClient(`http://localhost:${port}`);
 
-    // Connect SSE so interruptAndAction can listen for message:processed
+    // Connect SSE so interruptAndCommand can listen for message:processed
     client.connect();
     await new Promise((r) => setTimeout(r, 100));
 
     // Start slow work
-    await client.action('go');
+    await client.command('go');
     await new Promise((r) => setTimeout(r, 50));
 
-    // interruptAndAction: interrupts, waits for SSE confirmation, then sends action
-    const result = await client.interruptAndAction('redirect', { target: 'new-path' });
+    // interruptAndCommand: interrupts, waits for SSE confirmation, then sends command
+    const result = await client.interruptAndCommand('redirect', { target: 'new-path' });
     expect(result.id).toBeDefined();
   });
 
-  it('interruptAndAction() sends action directly when nothing is processing', async () => {
+  it('interruptAndCommand() sends command directly when nothing is processing', async () => {
     server = new ActorServer({ createTree: makeFastTree, port: 0 });
     const { port } = await server.start();
     client = createCartographerClient(`http://localhost:${port}`);
 
     // No SSE needed — fast path skips waiting
-    const result = await client.interruptAndAction('go', {});
+    const result = await client.interruptAndCommand('go', {});
     expect(result.id).toBeDefined();
   });
 });

@@ -6,7 +6,7 @@
 
   On mount the provider opens the SSE connection; on destroy it disconnects and
   detaches all event listeners. All other `@cartographer/svelte` functions
-  (`getBlackboard`, `createAction`, etc.) must be called inside this provider.
+  (`getBlackboard`, `createCommand`, etc.) must be called inside this provider.
 
   @example
   ```svelte

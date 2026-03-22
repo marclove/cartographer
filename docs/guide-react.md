@@ -163,15 +163,15 @@ The value is `null` until the first `tree:tick` SSE event arrives, and resets to
 
 ---
 
-## Dispatching Actions
+## Dispatching Commands
 
-`useAction` returns a handle for sending named actions to the server. It tracks whether the action is still in flight or awaiting server-side completion.
+`useCommand` returns a handle for sending named commands to the server. It tracks whether the command is still in flight or awaiting server-side completion.
 
 ```tsx
-import { useAction } from "@cartographer/react";
+import { useCommand } from "@cartographer/react";
 
 function ApproveButton() {
-  const approve = useAction("approve");
+  const approve = useCommand("approve");
 
   return (
     <button onClick={() => approve.send({ comment: "Ship it" })} disabled={approve.pending}>
@@ -186,8 +186,8 @@ The returned object has three members:
 | Member                  | Type                                               | Description                                                                                                                                                |
 | ----------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pending`               | `boolean`                                          | `true` while an HTTP request is in flight or a dispatched message hasn't received its `message:processed` / `message:failed` SSE event.                    |
-| `send(payload?)`        | `(unknown?) => Promise<{ id }>`                    | Fires the action and returns the server-assigned message ID. `pending` remains `true` until the SSE settlement event arrives.                              |
-| `sendAndWait(payload?)` | `(unknown?) => Promise<{ messageId, treeStatus }>` | Fires the action and waits for the server to finish processing. The promise resolves with the final tree status, or rejects if the server reports failure. |
+| `send(payload?)`        | `(unknown?) => Promise<{ id }>`                    | Fires the command and returns the server-assigned message ID. `pending` remains `true` until the SSE settlement event arrives.                             |
+| `sendAndWait(payload?)` | `(unknown?) => Promise<{ messageId, treeStatus }>` | Fires the command and waits for the server to finish processing. The promise resolves with the final tree status, or rejects if the server reports failure. |
 
 ### Fire-and-forget vs. await completion
 
@@ -197,10 +197,10 @@ Use `sendAndWait` when subsequent logic depends on the tree run finishing:
 
 ```tsx
 import { useState } from "react";
-import { useAction } from "@cartographer/react";
+import { useCommand } from "@cartographer/react";
 
 function AnalysisPanel() {
-  const analyze = useAction("analyze");
+  const analyze = useCommand("analyze");
   const [result, setResult] = useState<string | null>(null);
 
   async function runAnalysis() {
@@ -221,7 +221,7 @@ function AnalysisPanel() {
 
 ### Lifecycle
 
-`useAction` registers `message:processed` and `message:failed` SSE listeners on mount and removes them on unmount. If the component unmounts while a `sendAndWait` promise is pending, the promise rejects with a `"Component unmounted"` error.
+`useCommand` registers `message:processed` and `message:failed` SSE listeners on mount and removes them on unmount. If the component unmounts while a `sendAndWait` promise is pending, the promise rejects with a `"Component unmounted"` error.
 
 ---
 
@@ -289,7 +289,7 @@ function RedirectButton() {
 
   async function interruptAndRedirect() {
     await client.interrupt();
-    await client.action("redirect", { target: "/new-path" });
+    await client.command("redirect", { target: "/new-path" });
   }
 
   return <button onClick={interruptAndRedirect}>Redirect</button>;
@@ -321,14 +321,14 @@ export function App() {
 ```tsx
 // src/ReviewPanel.tsx
 import { useState } from "react";
-import { useBlackboard, useConnectionStatus, useTreeStatus, useAction, useClientEvent } from "@cartographer/react";
+import { useBlackboard, useConnectionStatus, useTreeStatus, useCommand, useClientEvent } from "@cartographer/react";
 
 export function ReviewPanel() {
   const status = useConnectionStatus();
   const tree = useTreeStatus();
   const [analysis] = useBlackboard<{ summary: string }>("analysis");
-  const approve = useAction("approve");
-  const reject = useAction("reject");
+  const approve = useCommand("approve");
+  const reject = useCommand("reject");
 
   const [findings, setFindings] = useState<unknown>(null);
 
@@ -391,7 +391,7 @@ const client = createMockClient();
 client.emit("snapshot", { blackboard: { greeting: "hello" } });
 
 // Assert that action was called
-await client.action("approve", { comment: "LGTM" });
+await client.command("approve", { comment: "LGTM" });
 expect(client.action).toHaveBeenCalledWith("approve", { comment: "LGTM" });
 ```
 
@@ -464,7 +464,7 @@ expect(getByText("Analysis: All clear")).toBeDefined();
 | `useBlackboardSnapshot()`       | Hook         | Full blackboard as `Record<string, unknown>`.                           |
 | `useConnectionStatus()`         | Hook         | SSE connection state (`'connecting'`, `'connected'`, `'disconnected'`). |
 | `useTreeStatus()`               | Hook         | Latest tree tick result, or `null`.                                     |
-| `useAction(name)`               | Hook         | Action handle with `send`, `sendAndWait`, and `pending`.                |
+| `useCommand(name)`              | Hook         | Command handle with `send`, `sendAndWait`, and `pending`.               |
 | `useClientEvent(name, handler)` | Hook         | Subscribe to `emitToClient` events.                                     |
 | `useTreeEvent(type, handler)`   | Hook         | Subscribe to raw SSE event types.                                       |
 | `createMockClient()`            | Test utility | Mock client with `emit()` for simulating SSE events.                    |

@@ -5,7 +5,7 @@ import { SequenceNode } from '../composites/sequence.js';
 import { SelectorNode } from '../composites/selector.js';
 import { GuardNode } from '../decorators/guard.js';
 import { emitToClient } from '../nodes/emit-to-client.js';
-import { actionReceived } from '../nodes/action-received.js';
+import { receive } from '../nodes/receive.js';
 import { untilSuccess } from '../decorators/until-success.js';
 import { NodeStatus } from '../types.js';
 import { setupTest, waitForEvent, waitForBlackboard } from './helpers.js';
@@ -47,7 +47,7 @@ describe('selector preemption reactive', () => {
                           },
                         }),
                       }),
-                      untilSuccess(actionReceived('confirm-provision')),
+                      untilSuccess(receive('confirm-provision')),
 
                       // Second guard — re-checked after confirmation
                       new GuardNode({
@@ -61,7 +61,7 @@ describe('selector preemption reactive', () => {
                           },
                         }),
                       }),
-                      untilSuccess(actionReceived('confirm-configure')),
+                      untilSuccess(receive('confirm-configure')),
 
                       new ActionNode({
                         name: 'activate',
@@ -98,14 +98,14 @@ describe('selector preemption reactive', () => {
     });
 
     // 1. Start pipeline — plan-deploy completes, guard passes, provision runs, suspends at confirm-provision
-    await harness.client.actionAndWait('tick');
+    await harness.client.commandAndWait('tick');
 
     let bb = await harness.client.blackboard();
     expect(bb['provisioned']).toBe(true);
     expect(bb['configured']).toBeUndefined();
 
     // 2. Confirm provision — guard still passes, configure runs, suspends at confirm-configure
-    await harness.client.actionAndWait('confirm-provision');
+    await harness.client.commandAndWait('confirm-provision');
 
     bb = await harness.client.blackboard();
     expect(bb['configured']).toBe(true);

@@ -58,15 +58,15 @@ export function useTreeStatus(): TreeStatusInfo | null {
   return useSyncExternalStore(store.subscribe, store.getTreeStatus);
 }
 
-// ─── useAction ───
+// ─── useCommand ───
 
-interface UseActionReturn {
+interface UseCommandReturn {
   send: (payload?: unknown) => Promise<{ id: string }>;
   sendAndWait: (payload?: unknown) => Promise<{ messageId: string; treeStatus: string }>;
   pending: boolean;
 }
 
-export function useAction(name: string): UseActionReturn {
+export function useCommand(name: string): UseCommandReturn {
   const { client } = useCartographerContext();
   const [pending, setPending] = useState(false);
   // IDs of sends that reached the server and are awaiting SSE completion events.
@@ -103,7 +103,7 @@ export function useAction(name: string): UseActionReturn {
     };
     const onFailed = (data: unknown) => {
       const d = data as { messageId: string; error?: string };
-      settle(d.messageId, new Error(d.error ?? 'Action failed'));
+      settle(d.messageId, new Error(d.error ?? 'Command failed'));
     };
     client.on('message:processed', onProcessed);
     client.on('message:failed', onFailed);
@@ -122,7 +122,7 @@ export function useAction(name: string): UseActionReturn {
       inflightRef.current += 1;
       setPending(true);
       try {
-        const result = await client.action(name, payload);
+        const result = await client.command(name, payload);
         inflightRef.current -= 1;
         pendingIdsRef.current.add(result.id);
         return result;
@@ -140,7 +140,7 @@ export function useAction(name: string): UseActionReturn {
       inflightRef.current += 1;
       setPending(true);
       try {
-        const result = await client.action(name, payload);
+        const result = await client.command(name, payload);
         inflightRef.current -= 1;
         pendingIdsRef.current.add(result.id);
         return new Promise<{ messageId: string; treeStatus: string }>((resolve, reject) => {

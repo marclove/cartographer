@@ -96,7 +96,7 @@ export type { SerializedNodeRef, SerializedTreeNode } from './server/serializers
 // Actor
 export { TreeActor } from './actor/tree-actor.js';
 export type { TreeActorOptions, ProcessResult } from './actor/tree-actor.js';
-export type { ActorMessage, TickMessage, ActionMessage, WriteMessage, SignalMessage, MessageInterruptedEvent, MessageProcessedEvent, MessageFailedEvent } from './actor/types.js';
+export type { ActorMessage, TickMessage, CommandMessage, WriteMessage, SignalMessage, MessageInterruptedEvent, MessageProcessedEvent, MessageFailedEvent } from './actor/types.js';
 export { generateMessageId } from './actor/types.js';
 
 // State
@@ -113,7 +113,7 @@ export { EventBridge } from './server/event-bridge.js';
 
 // New nodes
 export { untilSuccess, UntilSuccessNode } from './decorators/until-success.js';
-export { actionReceived, ActionReceivedNode } from './nodes/action-received.js';
+export { receive, ReceiveNode } from './nodes/receive.js';
 export { emitToClient, EmitToClientNode } from './nodes/emit-to-client.js';
 
 // Serialization

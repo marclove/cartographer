@@ -1,6 +1,6 @@
 export type ActorMessage =
   | TickMessage
-  | ActionMessage
+  | CommandMessage
   | WriteMessage
   | SignalMessage;
 
@@ -9,8 +9,8 @@ export interface TickMessage {
   id?: string;
 }
 
-export interface ActionMessage {
-  type: 'action';
+export interface CommandMessage {
+  type: 'command';
   name: string;
   payload?: unknown;
   id?: string;

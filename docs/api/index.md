@@ -138,7 +138,7 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `ActorServerOptions`       | Options for `ActorServer` constructor                            |
 | `ActorMessage`             | Union of all message types                                       |
 | `TickMessage`              | Tick message type                                                |
-| `ActionMessage`            | Action message type                                              |
+| `CommandMessage`           | Command message type                                             |
 | `WriteMessage`             | Write message type                                               |
 | `SignalMessage`            | Signal message type (stop, reset, abort, resume)                 |
 | `MessageProcessedEvent`    | Event emitted on message completion                              |

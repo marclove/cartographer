@@ -1,204 +1,204 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import ActionTest from './__tests__/ActionTest.svelte';
+import CommandTest from './__tests__/CommandTest.svelte';
 import { createMockClient } from './test-utils.svelte.js';
-import type { ActionRef } from './action.svelte.js';
+import type { CommandRef } from './command.svelte.js';
 
-function renderAction(
+function renderCommand(
   clientOverrides?: Record<string, unknown>,
-): { client: ReturnType<typeof createMockClient>; action: ActionRef } {
+): { client: ReturnType<typeof createMockClient>; command: CommandRef } {
   const client = createMockClient();
   if (clientOverrides) {
     Object.assign(client, clientOverrides);
   }
 
-  let action!: ActionRef;
-  render(ActionTest, {
+  let command!: CommandRef;
+  render(CommandTest, {
     props: {
       client,
-      actionName: 'submit',
-      onAction: (a: ActionRef) => {
-        action = a;
+      commandName: 'submit',
+      onCommand: (a: CommandRef) => {
+        command = a;
       },
     },
   });
 
-  return { client, action };
+  return { client, command };
 }
 
-describe('createAction', () => {
-  it('send() calls client.action with correct args', async () => {
-    const { client, action } = renderAction();
+describe('createCommand', () => {
+  it('send() calls client.command with correct args', async () => {
+    const { client, command } = renderCommand();
 
-    await action.send({ rating: 5 });
+    await command.send({ rating: 5 });
     await tick();
 
-    expect(client.action).toHaveBeenCalledWith('submit', { rating: 5 });
+    expect(client.command).toHaveBeenCalledWith('submit', { rating: 5 });
   });
 
   it('send() resolves with id', async () => {
-    const { action } = renderAction();
+    const { command } = renderCommand();
 
-    const result = await action.send();
+    const result = await command.send();
     expect(result.id).toBe('msg-1');
   });
 
   it('pending is false initially', () => {
-    const { action } = renderAction();
-    expect(action.pending).toBe(false);
+    const { command } = renderCommand();
+    expect(command.pending).toBe(false);
   });
 
   it('pending becomes true after send and false after message:processed', async () => {
-    const { client, action } = renderAction();
+    const { client, command } = renderCommand();
 
-    await action.send();
+    await command.send();
     await tick();
 
-    expect(action.pending).toBe(true);
+    expect(command.pending).toBe(true);
 
     client.emit('message:processed', { messageId: 'msg-1', treeStatus: 'success' });
     await tick();
 
-    expect(action.pending).toBe(false);
+    expect(command.pending).toBe(false);
   });
 
   it('pending becomes false on message:failed', async () => {
-    const { client, action } = renderAction();
+    const { client, command } = renderCommand();
 
-    await action.send();
+    await command.send();
     await tick();
 
     client.emit('message:failed', { messageId: 'msg-1', error: 'oops' });
     await tick();
 
-    expect(action.pending).toBe(false);
+    expect(command.pending).toBe(false);
   });
 
   it('ignores message:processed for different ID', async () => {
-    const { client, action } = renderAction();
+    const { client, command } = renderCommand();
 
-    await action.send();
+    await command.send();
     await tick();
 
     client.emit('message:processed', { messageId: 'other-id', treeStatus: 'success' });
     await tick();
 
-    expect(action.pending).toBe(true);
+    expect(command.pending).toBe(true);
   });
 
   it('pending stays true until all concurrent sends are resolved', async () => {
     const client = createMockClient();
-    (client.action as ReturnType<typeof vi.fn>)
+    (client.command as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({ id: 'msg-1' })
       .mockResolvedValueOnce({ id: 'msg-2' });
 
-    let action!: ActionRef;
-    render(ActionTest, {
+    let command!: CommandRef;
+    render(CommandTest, {
       props: {
         client,
-        actionName: 'submit',
-        onAction: (a: ActionRef) => {
-          action = a;
+        commandName: 'submit',
+        onCommand: (a: CommandRef) => {
+          command = a;
         },
       },
     });
 
-    await Promise.all([action.send(), action.send()]);
+    await Promise.all([command.send(), command.send()]);
     await tick();
 
-    expect(action.pending).toBe(true);
+    expect(command.pending).toBe(true);
 
     client.emit('message:processed', { messageId: 'msg-1', treeStatus: 'success' });
     await tick();
 
-    expect(action.pending).toBe(true);
+    expect(command.pending).toBe(true);
 
     client.emit('message:processed', { messageId: 'msg-2', treeStatus: 'success' });
     await tick();
 
-    expect(action.pending).toBe(false);
+    expect(command.pending).toBe(false);
   });
 
   it('pending clears correctly when one of two concurrent sends fails via HTTP', async () => {
     const client = createMockClient();
-    (client.action as ReturnType<typeof vi.fn>)
+    (client.command as ReturnType<typeof vi.fn>)
       .mockRejectedValueOnce(new Error('500'))
       .mockResolvedValueOnce({ id: 'msg-2' });
 
-    let action!: ActionRef;
-    render(ActionTest, {
+    let command!: CommandRef;
+    render(CommandTest, {
       props: {
         client,
-        actionName: 'submit',
-        onAction: (a: ActionRef) => {
-          action = a;
+        commandName: 'submit',
+        onCommand: (a: CommandRef) => {
+          command = a;
         },
       },
     });
 
-    await Promise.allSettled([action.send(), action.send()]);
+    await Promise.allSettled([command.send(), command.send()]);
     await tick();
 
-    expect(action.pending).toBe(true);
+    expect(command.pending).toBe(true);
 
     client.emit('message:processed', { messageId: 'msg-2', treeStatus: 'success' });
     await tick();
 
-    expect(action.pending).toBe(false);
+    expect(command.pending).toBe(false);
   });
 
   it('send() resets pending on HTTP error', async () => {
     const client = createMockClient();
-    (client.action as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('409'));
+    (client.command as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('409'));
 
-    let action!: ActionRef;
-    render(ActionTest, {
+    let command!: CommandRef;
+    render(CommandTest, {
       props: {
         client,
-        actionName: 'submit',
-        onAction: (a: ActionRef) => {
-          action = a;
+        commandName: 'submit',
+        onCommand: (a: CommandRef) => {
+          command = a;
         },
       },
     });
 
-    await expect(action.send()).rejects.toThrow('409');
+    await expect(command.send()).rejects.toThrow('409');
     await tick();
 
-    expect(action.pending).toBe(false);
+    expect(command.pending).toBe(false);
   });
 
   // sendAndWait tests need two ticks before emitting SSE events.
   // sendAndWait is async and hits two awaits before the resolver is
-  // registered: `await submitAction()` → `await client.action()`.
+  // registered: `await submitCommand()` → `await client.command()`.
   // Each await yields a microtask. A single `await tick()` only
   // flushes one, so the resolver wouldn't exist yet when we call
   // `client.emit(...)`. The second tick ensures the full chain has
   // settled and the resolver is in place.
 
-  it('sendAndWait calls client.action and resolves on message:processed', async () => {
-    const { client, action } = renderAction();
+  it('sendAndWait calls client.command and resolves on message:processed', async () => {
+    const { client, command } = renderCommand();
 
-    const waitPromise = action.sendAndWait({ data: 1 });
+    const waitPromise = command.sendAndWait({ data: 1 });
     await tick();
     await tick();
 
-    expect(client.action).toHaveBeenCalledWith('submit', { data: 1 });
-    expect(action.pending).toBe(true);
+    expect(client.command).toHaveBeenCalledWith('submit', { data: 1 });
+    expect(command.pending).toBe(true);
 
     client.emit('message:processed', { messageId: 'msg-1', treeStatus: 'success' });
     const result = await waitPromise;
     await tick();
 
     expect(result).toEqual({ messageId: 'msg-1', treeStatus: 'success' });
-    expect(action.pending).toBe(false);
+    expect(command.pending).toBe(false);
   });
 
   it('sendAndWait rejects on message:failed', async () => {
-    const { client, action } = renderAction();
+    const { client, command } = renderCommand();
 
-    const waitPromise = action.sendAndWait();
+    const waitPromise = command.sendAndWait();
     await tick();
     await tick();
 
@@ -206,31 +206,31 @@ describe('createAction', () => {
     await expect(waitPromise).rejects.toThrow('boom');
     await tick();
 
-    expect(action.pending).toBe(false);
+    expect(command.pending).toBe(false);
   });
 
   it('sendAndWait does not clear pending while send() is still awaiting completion', async () => {
     const client = createMockClient();
-    (client.action as ReturnType<typeof vi.fn>)
+    (client.command as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({ id: 'msg-send' })
       .mockResolvedValueOnce({ id: 'msg-wait' });
 
-    let action!: ActionRef;
-    render(ActionTest, {
+    let command!: CommandRef;
+    render(CommandTest, {
       props: {
         client,
-        actionName: 'submit',
-        onAction: (a: ActionRef) => { action = a; },
+        commandName: 'submit',
+        onCommand: (a: CommandRef) => { command = a; },
       },
     });
 
     // Fire send() — pending because it's awaiting message:processed
-    await action.send();
+    await command.send();
     await tick();
-    expect(action.pending).toBe(true);
+    expect(command.pending).toBe(true);
 
     // Fire sendAndWait() concurrently — both tracked by ID
-    const waitPromise = action.sendAndWait();
+    const waitPromise = command.sendAndWait();
     await tick();
     await tick();
 
@@ -240,12 +240,12 @@ describe('createAction', () => {
     await tick();
 
     // pending should still be true because send()'s ID hasn't been resolved
-    expect(action.pending).toBe(true);
+    expect(command.pending).toBe(true);
 
     // Now resolve the send()
     client.emit('message:processed', { messageId: 'msg-send', treeStatus: 'success' });
     await tick();
 
-    expect(action.pending).toBe(false);
+    expect(command.pending).toBe(false);
   });
 });

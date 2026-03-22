@@ -127,14 +127,14 @@ describe('SSE event forwarding', () => {
 });
 
 describe('requireConnection guard', () => {
-  it('actionAndWait throws when connect() has not been called', async () => {
+  it('commandAndWait throws when connect() has not been called', async () => {
     const client = createCartographerClient('http://localhost:3000');
-    await expect(client.actionAndWait('doSomething')).rejects.toThrow(
-      'SSE connection required: call connect() before using actionAndWait or interruptAndAction'
+    await expect(client.commandAndWait('doSomething')).rejects.toThrow(
+      'SSE connection required: call connect() before using commandAndWait or interruptAndCommand'
     );
   });
 
-  it('interruptAndAction throws when connect() has not been called and interrupt() returns interrupted: true', async () => {
+  it('interruptAndCommand throws when connect() has not been called and interrupt() returns interrupted: true', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       json: () => Promise.resolve({ interrupted: true, messageId: 'x' }),
       status: 200,
@@ -142,12 +142,12 @@ describe('requireConnection guard', () => {
 
     const client = createCartographerClient('http://localhost:3000');
 
-    await expect(client.interruptAndAction('doSomething')).rejects.toThrow(
-      'SSE connection required: call connect() before using actionAndWait or interruptAndAction'
+    await expect(client.interruptAndCommand('doSomething')).rejects.toThrow(
+      'SSE connection required: call connect() before using commandAndWait or interruptAndCommand'
     );
   });
 
-  it('interruptAndAction does NOT throw when interrupt() returns interrupted: false', async () => {
+  it('interruptAndCommand does NOT throw when interrupt() returns interrupted: false', async () => {
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce({
         // interrupt() response
@@ -155,7 +155,7 @@ describe('requireConnection guard', () => {
         status: 200,
       })
       .mockResolvedValueOnce({
-        // action() / post() response
+        // command() / post() response
         json: () => Promise.resolve({ id: 'msg-1' }),
         status: 200,
       })
@@ -163,8 +163,8 @@ describe('requireConnection guard', () => {
 
     const client = createCartographerClient('http://localhost:3000');
 
-    // Should not throw — falls through to this.action() which calls fetch
-    const result = await client.interruptAndAction('doSomething');
+    // Should not throw — falls through to this.command() which calls fetch
+    const result = await client.interruptAndCommand('doSomething');
     expect(result).toEqual({ id: 'msg-1' });
   });
 });

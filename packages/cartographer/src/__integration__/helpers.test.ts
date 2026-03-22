@@ -64,8 +64,8 @@ describe('setupTest', () => {
     expect(harness.server).toBeDefined();
     expect(harness.client).toBeDefined();
 
-    // Client SSE is connected — actionAndWait should work without hanging
-    const result = await harness.client.actionAndWait('tick');
+    // Client SSE is connected — commandAndWait should work without hanging
+    const result = await harness.client.commandAndWait('tick');
     expect(result.treeStatus).toBe('success');
   });
 
@@ -105,7 +105,7 @@ describe('setupTest', () => {
       context: { tenant: 'test-tenant' },
     });
 
-    await harness.client.actionAndWait('tick');
+    await harness.client.commandAndWait('tick');
     const bb = await harness.client.blackboard();
     expect(bb['result']).toBe('test-tenant');
   });

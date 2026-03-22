@@ -8,13 +8,13 @@ export function createMockClient(): CartographerClient & {
   const listeners = new Map<string, Set<(data: unknown) => void>>();
 
   return {
-    action: vi.fn().mockResolvedValue({ id: 'msg-1' }),
+    command: vi.fn().mockResolvedValue({ id: 'msg-1' }),
     write: vi.fn().mockResolvedValue({ id: 'msg-2' }),
     send: vi.fn().mockResolvedValue({ id: 'msg-3' }),
-    actionAndWait: vi.fn().mockResolvedValue({ messageId: 'msg-1', treeStatus: 'success' }),
+    commandAndWait: vi.fn().mockResolvedValue({ messageId: 'msg-1', treeStatus: 'success' }),
     interrupt: vi.fn().mockResolvedValue({ interrupted: false }),
     resume: vi.fn().mockResolvedValue({ resumed: true }),
-    interruptAndAction: vi.fn().mockResolvedValue({ id: 'msg-4' }),
+    interruptAndCommand: vi.fn().mockResolvedValue({ id: 'msg-4' }),
     blackboard: vi.fn().mockResolvedValue({}),
     tree: vi.fn().mockResolvedValue({}),
     status: vi.fn().mockResolvedValue({}),
