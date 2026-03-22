@@ -243,13 +243,22 @@ Node B's iterable blocks until A's turn completes. From the BT's perspective, bo
 
 ```ts
 class AsyncQueue<T> implements AsyncIterable<T> {
-  push(item: T): void; // enqueue an item (non-blocking)
-  async *[Symbol.asyncIterator](): AsyncIterableIterator<T>; // yields items as they arrive
-  close(): void; // signal no more items; iterator completes
+  push(item: T): void;           // enqueue an item (non-blocking)
+  close(err?: Error): void;      // signal completion or error
+  async *[Symbol.asyncIterator](): AsyncIterableIterator<T>;
 }
 ```
 
-This is a standard concurrency primitive (~30 lines). It will live in `src/agent/async-queue.ts`.
+Semantics:
+
+- **`push(item)`** — enqueues an item. If the iterator is waiting, it resolves immediately. If the queue is closed, the push is silently dropped.
+- **`close()`** — signals no more items. The iterator yields any remaining queued items, then completes.
+- **`close(err)`** — signals an error. The iterator throws `err` for any consumer currently awaiting `next()`. Pending items are discarded.
+- **Backpressure** — not needed. Each `send()` pushes exactly one message, and the SDK pulls sequentially. The queue stays small (at most a few pending sends from concurrent nodes).
+- **SDK query termination** — if the SDK query terminates unexpectedly, `ClaudeSDKAgent` calls `close(err)` on the queue. Any pending `send()` iterables that are waiting for their turn receive the error through the demux layer (the turn's iterable throws), rather than stalling indefinitely.
+- **Agent.close()** — calls `close()` on the queue (normal completion). Any pending send() iterables complete without yielding further messages.
+
+This will live in `src/agent/async-queue.ts`.
 
 ### AgentNode Changes
 
