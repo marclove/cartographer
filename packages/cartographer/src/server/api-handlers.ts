@@ -47,9 +47,7 @@ export function handleApiNode(res: ServerResponse, tree: BehaviorTree, nodeId: s
     const info = node.agentOptions;
     if (info.model) detail.model = info.model;
     detail.tools = info.tools ?? [];
-    detail.mcpServers = Array.isArray(info.mcpServers)
-      ? info.mcpServers
-      : info.mcpServers ? Object.keys(info.mcpServers as Record<string, unknown>) : [];
+    detail.mcpServers = (info.mcpServers as string[]) ?? [];
   }
 
   if (node.children.length > 0) {
