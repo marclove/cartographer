@@ -251,7 +251,7 @@ export class AgentNode extends BaseNode {
       case 'provider_event': {
         const d = msg.data as Record<string, unknown>;
         const eventMap: Record<string, string> = {
-          stream: 'agent:stream',
+          stream_event: 'agent:stream',
           tool_progress: 'agent:tool_progress',
           init: 'agent:init',
           status: 'agent:status',

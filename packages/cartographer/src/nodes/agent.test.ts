@@ -244,6 +244,25 @@ describe('AgentNode - observability events', () => {
     );
   });
 
+  it('emits agent:stream for provider_event with subtype stream_event', async () => {
+    const agent = createAgent([
+      { type: 'provider_event', subtype: 'stream_event', data: { delta: 'hello' } },
+      { type: 'result', subtype: 'success', output: 'done' },
+    ]);
+
+    const node = new AgentNode({ name: 'streamer', agent, prompt: 'Stream' });
+    const ctx = createContext();
+    const streamSpy = vi.fn();
+    ctx.events.on('agent:stream', streamSpy);
+    await node.tick(ctx);
+    await flush();
+    await node.tick(ctx);
+
+    expect(streamSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ delta: 'hello' }),
+    );
+  });
+
   it('emits agent:response on success result', async () => {
     const agent = createAgent([
       { type: 'result', subtype: 'success', output: 'done', cost: 0.03 },
