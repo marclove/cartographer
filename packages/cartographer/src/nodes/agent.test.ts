@@ -263,6 +263,25 @@ describe('AgentNode - observability events', () => {
     );
   });
 
+  it('emits agent:rate_limit with { info } wrapper', async () => {
+    const agent = createAgent([
+      { type: 'provider_event', subtype: 'rate_limit', data: { info: { retryAfter: 5 } } },
+      { type: 'result', subtype: 'success', output: 'done' },
+    ]);
+
+    const node = new AgentNode({ name: 'limited', agent, prompt: 'Work' });
+    const ctx = createContext();
+    const rateSpy = vi.fn();
+    ctx.events.on('agent:rate_limit', rateSpy);
+    await node.tick(ctx);
+    await flush();
+    await node.tick(ctx);
+
+    expect(rateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ info: { retryAfter: 5 } }),
+    );
+  });
+
   it('emits agent:response on success result', async () => {
     const agent = createAgent([
       { type: 'result', subtype: 'success', output: 'done', cost: 0.03 },

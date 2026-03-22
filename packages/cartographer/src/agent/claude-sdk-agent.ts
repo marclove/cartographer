@@ -434,7 +434,7 @@ export class ClaudeSDKAgent extends Agent {
             });
           } else if (m.type === 'rate_limit_event') {
             const rl = msg as SDKRateLimitEvent;
-            messages.push({ type: 'provider_event', subtype: 'rate_limit', data: rl.rate_limit_info });
+            messages.push({ type: 'provider_event', subtype: 'rate_limit', data: { info: rl.rate_limit_info } });
           } else {
             // All other SDK message types pass through as provider events
             messages.push({ type: 'provider_event', subtype: String(m.type), data: msg });
