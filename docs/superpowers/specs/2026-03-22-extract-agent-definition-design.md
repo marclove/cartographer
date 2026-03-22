@@ -430,7 +430,12 @@ The Agent's lifecycle is managed by its creator, not by individual nodes or the 
 - **Creation**: The user constructs Agent instances outside the tree, typically at application startup.
 - **Usage**: Multiple AgentNodes and strategies may reference the same Agent instance. Each `send()` call returns a scoped iterable — no shared state conflicts.
 - **Abort/Interrupt**: AgentNode's `abort()` and `interrupt()` cancel in-flight work via the `signal` in `AgentSendOptions`. This cancels the current turn without closing the Agent's session.
-- **Disposal**: `close()` is called when the Agent is no longer needed (e.g., application shutdown, tree disposal). After `close()`, the Agent cannot be used. Individual node abort/interrupt does NOT call `close()`.
+- **Disposal**: `close()` is called when the Agent is no longer needed (e.g., application shutdown, tree disposal). Individual node abort/interrupt does NOT call `close()`. When `close()` is called:
+  - The SDK subprocess is terminated via `queryInstance.close()`.
+  - The AsyncQueue is closed with an error (`close(new Error('Agent closed'))`).
+  - Any **in-flight turn's** iterable throws the error on its next `await`, surfacing the shutdown to the consuming node.
+  - Any **queued-but-not-started turn's** iterable throws the same error immediately — the message is never processed.
+  - After `close()`, subsequent `send()` calls throw synchronously.
 
 ---
 
