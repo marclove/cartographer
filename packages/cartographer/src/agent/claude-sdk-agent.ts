@@ -1,7 +1,7 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import type { Options, SDKMessage, SDKAssistantMessage, SDKResultMessage, SDKSystemMessage, SDKToolProgressMessage, SDKRateLimitEvent } from '@anthropic-ai/claude-agent-sdk';
 import { Agent } from './agent.js';
-import type { AgentConfig, AgentMessage, AgentSendOptions, AgentInfo, AgentUsage } from './agent.js';
+import type { AgentConfig, AgentMessage, AgentSendOptions, AgentInfo } from './agent.js';
 import { AsyncQueue } from './async-queue.js';
 import { createBlackboardMcpServer } from './blackboard-mcp.js';
 import { wrapElicitation } from './sdk-helpers.js';
@@ -255,12 +255,10 @@ export class ClaudeSDKAgent extends Agent {
 
   private async runDemuxLoop(): Promise<void> {
     try {
-      for await (const rawMsg of this.queryInstance!) {
-        const msg = rawMsg as any;
-
+      for await (const msg of this.queryInstance!) {
         // Extract sessionId from init messages
-        if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
-          this._sessionId = msg.session_id;
+        if (msg.type === 'system' && msg.subtype === 'init') {
+          this._sessionId = (msg as SDKSystemMessage).session_id;
         }
 
         // Activate the next pending turn if none is active
@@ -330,82 +328,81 @@ export class ClaudeSDKAgent extends Agent {
 
   private _activeTurnOnMessage?: (msg: AgentMessage) => void;
 
-  private mapSdkMessage(msg: any): AgentMessage[] {
+  private mapSdkMessage(msg: SDKMessage): AgentMessage[] {
     const messages: AgentMessage[] = [];
 
-    // Assistant messages carry content blocks
-    if (msg.type === 'assistant' && msg.message?.content) {
-      for (const block of msg.message.content) {
-        if (block.type === 'thinking') {
-          messages.push({ type: 'thinking', content: block.thinking });
-        } else if (block.type === 'text') {
-          messages.push({ type: 'text', content: block.text });
-        } else if (block.type === 'tool_use') {
-          messages.push({ type: 'tool_use', name: block.name, input: block.input });
-        }
-      }
-    }
-
-    // Result messages
-    if (msg.type === 'result') {
-      const usage: AgentUsage | undefined = msg.modelUsage ? {
-        inputTokens: msg.modelUsage?.inputTokens,
-        outputTokens: msg.modelUsage?.outputTokens,
-        totalTokens: msg.modelUsage?.totalTokens,
-        thoughtTokens: msg.modelUsage?.thoughtTokens,
-      } : undefined;
-
-      if (msg.subtype === 'success') {
-        // Determine output based on whether structured output was requested
-        let output: unknown = msg.result;
-        if (msg.structured_output !== undefined) {
-          output = msg.structured_output;
-        } else if (typeof msg.result === 'string') {
-          try {
-            output = JSON.parse(msg.result);
-          } catch {
-            output = msg.result;
+    switch (msg.type) {
+      case 'assistant': {
+        const assistant = msg as SDKAssistantMessage;
+        for (const block of assistant.message.content) {
+          if (block.type === 'thinking') {
+            messages.push({ type: 'thinking', content: block.thinking });
+          } else if (block.type === 'text') {
+            messages.push({ type: 'text', content: block.text });
+          } else if (block.type === 'tool_use') {
+            messages.push({ type: 'tool_use', name: block.name, input: block.input });
           }
         }
-
-        messages.push({
-          type: 'result',
-          subtype: 'success',
-          output,
-          cost: msg.total_cost_usd,
-          usage,
-        });
-      } else {
-        messages.push({
-          type: 'result',
-          subtype: 'error',
-          errors: msg.errors,
-          cost: msg.total_cost_usd,
-          usage,
-        });
+        break;
       }
-    }
 
-    // Provider-specific events
-    if (msg.type === 'stream_event') {
-      messages.push({ type: 'provider_event', subtype: 'stream', data: msg.event });
-    }
-    if (msg.type === 'tool_progress') {
-      messages.push({
-        type: 'provider_event',
-        subtype: 'tool_progress',
-        data: { toolUseId: msg.tool_use_id, toolName: msg.tool_name, elapsedSeconds: msg.elapsed_time_seconds },
-      });
-    }
-    if (msg.type === 'system') {
-      messages.push({
-        type: 'provider_event',
-        subtype: msg.subtype === 'init' ? 'init' : 'status',
-        data: msg,
-      });
-    }
-    if (msg.type === 'rate_limit_event') {
-      messages.push({ type: 'provider_event', subtype: 'rate_limit', data: msg.rate_limit_info });
+      case 'result': {
+        const result = msg as SDKResultMessage;
+        if (result.subtype === 'success') {
+          let output: unknown = result.result;
+          if (result.structured_output !== undefined) {
+            output = result.structured_output;
+          } else if (typeof result.result === 'string') {
+            try { output = JSON.parse(result.result); } catch { output = result.result; }
+          }
+          messages.push({
+            type: 'result',
+            subtype: 'success',
+            output,
+            cost: result.total_cost_usd,
+          });
+        } else {
+          messages.push({
+            type: 'result',
+            subtype: 'error',
+            errors: result.errors,
+            cost: result.total_cost_usd,
+          });
+        }
+        break;
+      }
+
+      case 'system': {
+        const sys = msg as SDKSystemMessage;
+        messages.push({
+          type: 'provider_event',
+          subtype: sys.subtype === 'init' ? 'init' : 'status',
+          data: sys,
+        });
+        break;
+      }
+
+      default: {
+        // Provider-specific events — use the SDK's discriminated types
+        if ('type' in msg) {
+          const m = msg as Record<string, unknown>;
+          if (m.type === 'tool_progress') {
+            const tp = msg as SDKToolProgressMessage;
+            messages.push({
+              type: 'provider_event',
+              subtype: 'tool_progress',
+              data: { toolUseId: tp.tool_use_id, toolName: tp.tool_name, elapsedSeconds: tp.elapsed_time_seconds },
+            });
+          } else if (m.type === 'rate_limit_event') {
+            const rl = msg as SDKRateLimitEvent;
+            messages.push({ type: 'provider_event', subtype: 'rate_limit', data: rl.rate_limit_info });
+          } else {
+            // All other SDK message types pass through as provider events
+            messages.push({ type: 'provider_event', subtype: String(m.type), data: msg });
+          }
+        }
+        break;
+      }
     }
 
     return messages;
