@@ -13,22 +13,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 }));
 
 import { AgentNode } from '../nodes/agent.js';
-import { Agent } from '../agent/agent.js';
-import type { AgentMessage, AgentSendOptions, AgentInfo } from '../agent/agent.js';
-
-class StubAgent extends Agent {
-  private _info: AgentInfo;
-  constructor(info: AgentInfo) {
-    super({ name: info.name });
-    this._info = info;
-  }
-  get sessionId(): string | null { return null; }
-  async *send(_prompt: string, _options?: AgentSendOptions): AsyncIterable<AgentMessage> {
-    yield { type: 'result', subtype: 'success', output: 'ok' };
-  }
-  getInfo(): AgentInfo { return this._info; }
-  async close(): Promise<void> {}
-}
+import { TestAgent } from '../agent/test-agent.js';
 import {
   handleApiTree,
   handleApiStatus,
@@ -149,11 +134,13 @@ describe('handleApiNode', () => {
     const agent = new AgentNode({
       name: 'my-agent',
       prompt: 'hello',
-      agent: new StubAgent({
+      agent: new TestAgent({
         name: 'my-agent',
-        model: 'claude-sonnet-4-20250514',
-        tools: ['tool_a', 'tool_b'],
-        mcpServers: ['server1', 'server2'],
+        info: {
+          model: 'claude-sonnet-4-20250514',
+          tools: ['tool_a', 'tool_b'],
+          mcpServers: ['server1', 'server2'],
+        },
       }),
     });
     const tree = makeTree(agent);
@@ -193,7 +180,7 @@ describe('handleApiNode', () => {
     const agent = new AgentNode({
       name: 'minimal-agent',
       prompt: 'hi',
-      agent: new StubAgent({ name: 'minimal-agent' }),
+      agent: new TestAgent({ name: 'minimal-agent' }),
     });
     const tree = makeTree(agent);
     const res = createMockRes();

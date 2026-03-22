@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
 import type { TreeEvents } from '../types.js';
-import { Agent } from '../agent/agent.js';
-import type { AgentMessage, AgentSendOptions, AgentInfo } from '../agent/agent.js';
+import type { AgentMessage, AgentSendOptions } from '../agent/agent.js';
+import { TestAgent, createTestAgent } from '../agent/test-agent.js';
 
 import { AgentSelectionStrategy } from './agent-selection.js';
 import { AgentExecutionStrategy } from './agent-execution.js';
@@ -26,33 +26,16 @@ function mockNode(name: string): BTreeNode {
   };
 }
 
-class TestAgent extends Agent {
-  private messages: AgentMessage[] = [];
-  sendSpy = vi.fn();
-
-  setMessages(msgs: AgentMessage[]): void {
-    this.messages = msgs;
-  }
-
-  get sessionId(): string | null { return null; }
-
-  async *send(prompt: string, options?: AgentSendOptions): AsyncIterable<AgentMessage> {
-    this.sendSpy(prompt, options);
-    for (const msg of this.messages) {
-      if (options?.onMessage) {
-        try { options.onMessage(msg); } catch { /* swallowed */ }
-      }
-      yield msg;
-    }
-  }
-
-  getInfo(): AgentInfo { return { name: this.name }; }
-  async close(): Promise<void> {}
-}
-
 function createAgent(messages: AgentMessage[]): TestAgent {
-  const agent = new TestAgent({ name: 'test-agent' });
-  agent.setMessages(messages);
+  const agent = createTestAgent(messages);
+  // Add a send spy by wrapping
+  const origSend = agent.send.bind(agent);
+  const sendSpy = vi.fn();
+  agent.send = async function*(prompt: string, options?: AgentSendOptions) {
+    sendSpy(prompt, options);
+    yield* origSend(prompt, options);
+  };
+  (agent as any).sendSpy = sendSpy;
   return agent;
 }
 

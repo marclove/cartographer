@@ -1,41 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { Agent } from './agent.js';
-import type { AgentMessage, AgentSendOptions, AgentInfo } from './agent.js';
-
-class TestAgent extends Agent {
-  private messages: AgentMessage[] = [];
-  private _sessionId: string | null = null;
-
-  setMessages(msgs: AgentMessage[]): void {
-    this.messages = msgs;
-  }
-
-  get sessionId(): string | null {
-    return this._sessionId;
-  }
-
-  async *send(prompt: string, options?: AgentSendOptions): AsyncIterable<AgentMessage> {
-    this._sessionId = 'test-session-1';
-    for (const msg of this.messages) {
-      if (options?.onMessage) {
-        try {
-          options.onMessage(msg);
-        } catch {
-          // onMessage errors are swallowed per spec
-        }
-      }
-      yield msg;
-    }
-  }
-
-  getInfo(): AgentInfo {
-    return { name: this.name, model: 'test-model' };
-  }
-
-  async close(): Promise<void> {
-    this._sessionId = null;
-  }
-}
+import type { AgentMessage } from './agent.js';
+import { TestAgent } from './test-agent.js';
 
 describe('Agent', () => {
   it('stores the name from config', () => {
@@ -71,7 +36,7 @@ describe('Agent', () => {
 
     for await (const _ of agent.send('prompt')) { /* consume */ }
 
-    expect(agent.sessionId).toBe('test-session-1');
+    expect(agent.sessionId).toBe('test-session');
   });
 
   it('onMessage callback is invoked for each message', async () => {
@@ -108,7 +73,7 @@ describe('Agent', () => {
   });
 
   it('getInfo() returns agent metadata', () => {
-    const agent = new TestAgent({ name: 'my-agent' });
+    const agent = new TestAgent({ name: 'my-agent', info: { model: 'test-model' } });
     const info = agent.getInfo();
     expect(info.name).toBe('my-agent');
     expect(info.model).toBe('test-model');

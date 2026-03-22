@@ -5,15 +5,7 @@ import { EventEmitter } from '../core/event-emitter.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
 import type { TreeEvents } from '../types.js';
 import { buildStrategyPrompt, wrapElicitation } from './sdk-helpers.js';
-import { Agent } from './agent.js';
-import type { AgentMessage, AgentSendOptions, AgentInfo } from './agent.js';
-
-class StubAgent extends Agent {
-  get sessionId(): string | null { return null; }
-  async *send(): AsyncIterable<AgentMessage> { yield { type: 'result', subtype: 'success', output: 'ok' }; }
-  getInfo(): AgentInfo { return { name: this.name }; }
-  async close(): Promise<void> {}
-}
+import { TestAgent } from './test-agent.js';
 
 function mockNode(name: string): BTreeNode {
   return {
@@ -36,7 +28,7 @@ describe('buildStrategyPrompt', () => {
     ctx.blackboard.set('key', 'value');
 
     const result = buildStrategyPrompt(
-      { prompt: 'Pick the best order', agent: new StubAgent({ name: 'test' }) },
+      { prompt: 'Pick the best order', agent: new TestAgent({ name: 'test' }) },
       [mockNode('a'), mockNode('b')],
       ctx,
     );
@@ -52,7 +44,7 @@ describe('buildStrategyPrompt', () => {
       {
         prompt: 'Order',
         childDescriptions: { a: 'First option', b: 'Second option' },
-        agent: new StubAgent({ name: 'test' }),
+        agent: new TestAgent({ name: 'test' }),
       },
       [mockNode('a'), mockNode('b')],
       createContext(),
@@ -69,7 +61,7 @@ describe('buildStrategyPrompt', () => {
     const result = buildStrategyPrompt(
       {
         prompt: (children, c) => `Run ${children.length} steps in ${c.blackboard.get('mode')} mode`,
-        agent: new StubAgent({ name: 'test' }),
+        agent: new TestAgent({ name: 'test' }),
       },
       [mockNode('a'), mockNode('b')],
       ctx,

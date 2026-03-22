@@ -6,19 +6,9 @@ import { AgentSelectionStrategy } from '../strategies/agent-selection.js';
 import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
 import { TreeRegistry } from '../config/registry.js';
 import { DefaultExecutionStrategy } from '../strategies/default-execution.js';
-import { Agent } from '../agent/agent.js';
-import type { AgentMessage, AgentSendOptions, AgentInfo } from '../agent/agent.js';
+import { TestAgent } from '../agent/test-agent.js';
 
-class StubAgent extends Agent {
-  get sessionId(): string | null { return null; }
-  async *send(_prompt: string, _options?: AgentSendOptions): AsyncIterable<AgentMessage> {
-    yield { type: 'result', subtype: 'success', output: 'ok' };
-  }
-  getInfo(): AgentInfo { return { name: this.name }; }
-  async close(): Promise<void> {}
-}
-
-const stubAgent = new StubAgent({ name: 'stub' });
+const stubAgent = new TestAgent({ name: 'stub' });
 
 const flush = () => new Promise(r => setTimeout(r, 0));
 

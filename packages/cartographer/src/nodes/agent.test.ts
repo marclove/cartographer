@@ -4,8 +4,8 @@ import type { TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
 import type { TreeEvents } from '../types.js';
-import { Agent } from '../agent/agent.js';
-import type { AgentMessage, AgentSendOptions, AgentInfo } from '../agent/agent.js';
+import type { AgentMessage, AgentSendOptions } from '../agent/agent.js';
+import { TestAgent, createTestAgent } from '../agent/test-agent.js';
 import { AgentNode } from './agent.js';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -17,41 +17,8 @@ function createContext(): TreeContext {
   };
 }
 
-class TestAgent extends Agent {
-  private messages: AgentMessage[] = [];
-  private _sessionId: string | null = null;
-
-  setMessages(msgs: AgentMessage[]): void {
-    this.messages = msgs;
-  }
-
-  get sessionId(): string | null {
-    return this._sessionId;
-  }
-
-  async *send(_prompt: string, options?: AgentSendOptions): AsyncIterable<AgentMessage> {
-    this._sessionId = 'test-session';
-    for (const msg of this.messages) {
-      if (options?.onMessage) {
-        try { options.onMessage(msg); } catch { /* swallowed */ }
-      }
-      yield msg;
-    }
-  }
-
-  getInfo(): AgentInfo {
-    return { name: this.name, model: 'test-model' };
-  }
-
-  async close(): Promise<void> {
-    this._sessionId = null;
-  }
-}
-
 function createAgent(messages: AgentMessage[]): TestAgent {
-  const agent = new TestAgent({ name: 'test-agent' });
-  agent.setMessages(messages);
-  return agent;
+  return createTestAgent(messages, { name: 'test-agent', info: { model: 'test-model' } });
 }
 
 describe('AgentNode - structured output', () => {
@@ -448,7 +415,7 @@ describe('AgentNode - abort/interrupt', () => {
 
 describe('AgentNode - agentOptions', () => {
   it('delegates to agent.getInfo()', () => {
-    const agent = new TestAgent({ name: 'my-agent' });
+    const agent = new TestAgent({ name: 'my-agent', info: { model: 'test-model' } });
     const node = new AgentNode({ name: 'node', agent, prompt: 'test' });
 
     const info = node.agentOptions;
