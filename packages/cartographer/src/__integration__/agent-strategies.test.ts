@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { NodeStatus } from '../types.js';
 import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
@@ -8,25 +8,26 @@ import { AgentParallelStrategy } from '../strategies/agent-parallel.js';
 import { AgentSelectionStrategy } from '../strategies/agent-selection.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { createContext, collectEvents } from './helpers.js';
-import { queryStructured } from '../agent/sdk-helpers.js';
+import type { AgentMessage, AgentSendOptions } from '../agent/agent.js';
+import { TestAgent } from '../agent/test-agent.js';
 
-vi.mock('../agent/sdk-helpers.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../agent/sdk-helpers.js')>();
-  return {
-    ...original,
-    queryStructured: vi.fn(),
+function createStrategyAgent(output: unknown): { agent: TestAgent; sendSpy: ReturnType<typeof vi.fn> } {
+  const agent = new TestAgent({ name: 'strategy-agent' });
+  agent.setMessages([
+    { type: 'result', subtype: 'success', output },
+  ]);
+  const sendSpy = vi.fn();
+  const origSend = agent.send.bind(agent);
+  agent.send = async function*(prompt: string, options?: AgentSendOptions) {
+    sendSpy(prompt, options);
+    yield* origSend(prompt, options);
   };
-});
+  return { agent, sendSpy };
+}
 
-const mockedQueryStructured = vi.mocked(queryStructured);
-
-describe('Agent Strategies Integration (Mocked SDK)', () => {
-  beforeEach(() => {
-    mockedQueryStructured.mockReset();
-  });
-
+describe('Agent Strategies Integration', () => {
   it('AgentExecutionStrategy reorders sequence children', async () => {
-    mockedQueryStructured.mockResolvedValue({
+    const { agent } = createStrategyAgent({
       ordering: ['c', 'a', 'b'],
       reasoning: 'test ordering',
     });
@@ -47,7 +48,7 @@ describe('Agent Strategies Integration (Mocked SDK)', () => {
 
     const strategy = new AgentExecutionStrategy({
       prompt: 'Order these steps',
-      model: 'haiku',
+      agent,
     });
 
     const sequence = new SequenceNode({
@@ -58,29 +59,22 @@ describe('Agent Strategies Integration (Mocked SDK)', () => {
 
     const flush = () => new Promise<void>(r => setTimeout(r, 0));
 
-    // Each ActionNode takes one tick to start inflight and one flush+tick to
-    // resolve. With 3 children in sequence, we need 3 flush+tick cycles.
-    // Tick 1: child c starts inflight → RUNNING
     expect(await sequence.tick(ctx)).toBe(NodeStatus.RUNNING);
     await flush();
-    // Tick 2: child c resolves → SUCCESS; child a starts inflight → RUNNING
     expect(await sequence.tick(ctx)).toBe(NodeStatus.RUNNING);
     await flush();
-    // Tick 3: child a resolves → SUCCESS; child b starts inflight → RUNNING
     expect(await sequence.tick(ctx)).toBe(NodeStatus.RUNNING);
     await flush();
-    // Tick 4: child b resolves → SUCCESS; all children done → SUCCESS
     const status = await sequence.tick(ctx);
 
     expect(status).toBe(NodeStatus.SUCCESS);
     expect(ctx.blackboard.get('order')).toEqual(['c', 'a', 'b']);
     expect(strategyEvents).toHaveLength(1);
     expect(strategyEvents[0].strategy).toBe('agent-execution');
-    expect(mockedQueryStructured).toHaveBeenCalledOnce();
   });
 
   it('AgentParallelStrategy sets policy', async () => {
-    mockedQueryStructured.mockResolvedValue({
+    const { agent } = createStrategyAgent({
       policy: { successCount: 1 },
       reasoning: 'only need one',
     });
@@ -97,37 +91,30 @@ describe('Agent Strategies Integration (Mocked SDK)', () => {
       ],
       strategy: new AgentParallelStrategy({
         prompt: 'Set the policy',
-        model: 'haiku',
+        agent,
       }),
     });
 
     const flush = () => new Promise<void>(r => setTimeout(r, 0));
 
-    // Tick 1: all ActionNodes start inflight concurrently and return RUNNING
     expect(await parallel.tick(ctx)).toBe(NodeStatus.RUNNING);
-
-    // Let microtask promises resolve so all inflight results are captured
     await flush();
-
-    // Tick 2: all ActionNodes poll their completed results; with successCount: 1
-    // and 1 SUCCESS child, parallel should return SUCCESS
     const status = await parallel.tick(ctx);
 
     expect(status).toBe(NodeStatus.SUCCESS);
     expect(strategyEvents).toHaveLength(1);
     expect(strategyEvents[0].strategy).toBe('agent-parallel');
-    expect(mockedQueryStructured).toHaveBeenCalledOnce();
   });
 
-  it('strategy caching — SDK called once for two order() calls', async () => {
-    mockedQueryStructured.mockResolvedValue({
+  it('strategy caching — agent.send() called once for two order() calls', async () => {
+    const { agent, sendSpy } = createStrategyAgent({
       ordering: ['a', 'b'],
       reasoning: 'default',
     });
 
     const strategy = new AgentSelectionStrategy({
       prompt: 'Order these',
-      model: 'haiku',
+      agent,
       cache: true,
     });
 
@@ -141,18 +128,18 @@ describe('Agent Strategies Integration (Mocked SDK)', () => {
     await strategy.order(children, ctx);
     await strategy.order(children, ctx);
 
-    expect(mockedQueryStructured).toHaveBeenCalledOnce();
+    expect(sendSpy).toHaveBeenCalledOnce();
   });
 
-  it('strategy reset clears cache — SDK called twice', async () => {
-    mockedQueryStructured.mockResolvedValue({
+  it('strategy reset clears cache — agent.send() called twice', async () => {
+    const { agent, sendSpy } = createStrategyAgent({
       ordering: ['a', 'b'],
       reasoning: 'default',
     });
 
     const strategy = new AgentSelectionStrategy({
       prompt: 'Order these',
-      model: 'haiku',
+      agent,
       cache: true,
     });
 
@@ -167,19 +154,19 @@ describe('Agent Strategies Integration (Mocked SDK)', () => {
     strategy.reset();
     await strategy.order(children, ctx);
 
-    expect(mockedQueryStructured).toHaveBeenCalledTimes(2);
+    expect(sendSpy).toHaveBeenCalledTimes(2);
   });
 
-  it('BehaviorTree.abort() propagates through strategy queryStructured calls', async () => {
+  it('BehaviorTree.abort() propagates signal through agent.send()', async () => {
     let capturedSignal: AbortSignal | undefined;
-    let resolveQuery!: () => void;
 
-    // Block inside queryStructured so we can abort the tree mid-call
-    mockedQueryStructured.mockImplementation(async (_prompt, _schema, _config, _handler, signal) => {
-      capturedSignal = signal as AbortSignal | undefined;
+    const agent = new TestAgent({ name: 'blocking-agent' });
+    let resolveQuery!: () => void;
+    agent.send = async function*(_prompt: string, options?: AgentSendOptions) {
+      capturedSignal = options?.signal;
       await new Promise<void>((resolve) => { resolveQuery = resolve; });
-      return { ordering: ['a', 'b'], reasoning: 'default' };
-    });
+      yield { type: 'result', subtype: 'success', output: { ordering: ['a', 'b'], reasoning: 'default' } } as AgentMessage;
+    };
 
     const tree = new BehaviorTree({
       name: 'strategy-abort-test',
@@ -189,13 +176,13 @@ describe('Agent Strategies Integration (Mocked SDK)', () => {
           new ActionNode({ name: 'a', action: () => NodeStatus.SUCCESS }),
           new ActionNode({ name: 'b', action: () => NodeStatus.SUCCESS }),
         ],
-        strategy: new AgentExecutionStrategy({ prompt: 'Order' }),
+        strategy: new AgentExecutionStrategy({ prompt: 'Order', agent }),
       }),
     });
 
     const tickPromise = tree.tick();
 
-    // Strategy is blocked in queryStructured — abort the tree
+    // Strategy is blocked in agent.send() — abort the tree
     tree.abort();
     expect(capturedSignal).toBeInstanceOf(AbortSignal);
     expect(capturedSignal!.aborted).toBe(true);
