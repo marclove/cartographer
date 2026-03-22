@@ -218,6 +218,25 @@ What moves from AgentNode into ClaudeSDKAgent:
 
 Multi-turn conversation is supported via the V1 `AsyncIterable<SDKUserMessage>` prompt pattern. The SDK query is created lazily on the first `send()` call (not in the constructor), so defining an Agent is cheap. The Agent owns a single long-lived `query()` call, and `send()` pushes messages into the async iterable. Conversation context accumulates naturally across turns within the SDK.
 
+#### Turn Boundaries and Concurrent Sends
+
+The SDK processes one turn at a time — it pulls a message from the `AsyncQueue`, processes it (potentially multiple API round-trips for tool use), yields response messages, and only then pulls the next message.
+
+The **turn boundary** is the `result` message. All messages between one queue pull and the next `result` belong to that turn's scoped iterable. The demux assigns each SDK response message to the iterable returned by the `send()` call that enqueued the corresponding prompt.
+
+**Concurrent sends** (e.g., two AgentNodes sharing an Agent inside a parallel node) are naturally serialized by the queue:
+
+1. Node A calls `send()` → message A is pushed onto the queue, Node A's iterable is created
+2. Node B calls `send()` → message B is pushed onto the queue, Node B's iterable is created
+3. The SDK pulls message A, processes it, yields responses → demuxed to Node A's iterable
+4. Node A's iterable yields the `result` message and completes
+5. The SDK pulls message B, processes it, yields responses → demuxed to Node B's iterable
+6. Node B's iterable yields the `result` message and completes
+
+Node B's iterable blocks until A's turn completes. From the BT's perspective, both nodes report `RUNNING` — the parallel node keeps ticking normally. Turns are serialized at the agent level, which is semantically correct: a single agent processes one conversation turn at a time. Conversation history accumulates, so Node B's prompt is processed with full context of Node A's prior exchange.
+
+**Abort/early exit**: when a turn's iterable is abandoned (e.g., via abort signal or `for await...of` break), the in-flight SDK turn runs to completion but its remaining messages are drained and discarded. The queue then advances to the next pending send. This prevents stalling subsequent turns.
+
 #### AsyncQueue Utility
 
 `ClaudeSDKAgent` requires an `AsyncQueue<T>` — a push/pull queue that implements `AsyncIterable<T>`. This is a new internal utility:
@@ -228,7 +247,7 @@ class AsyncQueue<T> implements AsyncIterable<T> {
   async *[Symbol.asyncIterator](): AsyncIterableIterator<T>; // yields items as they arrive
   close(): void; // signal no more items; iterator completes
 }
-````
+```
 
 This is a standard concurrency primitive (~30 lines). It will live in `src/agent/async-queue.ts`.
 
