@@ -250,27 +250,16 @@ export class AgentNode extends BaseNode {
         break;
       case 'provider_event': {
         const d = msg.data as Record<string, unknown>;
-        if (msg.subtype === 'stream') {
-          context.events.emit('agent:stream', { node: this, event: msg.data });
-        } else if (msg.subtype === 'tool_progress') {
-          context.events.emit('agent:tool_progress', {
-            node: this,
-            toolUseId: d.toolUseId as string,
-            toolName: d.toolName as string,
-            elapsedSeconds: d.elapsedSeconds as number,
-          });
-        } else if (msg.subtype === 'init') {
-          context.events.emit('agent:init', {
-            node: this,
-            sessionId: d.session_id as string,
-            model: d.model as string | undefined,
-            tools: d.tools,
-            mcpServers: d.mcp_servers,
-          });
-        } else if (msg.subtype === 'status') {
-          context.events.emit('agent:status', { node: this, status: d.status as string });
-        } else if (msg.subtype === 'rate_limit') {
-          context.events.emit('agent:rate_limit', { node: this, info: msg.data });
+        const eventMap: Record<string, string> = {
+          stream: 'agent:stream',
+          tool_progress: 'agent:tool_progress',
+          init: 'agent:init',
+          status: 'agent:status',
+          rate_limit: 'agent:rate_limit',
+        };
+        const eventName = eventMap[msg.subtype];
+        if (eventName) {
+          (context.events.emit as any)(eventName, { node: this, ...d });
         }
         break;
       }
