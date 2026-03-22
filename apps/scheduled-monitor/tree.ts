@@ -24,33 +24,12 @@ import {
   clearIncidentState,
   logHealthy,
 } from './actions.js';
-
-// --- Agent definitions ---
-
-const assessHealthAgent = new ClaudeSDKAgent({
-  name: 'assess-health',
-  model: 'claude-haiku-4-5',
-  effort: 'low',
-  outputFormat: { type: 'json_schema', schema: z.toJSONSchema(HealthAssessmentSchema) as any },
-});
-
-const incidentReportAgent = new ClaudeSDKAgent({
-  name: 'draft-incident-report',
-  model: 'claude-haiku-4-5',
-  outputFormat: { type: 'json_schema', schema: z.toJSONSchema(IncidentReportSchema) as any },
-});
-
-const statusUpdateAgent = new ClaudeSDKAgent({
-  name: 'draft-status-update',
-  model: 'claude-haiku-4-5',
-  outputFormat: { type: 'json_schema', schema: z.toJSONSchema(StatusUpdateSchema) as any },
-});
-
-const resolutionAgent = new ClaudeSDKAgent({
-  name: 'draft-resolution',
-  model: 'claude-haiku-4-5',
-  outputFormat: { type: 'json_schema', schema: z.toJSONSchema(ResolutionSummarySchema) as any },
-});
+import {
+    assessHealthAgent,
+    incidentReportAgent,
+    statusUpdateAgent,
+    resolutionAgent
+} from './agents.js';
 
 // --- Tree definition ---
 

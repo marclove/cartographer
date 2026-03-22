@@ -1,11 +1,4 @@
-import { z } from 'zod/v4';
 import { TreeBuilder, NodeStatus, ClaudeSDKAgent } from 'cartographer';
-import {
-  ClassificationSchema,
-  BillingAnalysisSchema,
-  ResponseSchema,
-  EscalationSchema,
-} from './schemas.js';
 import {
   classifyPrompt,
   analyzeBillingPrompt,
@@ -22,51 +15,15 @@ import {
   isUrgent,
   emitResult,
 } from './actions.js';
-
-// --- Agent definitions ---
-
-const classifyAgent = new ClaudeSDKAgent({
-  name: 'classify',
-  model: 'claude-haiku-4-5',
-  effort: 'low',
-  outputFormat: { type: 'json_schema', schema: z.toJSONSchema(ClassificationSchema) as any },
-});
-
-const analyzeBillingAgent = new ClaudeSDKAgent({
-  name: 'analyze-billing',
-  model: 'claude-haiku-4-5',
-  outputFormat: { type: 'json_schema', schema: z.toJSONSchema(BillingAnalysisSchema) as any },
-});
-
-const draftBillingAgent = new ClaudeSDKAgent({
-  name: 'draft-billing-response',
-  model: 'claude-haiku-4-5',
-  maxTurns: 3,
-});
-
-const diagnoseAgent = new ClaudeSDKAgent({
-  name: 'diagnose-issue',
-  model: 'claude-haiku-4-5',
-  maxTurns: 3,
-});
-
-const draftTechnicalAgent = new ClaudeSDKAgent({
-  name: 'draft-technical-response',
-  model: 'claude-haiku-4-5',
-  outputFormat: { type: 'json_schema', schema: z.toJSONSchema(ResponseSchema) as any },
-});
-
-const draftGeneralAgent = new ClaudeSDKAgent({
-  name: 'draft-general-response',
-  model: 'claude-haiku-4-5',
-  outputFormat: { type: 'json_schema', schema: z.toJSONSchema(ResponseSchema) as any },
-});
-
-const escalationAgent = new ClaudeSDKAgent({
-  name: 'escalation-summary',
-  model: 'claude-haiku-4-5',
-  outputFormat: { type: 'json_schema', schema: z.toJSONSchema(EscalationSchema) as any },
-});
+import {
+    classifyAgent,
+    analyzeBillingAgent,
+    draftBillingAgent,
+    diagnoseAgent,
+    draftTechnicalAgent,
+    draftGeneralAgent,
+    escalationAgent
+} from './agents.js'
 
 // --- Tree definition ---
 
