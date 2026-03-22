@@ -40,6 +40,17 @@ interface AgentSendOptions {
   signal?: AbortSignal;
   /** Elicitation handler for interactive input requests. */
   onElicitation?: OnElicitation;
+  /**
+   * Called for each AgentMessage as it is produced. Provides a unified
+   * observability hook for both send() and query() — callers use this
+   * to emit BT events, log messages, or feed dashboards without needing
+   * to iterate messages themselves.
+   *
+   * For send(): invoked for each message before it is yielded by the
+   * returned iterable. For query(): invoked for each intermediate message
+   * as the default implementation (or provider override) collects the result.
+   */
+  onMessage?: (msg: AgentMessage) => void;
 }
 
 abstract class Agent {
@@ -94,6 +105,7 @@ Key decisions:
 - **`blackboard` in `AgentSendOptions`, not the constructor** — namespace may differ between AgentNodes sharing the same Agent, and strategies don't need it.
 - **`signal` in `AgentSendOptions`** — AgentNode bridges the tree's abort signal per-tick.
 - **`onElicitation` in `AgentSendOptions`** — both Claude SDK and ACP support elicitation; AgentNode passes `context.onElicitation` through.
+- **`onMessage` in `AgentSendOptions`** — unified observability hook for both `send()` and `query()`. The Agent invokes it for each message as it's produced. Callers use it to emit BT events, removing the need for separate observability patterns per call style.
 - **`query()` takes `JSONSchema`, not Zod** — provider-agnostic (ACP won't know about Zod). Strategies convert with `z.toJSONSchema()` at the call site.
 - **`query()` has a default implementation** — concrete classes must only implement `send` + `close` + `getInfo`. They can override `query()` for provider-native structured output.
 - **`query()` error contract** — the default implementation throws if the agent's text output cannot be parsed as valid JSON conforming to the schema. The error includes the raw text and the schema for debugging. `ClaudeSDKAgent` avoids this by using the SDK's native `outputFormat` validation.
@@ -263,11 +275,11 @@ private async _executeAgentCall(context: TreeContext): Promise<NodeStatus> {
     blackboardNamespace: this.config.blackboardNamespace,
     signal: context.signal,
     onElicitation: context.onElicitation,
+    onMessage: (msg) => this.emitAgentEvent(msg, context),
   });
 
   for await (const msg of messages) {
-    this.emitAgentEvent(msg, context);
-
+    // Events already emitted via onMessage — just handle result extraction
     if (msg.type === 'result') {
       if (msg.subtype === 'success') {
         // Store output on blackboard, invoke mapResult — same logic as today
@@ -321,7 +333,10 @@ To:
 const result = await this.config.agent.query<Ordering>(
   prompt,
   z.toJSONSchema(OrderingSchema),
-  { signal: context.signal },
+  {
+    signal: context.signal,
+    onMessage: (msg) => emitAgentEvent(msg, this, context),
+  },
 );
 ```
 
@@ -329,9 +344,7 @@ const result = await this.config.agent.query<Ordering>(
 
 #### Strategy Event Emission
 
-Currently, strategies emit fine-grained agent events (`agent:thinking`, `agent:text`, etc.) through `createStrategyMessageHandler`. After the migration to `agent.query()`, these per-message events are no longer emitted for strategy queries — `query()` returns the final result directly without exposing intermediate messages.
-
-This is acceptable: strategies are lightweight one-shot queries where intermediate events add little observability value. The important events remain — strategies continue to emit `strategy:decision` events after `query()` returns, which capture the ordering/policy decision and reasoning.
+Strategies retain full observability. The `onMessage` callback in `AgentSendOptions` is invoked for each intermediate message during `query()`, so strategies emit the same fine-grained `agent:*` events (thinking, text, tool_use, etc.) as before. The `createStrategyMessageHandler` helper is no longer needed — `onMessage` replaces it.
 
 ### Builder API
 
@@ -450,6 +463,5 @@ The Agent's lifecycle is managed by its creator, not by individual nodes or the 
 - Builder API requires an `Agent` instance rather than inline SDK options.
 - `emitMessageEvents` removed from public exports.
 - `queryStructured` removed from public exports.
-- `createStrategyMessageHandler` removed from public exports.
-- Strategy queries no longer emit fine-grained `agent:*` events (thinking, text, tool_use); `strategy:decision` events remain.
+- `createStrategyMessageHandler` removed from public exports (replaced by `onMessage` callback in `AgentSendOptions`).
 - Both example apps require updates.
