@@ -235,7 +235,13 @@ The **turn boundary** is the `result` message. All messages between one queue pu
 
 Node B's iterable blocks until A's turn completes. From the BT's perspective, both nodes report `RUNNING` — the parallel node keeps ticking normally. Turns are serialized at the agent level, which is semantically correct: a single agent processes one conversation turn at a time. Conversation history accumulates, so Node B's prompt is processed with full context of Node A's prior exchange.
 
-**Abort/early exit**: when a turn's iterable is abandoned (e.g., via abort signal or `for await...of` break), the in-flight SDK turn runs to completion but its remaining messages are drained and discarded. The queue then advances to the next pending send. This prevents stalling subsequent turns.
+**Abort/early exit**: when a turn is cancelled (via the `signal` in `AgentSendOptions`), `ClaudeSDKAgent` calls `queryInstance.interrupt()` — the SDK method designed for streaming input mode that stops the current turn without killing the session. The query stays alive, conversation history is preserved (including any partial response from the interrupted turn), and subsequent `send()` calls continue normally.
+
+This is distinct from `queryInstance.close()`, which terminates the SDK subprocess entirely and is only used by `Agent.close()` for final disposal.
+
+If the query becomes unresponsive after interrupt (e.g., the SDK subprocess crashes), `ClaudeSDKAgent` recreates the query on the next `send()` using `resume: sessionId` to restore conversation history from the persisted session.
+
+When a turn's iterable is abandoned via `for await...of` break (without an abort signal), remaining messages from that turn are drained and discarded. The queue advances to the next pending send.
 
 #### AsyncQueue Utility
 
