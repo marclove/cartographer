@@ -245,6 +245,14 @@ If the query becomes unresponsive after interrupt (e.g., the SDK subprocess cras
 
 **Iterable abandoned via break** (without an abort signal): remaining messages from the in-flight turn are drained and discarded. The queue advances to the next pending send.
 
+**SDK error propagation**: two categories of errors can occur during processing:
+
+- **Graceful SDK errors** (API errors, rate limits, auth failures, tool denials) — the SDK yields a `result` message with `subtype: 'error'` containing error details. This flows through the demux normally as an `AgentMessage` of type `result`/`error`. The active turn's iterable yields it and completes. AgentNode handles it as `FAILURE`. The query stays alive for subsequent turns.
+- **Ungraceful SDK termination** (subprocess crash, unexpected generator completion) — the SDK's async generator throws or ends without a result message. The demux layer propagates this as follows:
+  - The **active turn's** iterable throws the error on its next yield, giving the consuming node a clear failure with context (the original error from the SDK).
+  - The queue is closed with `close(err)`, so any **queued turns** throw the same error immediately rather than hanging indefinitely.
+  - `ClaudeSDKAgent` marks the query as dead. The next `send()` recreates it using `resume: sessionId`.
+
 #### AsyncQueue Utility
 
 `ClaudeSDKAgent` requires an `AsyncQueue<T>` — a push/pull queue that implements `AsyncIterable<T>`. This is a new internal utility:
