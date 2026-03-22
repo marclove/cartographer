@@ -31,6 +31,8 @@ export class ClaudeSDKAgent extends Agent {
   private activeTurnResolve: ((msg: AgentMessage) => void) | null = null;
   private activeTurnReject: ((err: Error) => void) | null = null;
   private activeTurnDone: (() => void) | null = null;
+  /** Cleanup function to remove the active turn's signal→interrupt listener. */
+  private activeTurnSignalCleanup: (() => void) | null = null;
 
   /** Pending turns waiting for the demux to route messages to them. */
   private pendingTurns: Array<{
@@ -185,9 +187,7 @@ export class ClaudeSDKAgent extends Agent {
     this.pendingTurns.length = 0;
     if (this.activeTurnReject) {
       this.activeTurnReject(new Error('Agent closed'));
-      this.activeTurnResolve = null;
-      this.activeTurnReject = null;
-      this.activeTurnDone = null;
+      this.clearActiveTurn();
     }
     if (this.queryInstance) {
       (this.queryInstance as any).close?.();
@@ -273,6 +273,9 @@ export class ClaudeSDKAgent extends Agent {
           this.activeTurnReject = turn.reject;
           this.activeTurnDone = turn.done;
           this._activeTurnOnMessage = turn.onMessage;
+
+          // Wire signal → SDK interrupt for active turns
+          this.wireSignalToInterrupt(turn.signal);
         }
 
         // Map SDK message to AgentMessage(s) and route to active turn
@@ -301,10 +304,7 @@ export class ClaudeSDKAgent extends Agent {
           // If this is a result message, the turn is complete
           if (agentMsg.type === 'result') {
             this.activeTurnDone?.();
-            this.activeTurnResolve = null;
-            this.activeTurnReject = null;
-            this.activeTurnDone = null;
-            this._activeTurnOnMessage = undefined;
+            this.clearActiveTurn();
           }
         }
       }
@@ -315,9 +315,7 @@ export class ClaudeSDKAgent extends Agent {
       // Fail the active turn
       if (this.activeTurnReject) {
         this.activeTurnReject(error);
-        this.activeTurnResolve = null;
-        this.activeTurnReject = null;
-        this.activeTurnDone = null;
+        this.clearActiveTurn();
       }
 
       // Fail all queued turns
@@ -332,6 +330,42 @@ export class ClaudeSDKAgent extends Agent {
   }
 
   private _activeTurnOnMessage?: (msg: AgentMessage) => void;
+
+  /**
+   * Wire an AbortSignal to `queryInstance.interrupt()` so that tree-level
+   * abort actually reaches the provider and stops the in-flight SDK call.
+   */
+  private wireSignalToInterrupt(signal?: AbortSignal): void {
+    // Clean up any previous listener
+    this.activeTurnSignalCleanup?.();
+    this.activeTurnSignalCleanup = null;
+
+    if (!signal || !this.queryInstance) return;
+
+    if (signal.aborted) {
+      // Already aborted — interrupt immediately
+      (this.queryInstance as any).interrupt?.();
+      return;
+    }
+
+    const onAbort = () => {
+      (this.queryInstance as any)?.interrupt?.();
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    this.activeTurnSignalCleanup = () => {
+      signal.removeEventListener('abort', onAbort);
+    };
+  }
+
+  /** Clear active turn state and remove the signal→interrupt listener. */
+  private clearActiveTurn(): void {
+    this.activeTurnResolve = null;
+    this.activeTurnReject = null;
+    this.activeTurnDone = null;
+    this._activeTurnOnMessage = undefined;
+    this.activeTurnSignalCleanup?.();
+    this.activeTurnSignalCleanup = null;
+  }
 
   private mapSdkMessage(msg: SDKMessage): AgentMessage[] {
     const messages: AgentMessage[] = [];

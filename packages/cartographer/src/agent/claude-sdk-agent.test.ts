@@ -253,6 +253,61 @@ describe('ClaudeSDKAgent', () => {
     });
   });
 
+  describe('abort signal → interrupt', () => {
+    it('calls queryInstance.interrupt() when active turn signal fires', async () => {
+      const interruptSpy = vi.fn();
+      let resolveBlock!: (msg: unknown) => void;
+
+      async function* blocksAfterFirst() {
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'hi' }] } };
+        yield await new Promise((resolve) => { resolveBlock = resolve; });
+      }
+
+      const iterable = blocksAfterFirst();
+      Object.assign(iterable, { interrupt: interruptSpy });
+      mockQuery.mockReturnValue(iterable as any);
+
+      const agent = new ClaudeSDKAgent({ name: 'test' });
+      const ac = new AbortController();
+
+      const asyncIter = agent.send('prompt', { signal: ac.signal })[Symbol.asyncIterator]();
+
+      // Consume first message — demux loop activates the turn and wires the signal
+      await asyncIter.next();
+
+      // Abort — should forward to SDK via interrupt()
+      ac.abort();
+      expect(interruptSpy).toHaveBeenCalledOnce();
+
+      // Clean up
+      resolveBlock({ type: 'result', subtype: 'success', result: 'ok', total_cost_usd: 0 });
+      await asyncIter.next();
+    });
+
+    it('does not call interrupt() after turn completes normally', async () => {
+      const interruptSpy = vi.fn();
+
+      async function* yieldsAll() {
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'hi' }] } };
+        yield { type: 'result', subtype: 'success', result: 'ok', total_cost_usd: 0 };
+      }
+
+      const iterable = yieldsAll();
+      Object.assign(iterable, { interrupt: interruptSpy });
+      mockQuery.mockReturnValue(iterable as any);
+
+      const agent = new ClaudeSDKAgent({ name: 'test' });
+      const ac = new AbortController();
+
+      // Consume all messages — turn completes, signal listener cleaned up
+      await collectMessages(agent.send('prompt', { signal: ac.signal }));
+
+      // Aborting after completion should not call interrupt
+      ac.abort();
+      expect(interruptSpy).not.toHaveBeenCalled();
+    });
+  });
+
   describe('close()', () => {
     it('subsequent send() throws after close', async () => {
       const agent = new ClaudeSDKAgent({ name: 'test' });
