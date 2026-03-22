@@ -44,10 +44,12 @@ export function handleApiNode(res: ServerResponse, tree: BehaviorTree, nodeId: s
   const detail: Record<string, unknown> = { ...base };
 
   if (node instanceof AgentNode) {
-    const opts = node.agentOptions;
-    if (opts.model) detail.model = opts.model;
-    detail.tools = opts.allowedTools ?? [];
-    detail.mcpServers = opts.mcpServers ? Object.keys(opts.mcpServers) : [];
+    const info = node.agentOptions;
+    if (info.model) detail.model = info.model;
+    detail.tools = info.tools ?? [];
+    detail.mcpServers = Array.isArray(info.mcpServers)
+      ? info.mcpServers
+      : info.mcpServers ? Object.keys(info.mcpServers as Record<string, unknown>) : [];
   }
 
   if (node.children.length > 0) {
