@@ -2,7 +2,6 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { Options, SDKMessage, SDKAssistantMessage, SDKResultMessage, SDKSystemMessage, SDKToolProgressMessage, SDKRateLimitEvent } from '@anthropic-ai/claude-agent-sdk';
 import { Agent } from './agent.js';
 import type { AgentConfig, AgentMessage, AgentSendOptions, AgentInfo } from './agent.js';
-import { AsyncQueue } from './async-queue.js';
 import { createBlackboardMcpServer } from './blackboard-mcp.js';
 import type { OnElicitation } from '@anthropic-ai/claude-agent-sdk';
 
@@ -16,35 +15,16 @@ export type ClaudeSDKAgentConfig = AgentConfig & Partial<Options>;
 /**
  * Concrete Agent implementation wrapping the Claude Agent SDK V1 stable API.
  *
- * Uses the V1 `AsyncIterable<SDKUserMessage>` prompt pattern for multi-turn
- * conversations. A single long-lived `query()` call is created lazily on
- * first `send()`. The `AsyncQueue` bridges `send()` calls to the SDK input.
+ * Each `send()` call creates a fresh `query()` call. Sessions are resumed
+ * automatically via the SDK's `resume` option. The agent tracks a private
+ * session ID for agents without named sessions.
  */
 export class ClaudeSDKAgent extends Agent {
   private readonly config: ClaudeSDKAgentConfig;
-  private queryInstance: ReturnType<typeof query> | null = null;
-  private messageQueue = new AsyncQueue<{ type: string; session_id: string; message: unknown; parent_tool_use_id: null }>();
   private _sessionId: string | null = null;
+  private _privateSessionId: string | null = null;
+  private _activeQuery: ReturnType<typeof query> | null = null;
   private _closed = false;
-
-  /** The currently active turn's resolver — used by the demux loop. */
-  private activeTurnResolve: ((msg: AgentMessage) => void) | null = null;
-  private activeTurnReject: ((err: Error) => void) | null = null;
-  private activeTurnDone: (() => void) | null = null;
-  /** Cleanup function to remove the active turn's signal→interrupt listener. */
-  private activeTurnSignalCleanup: (() => void) | null = null;
-
-  /** Pending turns waiting for the demux to route messages to them. */
-  private pendingTurns: Array<{
-    resolve: (msg: AgentMessage) => void;
-    reject: (err: Error) => void;
-    done: () => void;
-    signal?: AbortSignal;
-    onMessage?: (msg: AgentMessage) => void;
-    outputSchema?: Record<string, unknown>;
-  }> = [];
-
-  private demuxRunning = false;
 
   constructor(config: ClaudeSDKAgentConfig) {
     super(config);
@@ -69,102 +49,10 @@ export class ClaudeSDKAgent extends Agent {
       throw new Error(`Agent "${this.name}" is closed and cannot accept new prompts.`);
     }
 
-    const self = this;
-    const messageBuffer: AgentMessage[] = [];
-    let turnResolve: ((value: IteratorResult<AgentMessage>) => void) | null = null;
-    let turnReject: ((err: Error) => void) | null = null;
-    let turnCompleted = false;
-
-    // Register this turn's callbacks for the demux loop
-    const turnEntry = {
-      resolve(msg: AgentMessage) {
-        if (turnResolve) {
-          const r = turnResolve;
-          turnResolve = null;
-          turnReject = null;
-          r({ value: msg, done: false });
-        } else {
-          messageBuffer.push(msg);
-        }
-      },
-      reject(err: Error) {
-        if (turnReject) {
-          const r = turnReject;
-          turnResolve = null;
-          turnReject = null;
-          r(err);
-        }
-        turnCompleted = true;
-      },
-      done() {
-        turnCompleted = true;
-        if (turnResolve) {
-          const r = turnResolve;
-          turnResolve = null;
-          turnReject = null;
-          r({ value: undefined as unknown as AgentMessage, done: true });
-        }
-      },
-      signal: options?.signal,
-      onMessage: options?.onMessage,
-      outputSchema: options?.outputSchema,
-    };
-
-    // Check if signal is already aborted
-    if (options?.signal?.aborted) {
-      return (async function* () { /* empty — turn dropped preemptively */ })();
-    }
-
-    // Handle preemptive cancellation: if signal fires before the turn starts
-    if (options?.signal) {
-      const onAbort = () => {
-        const idx = self.pendingTurns.indexOf(turnEntry);
-        if (idx !== -1) {
-          // Still queued — drop it preemptively
-          self.pendingTurns.splice(idx, 1);
-          turnEntry.done();
-        }
-      };
-      options.signal.addEventListener('abort', onAbort, { once: true });
-    }
-
-    this.pendingTurns.push(turnEntry);
-
-    // Push the SDK user message onto the queue
-    this.messageQueue.push({
-      type: 'user',
-      session_id: '',
-      message: { role: 'user' as const, content: [{ type: 'text' as const, text: prompt }] },
-      parent_tool_use_id: null,
-    });
-
-    // Ensure the demux loop is running
-    this.ensureDemuxLoop(options);
-
+    const agent = this;
     return {
       [Symbol.asyncIterator]() {
-        return {
-          async next(): Promise<IteratorResult<AgentMessage>> {
-            if (messageBuffer.length > 0) {
-              return { value: messageBuffer.shift()!, done: false };
-            }
-            if (turnCompleted) {
-              return { value: undefined as unknown as AgentMessage, done: true };
-            }
-            return new Promise<IteratorResult<AgentMessage>>((resolve, reject) => {
-              turnResolve = resolve;
-              turnReject = reject;
-            });
-          },
-          async return(): Promise<IteratorResult<AgentMessage>> {
-            turnCompleted = true;
-            return { value: undefined as unknown as AgentMessage, done: true };
-          },
-          async throw(err: Error): Promise<IteratorResult<AgentMessage>> {
-            turnCompleted = true;
-            throw err;
-          },
-        };
+        return agent._createSendIterator(prompt, options);
       },
     };
   }
@@ -179,39 +67,77 @@ export class ClaudeSDKAgent extends Agent {
 
   async close(): Promise<void> {
     this._closed = true;
-    this.messageQueue.close(new Error('Agent closed'));
-    // Signal all pending turns
-    for (const turn of this.pendingTurns) {
-      turn.reject(new Error('Agent closed'));
-    }
-    this.pendingTurns.length = 0;
-    if (this.activeTurnReject) {
-      this.activeTurnReject(new Error('Agent closed'));
-      this.clearActiveTurn();
-    }
-    if (this.queryInstance) {
-      (this.queryInstance as any).close?.();
-      this.queryInstance = null;
+    if (this._activeQuery) {
+      (this._activeQuery as any).close?.();
+      this._activeQuery = null;
     }
   }
 
   // --- Private ---
 
-  private ensureDemuxLoop(sendOptions?: AgentSendOptions): void {
-    if (this.demuxRunning) return;
+  private async *_createSendIterator(
+    prompt: string,
+    options?: AgentSendOptions,
+  ): AsyncGenerator<AgentMessage> {
+    if (this._closed) throw new Error(`Agent "${this.name}" is closed and cannot accept new prompts.`);
 
-    // Lazily create the SDK query on first send
-    if (!this.queryInstance) {
-      this.queryInstance = this.createQuery(sendOptions);
+    const sessionOpts = options?.session;
+    // Distinguish "no session options" (use private session) from
+    // "session options with no id" (create new named session)
+    const resumeId = sessionOpts ? sessionOpts.id : this._privateSessionId;
+
+    const queryOpts = this.buildQueryOptions(options);
+    const queryInstance = query({
+      prompt,
+      options: {
+        ...queryOpts,
+        persistSession: false,
+        ...(resumeId ? { resume: resumeId } : {}),
+        ...(resumeId && sessionOpts?.fork ? { forkSession: true } : {}),
+      },
+    } as any);
+
+    this._activeQuery = queryInstance;
+
+    try {
+      for await (const msg of queryInstance) {
+        if (msg.type === 'system' && msg.subtype === 'init') {
+          const sys = msg as SDKSystemMessage;
+          const sessionId = sys.session_id;
+          this._sessionId = sessionId;
+
+          if (!sessionOpts) {
+            this._privateSessionId = sessionId;
+          }
+
+          // Yield session_start for AgentNode registry integration
+          yield { type: 'session_start', sessionId };
+
+          // Also yield mapped provider_event so agent:init events still fire
+          const mapped = this.mapSdkMessage(msg);
+          for (const m of mapped) {
+            if (options?.onMessage) {
+              try { options.onMessage(m); } catch { /* swallowed */ }
+            }
+            yield m;
+          }
+          continue;
+        }
+
+        const mapped = this.mapSdkMessage(msg);
+        for (const m of mapped) {
+          if (options?.onMessage) {
+            try { options.onMessage(m); } catch { /* swallowed */ }
+          }
+          yield m;
+        }
+      }
+    } finally {
+      this._activeQuery = null;
     }
-
-    this.demuxRunning = true;
-    this.runDemuxLoop().catch(() => {
-      // Handled inside the loop
-    });
   }
 
-  private createQuery(sendOptions?: AgentSendOptions): ReturnType<typeof query> {
+  private buildQueryOptions(sendOptions?: AgentSendOptions): Record<string, unknown> {
     const { name: _name, ...sdkConfig } = this.config;
     const userOptions = sdkConfig as Partial<Options>;
 
@@ -232,14 +158,18 @@ export class ClaudeSDKAgent extends Agent {
     // declines and emits a provider_event so the BT layer can fire
     // agent:elicitation_declined.
     const userElicitation = sendOptions?.onElicitation;
-    const self = this;
+    const onMessageFn = sendOptions?.onMessage;
     const onElicitation: OnElicitation = async (request, opts) => {
       if (userElicitation) return userElicitation(request, opts);
-      self._activeTurnOnMessage?.({
-        type: 'provider_event',
-        subtype: 'elicitation_declined',
-        data: { request },
-      });
+      if (onMessageFn) {
+        try {
+          onMessageFn({
+            type: 'provider_event',
+            subtype: 'elicitation_declined',
+            data: { request },
+          });
+        } catch { /* swallowed */ }
+      }
       return { action: 'decline' as const };
     };
 
@@ -257,125 +187,15 @@ export class ClaudeSDKAgent extends Agent {
 
     const { onElicitation: _e, mcpServers: _m, allowedTools: _a, outputFormat: _o, ...restOptions } = userOptions;
 
-    const options: Record<string, unknown> = {
+    return {
       ...restOptions,
       mcpServers,
       allowedTools,
       permissionMode: restOptions.permissionMode ?? 'default',
       ...(outputFormat && { outputFormat }),
       onElicitation,
+      ...(sendOptions?.signal && { signal: sendOptions.signal }),
     };
-
-    return query({ prompt: this.messageQueue as any, options } as any);
-  }
-
-  private async runDemuxLoop(): Promise<void> {
-    try {
-      for await (const msg of this.queryInstance!) {
-        // Extract sessionId from init messages
-        if (msg.type === 'system' && msg.subtype === 'init') {
-          this._sessionId = (msg as SDKSystemMessage).session_id;
-        }
-
-        // Activate the next pending turn if none is active
-        if (!this.activeTurnResolve && this.pendingTurns.length > 0) {
-          const turn = this.pendingTurns.shift()!;
-          this.activeTurnResolve = turn.resolve;
-          this.activeTurnReject = turn.reject;
-          this.activeTurnDone = turn.done;
-          this._activeTurnOnMessage = turn.onMessage;
-
-          // Wire signal → SDK interrupt for active turns
-          this.wireSignalToInterrupt(turn.signal);
-        }
-
-        // Map SDK message to AgentMessage(s) and route to active turn
-        const agentMessages = this.mapSdkMessage(msg);
-
-        for (const agentMsg of agentMessages) {
-          // Invoke onMessage with error isolation
-          const onMessage = this._activeTurnOnMessage;
-          if (onMessage) {
-            try {
-              onMessage(agentMsg);
-            } catch (err) {
-              // Emit error as provider_event instead of crashing
-              const errorMsg: AgentMessage = {
-                type: 'provider_event',
-                subtype: 'onMessage_error',
-                data: err instanceof Error ? err.message : String(err),
-              };
-              this.activeTurnResolve?.(errorMsg);
-            }
-          }
-
-          // Route to active turn
-          this.activeTurnResolve?.(agentMsg);
-
-          // If this is a result message, the turn is complete
-          if (agentMsg.type === 'result') {
-            this.activeTurnDone?.();
-            this.clearActiveTurn();
-          }
-        }
-      }
-    } catch (err) {
-      // SDK query terminated unexpectedly
-      const error = err instanceof Error ? err : new Error(String(err));
-
-      // Fail the active turn
-      if (this.activeTurnReject) {
-        this.activeTurnReject(error);
-        this.clearActiveTurn();
-      }
-
-      // Fail all queued turns
-      this.messageQueue.close(error);
-      for (const turn of this.pendingTurns) {
-        turn.reject(error);
-      }
-      this.pendingTurns.length = 0;
-    } finally {
-      this.demuxRunning = false;
-    }
-  }
-
-  private _activeTurnOnMessage?: (msg: AgentMessage) => void;
-
-  /**
-   * Wire an AbortSignal to `queryInstance.interrupt()` so that tree-level
-   * abort actually reaches the provider and stops the in-flight SDK call.
-   */
-  private wireSignalToInterrupt(signal?: AbortSignal): void {
-    // Clean up any previous listener
-    this.activeTurnSignalCleanup?.();
-    this.activeTurnSignalCleanup = null;
-
-    if (!signal || !this.queryInstance) return;
-
-    if (signal.aborted) {
-      // Already aborted — interrupt immediately
-      (this.queryInstance as any).interrupt?.();
-      return;
-    }
-
-    const onAbort = () => {
-      (this.queryInstance as any)?.interrupt?.();
-    };
-    signal.addEventListener('abort', onAbort, { once: true });
-    this.activeTurnSignalCleanup = () => {
-      signal.removeEventListener('abort', onAbort);
-    };
-  }
-
-  /** Clear active turn state and remove the signal→interrupt listener. */
-  private clearActiveTurn(): void {
-    this.activeTurnResolve = null;
-    this.activeTurnReject = null;
-    this.activeTurnDone = null;
-    this._activeTurnOnMessage = undefined;
-    this.activeTurnSignalCleanup?.();
-    this.activeTurnSignalCleanup = null;
   }
 
   private mapSdkMessage(msg: SDKMessage): AgentMessage[] {
