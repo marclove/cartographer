@@ -27,12 +27,14 @@ export type {
   SchedulerEvents,
   TickLoopHandle,
   ModelUsage,
+  SessionConfig,
 } from './types.js';
 
 // Core
 export { BehaviorTree } from './core/behavior-tree.js';
 export { InMemoryBlackboard } from './core/blackboard.js';
 export { EventEmitter } from './core/event-emitter.js';
+export { SessionRegistry } from './core/session-registry.js';
 
 // Leaf nodes
 export { BaseNode } from './nodes/base.js';
@@ -76,7 +78,7 @@ export { TreeScheduler } from './scheduler/tree-scheduler.js';
 
 // Agent abstraction
 export { Agent } from './agent/agent.js';
-export type { AgentConfig, AgentSendOptions, AgentMessage, AgentInfo, AgentUsage } from './agent/agent.js';
+export type { AgentConfig, AgentSendOptions, AgentMessage, AgentInfo, AgentUsage, AgentSessionOptions } from './agent/agent.js';
 export { ClaudeSDKAgent } from './agent/claude-sdk-agent.js';
 export type { ClaudeSDKAgentConfig } from './agent/claude-sdk-agent.js';
 
