@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { BehaviorTree } from './behavior-tree.js';
 import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
+import { SessionRegistry } from './session-registry.js';
 import { NodeStatus } from '../types.js';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -85,6 +86,34 @@ describe('BehaviorTree.interrupt()', () => {
 
     // Cleanup
     resolveB!(NodeStatus.SUCCESS);
+  });
+
+  it('preserves SessionRegistry across interrupt', async () => {
+    let resolveChild: (status: NodeStatus) => void;
+    const child = new ActionNode({
+      name: 'slow',
+      action: () => new Promise<NodeStatus>((r) => { resolveChild = r; }),
+    });
+
+    const sessionRegistry = new SessionRegistry();
+    sessionRegistry.set('triage', 'sdk-session-abc');
+    sessionRegistry.set('research', 'sdk-session-def');
+
+    const tree = new BehaviorTree({ name: 'test', root: child, sessionRegistry });
+
+    // Start work
+    await tree.tick();
+    expect(tree.hasInflightWork()).toBe(true);
+
+    // Interrupt — sessions must survive
+    tree.interrupt();
+    expect(tree.sessionRegistry.has('triage')).toBe(true);
+    expect(tree.sessionRegistry.get('triage')).toBe('sdk-session-abc');
+    expect(tree.sessionRegistry.has('research')).toBe(true);
+    expect(tree.sessionRegistry.get('research')).toBe('sdk-session-def');
+
+    // Cleanup
+    resolveChild!(NodeStatus.SUCCESS);
   });
 
   it('is a no-op when no work is in flight', () => {
