@@ -664,6 +664,20 @@ export interface ConditionNodeConfig {
  * });
  * ```
  */
+/**
+ * Configuration for how an AgentNode participates in a named session.
+ */
+export interface SessionConfig {
+  /** The named session to participate in. */
+  name: string;
+  /**
+   * Fork behavior. When `true`, creates an anonymous fork (ephemeral).
+   * When a string, creates a named fork registered under that name.
+   * When absent, the agent resumes (appends to) the session.
+   */
+  fork?: true | string;
+}
+
 export interface AgentNodeConfig {
   /** Optional stable identifier. Auto-generated UUID when omitted. */
   id?: string;
@@ -699,6 +713,12 @@ export interface AgentNodeConfig {
    * again. The cache is cleared when `reset()` is called.
    */
   cache?: boolean;
+
+  /**
+   * Named session participation.
+   * Shorthand: `session: "triage"` is equivalent to `session: { name: "triage" }`.
+   */
+  session?: string | SessionConfig;
 }
 
 // --- Composite Configs ---

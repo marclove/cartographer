@@ -482,3 +482,178 @@ describe('AgentNode - agentOptions', () => {
     expect(info.model).toBe('test-model');
   });
 });
+
+describe('AgentNode - sessions', () => {
+  it('registers a new session when resuming a session that does not exist yet', async () => {
+    const agent = createAgent([
+      { type: 'session_start', sessionId: 'sess-abc' },
+      { type: 'result', subtype: 'success', output: 'done' },
+    ]);
+
+    const node = new AgentNode({ name: 'worker', agent, prompt: 'Work', session: 'triage' });
+    const ctx = createContext();
+
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+
+    expect(ctx.sessions.get('triage')).toBe('sess-abc');
+  });
+
+  it('passes existing session ID when resuming', async () => {
+    const agent = createAgent([
+      { type: 'result', subtype: 'success', output: 'done' },
+    ]);
+
+    let capturedOpts: AgentSendOptions | undefined;
+    const origSend = agent.send.bind(agent);
+    agent.send = async function*(prompt: string, options?: AgentSendOptions) {
+      capturedOpts = options;
+      yield* origSend(prompt, options);
+    };
+
+    const node = new AgentNode({ name: 'worker', agent, prompt: 'Work', session: 'triage' });
+    const ctx = createContext();
+    ctx.sessions.set('triage', 'existing-sess-id');
+
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    await node.tick(ctx);
+
+    expect(capturedOpts?.session).toEqual({ id: 'existing-sess-id' });
+  });
+
+  it('passes fork option when forking an existing session', async () => {
+    const agent = createAgent([
+      { type: 'result', subtype: 'success', output: 'done' },
+    ]);
+
+    let capturedOpts: AgentSendOptions | undefined;
+    const origSend = agent.send.bind(agent);
+    agent.send = async function*(prompt: string, options?: AgentSendOptions) {
+      capturedOpts = options;
+      yield* origSend(prompt, options);
+    };
+
+    const node = new AgentNode({
+      name: 'worker',
+      agent,
+      prompt: 'Work',
+      session: { name: 'triage', fork: true },
+    });
+    const ctx = createContext();
+    ctx.sessions.set('triage', 'base-sess-id');
+
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    await node.tick(ctx);
+
+    expect(capturedOpts?.session).toEqual({ id: 'base-sess-id', fork: true });
+  });
+
+  it('registers a named fork under the fork name', async () => {
+    const agent = createAgent([
+      { type: 'session_start', sessionId: 'forked-sess-id' },
+      { type: 'result', subtype: 'success', output: 'done' },
+    ]);
+
+    const node = new AgentNode({
+      name: 'worker',
+      agent,
+      prompt: 'Work',
+      session: { name: 'triage', fork: 'triage-branch' },
+    });
+    const ctx = createContext();
+    ctx.sessions.set('triage', 'base-sess-id');
+
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    await node.tick(ctx);
+
+    expect(ctx.sessions.get('triage-branch')).toBe('forked-sess-id');
+    // Original session should be unchanged
+    expect(ctx.sessions.get('triage')).toBe('base-sess-id');
+  });
+
+  it('does not register an anonymous fork', async () => {
+    const agent = createAgent([
+      { type: 'session_start', sessionId: 'ephemeral-sess-id' },
+      { type: 'result', subtype: 'success', output: 'done' },
+    ]);
+
+    const node = new AgentNode({
+      name: 'worker',
+      agent,
+      prompt: 'Work',
+      session: { name: 'triage', fork: true },
+    });
+    const ctx = createContext();
+    ctx.sessions.set('triage', 'base-sess-id');
+
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    await node.tick(ctx);
+
+    // Only 'triage' should exist — the ephemeral fork ID must not be registered
+    expect(ctx.sessions.get('triage')).toBe('base-sess-id');
+    expect(ctx.sessions.get('ephemeral-sess-id')).toBeUndefined();
+  });
+
+  it('returns FAILURE when forking a session that does not exist', async () => {
+    const agent = createAgent([
+      { type: 'result', subtype: 'success', output: 'done' },
+    ]);
+
+    const node = new AgentNode({
+      name: 'worker',
+      agent,
+      prompt: 'Work',
+      session: { name: 'nonexistent', fork: true },
+    });
+    const ctx = createContext();
+
+    // The throw from resolveSessionOptions is synchronous in execute(),
+    // so BaseNode.tick() catches it and returns FAILURE directly
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
+  });
+
+  it('does not use registry when no session config is set', async () => {
+    const agent = createAgent([
+      { type: 'result', subtype: 'success', output: 'done' },
+    ]);
+
+    let capturedOpts: AgentSendOptions | undefined;
+    const origSend = agent.send.bind(agent);
+    agent.send = async function*(prompt: string, options?: AgentSendOptions) {
+      capturedOpts = options;
+      yield* origSend(prompt, options);
+    };
+
+    const node = new AgentNode({ name: 'worker', agent, prompt: 'Work' });
+    const ctx = createContext();
+
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    await node.tick(ctx);
+
+    expect(capturedOpts?.session).toBeUndefined();
+  });
+
+  it('accepts string shorthand for session config', async () => {
+    const agent = createAgent([
+      { type: 'session_start', sessionId: 'new-sess-id' },
+      { type: 'result', subtype: 'success', output: 'done' },
+    ]);
+
+    const node = new AgentNode({ name: 'worker', agent, prompt: 'Work', session: 'my-session' });
+    const ctx = createContext();
+
+    expect(node.sessionConfig).toEqual({ name: 'my-session' });
+
+    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
+    await flush();
+    await node.tick(ctx);
+
+    expect(ctx.sessions.get('my-session')).toBe('new-sess-id');
+  });
+});

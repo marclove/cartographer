@@ -1,8 +1,8 @@
 import { BaseNode } from './base.js';
 import { NodeStatus } from '../types.js';
-import type { AgentNodeConfig, BTreeNode, TreeContext } from '../types.js';
+import type { AgentNodeConfig, BTreeNode, TreeContext, SessionConfig } from '../types.js';
 import type { NodeState } from '../core/serialization.js';
-import type { AgentMessage, AgentInfo } from '../agent/agent.js';
+import type { AgentMessage, AgentInfo, AgentSessionOptions } from '../agent/agent.js';
 import { computeContentHash } from '../core/content-hash.js';
 
 /**
@@ -60,6 +60,14 @@ export class AgentNode extends BaseNode {
   /** Read-only access to agent metadata for introspection (e.g. dashboard API). */
   get agentOptions(): AgentInfo {
     return this.config.agent.getInfo();
+  }
+
+  /** Normalized session config, or null if no session is configured. */
+  get sessionConfig(): SessionConfig | null {
+    if (!this.config.session) return null;
+    return typeof this.config.session === 'string'
+      ? { name: this.config.session }
+      : this.config.session;
   }
 
   /**
@@ -155,8 +163,9 @@ export class AgentNode extends BaseNode {
     }
 
     // Start path: kick off the agent call in the background
+    const sessionOpts = this.resolveSessionOptions(context);
     const state: { promise: Promise<NodeStatus>; result?: NodeStatus; error?: Error } = {
-      promise: this._executeAgentCall(context),
+      promise: this._executeAgentCall(context, sessionOpts),
     };
     state.promise.then(
       (status) => { state.result = status; },
@@ -170,7 +179,10 @@ export class AgentNode extends BaseNode {
    * The actual agent call logic, extracted from execute() so it can run
    * in the background while execute() returns RUNNING immediately.
    */
-  private async _executeAgentCall(context: TreeContext): Promise<NodeStatus> {
+  private async _executeAgentCall(
+    context: TreeContext,
+    sessionOpts?: AgentSessionOptions,
+  ): Promise<NodeStatus> {
     const prompt = typeof this.config.prompt === 'function'
       ? this.config.prompt(context)
       : this.config.prompt;
@@ -183,9 +195,15 @@ export class AgentNode extends BaseNode {
       signal: context.signal,
       onElicitation: context.onElicitation,
       onMessage: (msg) => this.emitAgentEvent(msg, context),
+      session: sessionOpts,
     });
 
     for await (const msg of messages) {
+      if (msg.type === 'session_start') {
+        this.registerSession(context, msg.sessionId);
+        continue;
+      }
+
       if (msg.type === 'result') {
         if (msg.subtype === 'success') {
           return this.handleSuccess(msg.output, msg.cost, context);
@@ -232,6 +250,39 @@ export class AgentNode extends BaseNode {
       this.cachedStatus = NodeStatus.SUCCESS;
     }
     return NodeStatus.SUCCESS;
+  }
+
+  private resolveSessionOptions(context: TreeContext): AgentSessionOptions | undefined {
+    const config = this.sessionConfig;
+    if (!config) return undefined;
+
+    const registry = context.sessions;
+
+    if (config.fork) {
+      const existingId = registry.get(config.name);
+      if (!existingId) {
+        throw new Error(
+          `Cannot fork session "${config.name}": session does not exist. ` +
+          `Ensure an agent resumes this session before another agent forks it.`,
+        );
+      }
+      return { id: existingId, fork: true };
+    }
+
+    const existingId = registry.get(config.name);
+    return existingId ? { id: existingId } : {};
+  }
+
+  private registerSession(context: TreeContext, sessionId: string): void {
+    const config = this.sessionConfig;
+    if (!config) return;
+
+    if (typeof config.fork === 'string') {
+      context.sessions.set(config.fork, sessionId);
+    } else if (!config.fork) {
+      context.sessions.set(config.name, sessionId);
+    }
+    // Anonymous fork (fork: true) — don't register
   }
 
   /**
