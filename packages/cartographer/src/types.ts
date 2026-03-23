@@ -500,7 +500,7 @@ export interface ParallelStrategy {
  *     'use-cache': 'Returns cached results if available',
  *   },
  *   cache: true, // Reuse the first decision until reset()
- *   agent: new ClaudeSDKAgent({ name: 'strategy', model: 'claude-haiku-4-5-20251001', effort: 'low' }),
+ *   agent: new ClaudeSDKAgent({ name: 'strategy', model: 'claude-haiku-4-5', effort: 'low' }),
  * };
  * ```
  */

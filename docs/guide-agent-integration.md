@@ -83,7 +83,7 @@ const classifier = new AgentNode({
 
 Message: ${ctx.blackboard.get<string>("userMessage")}`,
   options: {
-    model: "claude-haiku-4-5-20251001",
+    model: "claude-haiku-4-5",
     effort: "low",
     outputFormat: {
       type: "json_schema",
@@ -201,7 +201,7 @@ Both `AgentNode` and the agent strategies accept a `cache: true` option.
 // Agent node: call Claude once, return cached status on subsequent ticks
 b.agent("classify", {
   prompt: "Classify this ticket",
-  options: { model: "claude-haiku-4-5-20251001" },
+  options: { model: "claude-haiku-4-5" },
   cache: true,
 });
 ```
@@ -212,7 +212,7 @@ b.agent("classify", {
 // Agent strategy: reuse the ordering across execution cycles until reset()
 const strategy = new AgentSelectionStrategy({
   prompt: "Pick the best approach",
-  options: { model: "claude-haiku-4-5-20251001" },
+  options: { model: "claude-haiku-4-5" },
   cache: true,
 });
 ```
@@ -227,7 +227,7 @@ Control costs with:
 
 - `options.maxBudgetUsd` on AgentNode.
 - `options.effort: 'low'` for simple tasks.
-- `options.model: 'claude-haiku-4-5-20251001'` for fast, inexpensive operations.
+- `options.model: 'claude-haiku-4-5'` for fast, inexpensive operations.
 - Track spending via `agent:response` and `agent:error` events (both include a `cost` field).
 
 ```typescript
@@ -267,7 +267,7 @@ const tree = new TreeBuilder("classification-pipeline")
     b.agent("classify", {
       prompt: (ctx) => `Classify this support ticket: ${ctx.blackboard.get<string>("ticket")}`,
       options: {
-        model: "claude-haiku-4-5-20251001",
+        model: "claude-haiku-4-5",
         effort: "low",
         outputFormat: {
           type: "json_schema",

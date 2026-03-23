@@ -207,7 +207,7 @@ const strategy = new AgentExecutionStrategy({
     const urgency = ctx.blackboard.get("urgency");
     return `Order steps for ${urgency} priority processing`;
   },
-  options: { model: "claude-haiku-4-5-20251001" },
+  options: { model: "claude-haiku-4-5" },
   cache: true,
 });
 ```

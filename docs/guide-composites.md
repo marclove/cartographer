@@ -173,7 +173,7 @@ When `cache: true` is set on the config, the strategy also caches its decision _
 ```typescript
 const strategy = new AgentExecutionStrategy({
   prompt: "Order these deployment steps for the current environment",
-  options: { model: "claude-haiku-4-5-20251001" },
+  options: { model: "claude-haiku-4-5" },
   cache: true, // Reuse across cycles; cleared on reset()
 });
 ```
@@ -190,7 +190,7 @@ const tree = new TreeBuilder("smart-selector")
       strategy: new AgentSelectionStrategy({
         prompt: "Pick the best data source based on current state",
         options: {
-          model: "claude-haiku-4-5-20251001",
+          model: "claude-haiku-4-5",
           effort: "low",
         },
         childDescriptions: {

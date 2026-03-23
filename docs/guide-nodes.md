@@ -102,7 +102,7 @@ const classifier = new AgentNode({
   name: "classify-intent",
   prompt: (ctx) => `Classify this text: ${ctx.blackboard.get<string>("input")}`,
   options: {
-    model: "claude-haiku-4-5-20251001",
+    model: "claude-haiku-4-5",
     effort: "low",
   },
 });

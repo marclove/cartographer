@@ -215,7 +215,7 @@ const classifier = new AgentNode({
   name: "classify",
   prompt: "Classify the following text.",
   options: {
-    model: "claude-haiku-4-5-20251001",
+    model: "claude-haiku-4-5",
     outputFormat: {
       type: "json_schema",
       schema: z.toJSONSchema(z.object({ label: z.string() })) as any,

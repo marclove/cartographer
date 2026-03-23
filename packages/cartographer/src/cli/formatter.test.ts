@@ -292,14 +292,14 @@ describe('createFormatter', () => {
         result: 'ok',
         modelUsage: {
           'claude-sonnet-4-5-20250514': makeUsage({ costUSD: 0.005 }),
-          'claude-haiku-4-5-20251001': makeUsage({ costUSD: 0.001 }),
+          'claude-haiku-4-5': makeUsage({ costUSD: 0.001 }),
         },
       });
       events.emit('tree:tick', { tree: 'my-tree', status: NodeStatus.SUCCESS, durationMs: 100 });
 
       const output = stdoutLines().join('');
       expect(output).toContain('claude-sonnet-4-5-20250514');
-      expect(output).toContain('claude-haiku-4-5-20251001');
+      expect(output).toContain('claude-haiku-4-5');
       expect(output).toContain('$0.0060'); // total
     });
 

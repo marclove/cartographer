@@ -184,7 +184,7 @@ If the SDK throws an exception (as opposed to returning an error result), no `ag
 const strategy = new AgentSelectionStrategy({
   prompt: "Choose the best data source",
   options: {
-    model: "claude-haiku-4-5-20251001",
+    model: "claude-haiku-4-5",
     effort: "low",
   },
   childDescriptions: {
