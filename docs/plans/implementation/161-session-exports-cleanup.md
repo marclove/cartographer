@@ -1,10 +1,10 @@
-# Task 109: Exports + Integration Verification
+# Task 161: Exports + Integration Verification
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Export new session types from the package, verify all tests pass and types check across the monorepo, and clean up any stale imports.
 
-**Depends on:** Tasks 102–108
+**Depends on:** Tasks 154–160
 
 **Spec Reference:** `docs/superpowers/specs/2026-03-23-agent-sessions-design.md`
 

@@ -1,10 +1,10 @@
-# Task 108: ClaudeSDKAgent Query-per-Send Refactor
+# Task 160: ClaudeSDKAgent Query-per-Send Refactor
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Refactor `ClaudeSDKAgent` from a long-lived single-query model to query-per-send. Each `send()` call creates a fresh SDK `query()` with appropriate session resume/fork options. Remove the `AsyncQueue`, demux loop, and pending turns machinery.
 
-**Depends on:** Task 103 (Agent session types)
+**Depends on:** Task 155 (Agent session types)
 
 **Spec Reference:** `docs/superpowers/specs/2026-03-23-agent-sessions-design.md` — ClaudeSDKAgent Refactor section
 

@@ -1,4 +1,4 @@
-# Task 103: Agent Session Types + TestAgent
+# Task 155: Agent Session Types + TestAgent
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 

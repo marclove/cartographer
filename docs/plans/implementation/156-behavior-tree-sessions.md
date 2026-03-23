@@ -1,10 +1,10 @@
-# Task 104: BehaviorTree Session Lifecycle
+# Task 156: BehaviorTree Session Lifecycle
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Add `SessionRegistry` to `BehaviorTree` — create it, pass it through `TreeContext`, reset on terminal status, accept restored registries from `TreeActor`.
 
-**Depends on:** Task 102 (SessionRegistry)
+**Depends on:** Task 154 (SessionRegistry)
 
 **Spec Reference:** `docs/superpowers/specs/2026-03-23-agent-sessions-design.md` — Tree Lifecycle section
 

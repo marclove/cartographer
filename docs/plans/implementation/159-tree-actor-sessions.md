@@ -1,10 +1,10 @@
-# Task 107: TreeActor Session Serialization
+# Task 159: TreeActor Session Serialization
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Add session persistence to `TreeActor` — serialize the `SessionRegistry` when saving state, restore it when loading state, and handle backward compatibility with existing serialized states that lack a `sessions` field.
 
-**Depends on:** Task 104 (BehaviorTree sessions)
+**Depends on:** Task 156 (BehaviorTree sessions)
 
 **Spec Reference:** `docs/superpowers/specs/2026-03-23-agent-sessions-design.md` — TreeActor Serialization section
 

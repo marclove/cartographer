@@ -43,11 +43,11 @@
 
 | # | Task | Dependencies | File |
 |---|---|---|---|
-| 102 | SessionRegistry | — | `docs/plans/implementation/102-session-registry.md` |
-| 103 | Agent session types + TestAgent | — | `docs/plans/implementation/103-agent-session-types.md` |
-| 104 | BehaviorTree session lifecycle | 102 | `docs/plans/implementation/104-behavior-tree-sessions.md` |
-| 105 | AgentNode session resolution | 102, 103, 104 | `docs/plans/implementation/105-agent-node-sessions.md` |
-| 106 | Session validation | 104, 105 | `docs/plans/implementation/106-session-validation.md` |
-| 107 | TreeActor session serialization | 104 | `docs/plans/implementation/107-tree-actor-sessions.md` |
-| 108 | ClaudeSDKAgent query-per-send | 103 | `docs/plans/implementation/108-claude-sdk-agent-refactor.md` |
-| 109 | Exports + integration verification | 102–108 | `docs/plans/implementation/109-session-exports-cleanup.md` |
+| 154 | SessionRegistry | — | `docs/plans/implementation/154-session-registry.md` |
+| 155 | Agent session types + TestAgent | — | `docs/plans/implementation/155-agent-session-types.md` |
+| 156 | BehaviorTree session lifecycle | 154 | `docs/plans/implementation/156-behavior-tree-sessions.md` |
+| 157 | AgentNode session resolution | 154, 155, 156 | `docs/plans/implementation/157-agent-node-sessions.md` |
+| 158 | Session validation | 156, 157 | `docs/plans/implementation/158-session-validation.md` |
+| 159 | TreeActor session serialization | 156 | `docs/plans/implementation/159-tree-actor-sessions.md` |
+| 160 | ClaudeSDKAgent query-per-send | 155 | `docs/plans/implementation/160-claude-sdk-agent-refactor.md` |
+| 161 | Exports + integration verification | 154–160 | `docs/plans/implementation/161-session-exports-cleanup.md` |

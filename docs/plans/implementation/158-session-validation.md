@@ -1,10 +1,10 @@
-# Task 106: Session Concurrency Validation
+# Task 158: Session Concurrency Validation
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Add static validation that prevents two AgentNodes in resume mode on the same session from executing concurrently under a ParallelNode.
 
-**Depends on:** Task 104 (BehaviorTree sessions), Task 105 (AgentNode session config)
+**Depends on:** Task 156 (BehaviorTree sessions), Task 157 (AgentNode session resolution)
 
 **Spec Reference:** `docs/superpowers/specs/2026-03-23-agent-sessions-design.md` — Validation section
 

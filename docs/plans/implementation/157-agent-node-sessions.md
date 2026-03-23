@@ -1,10 +1,10 @@
-# Task 105: AgentNode Session Resolution
+# Task 157: AgentNode Session Resolution
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Add session support to `AgentNode` — resolve session config, pass session options to `agent.send()`, capture `session_start` messages and register them in the `SessionRegistry`.
 
-**Depends on:** Task 102 (SessionRegistry), Task 103 (Agent session types), Task 104 (BehaviorTree sessions)
+**Depends on:** Task 154 (SessionRegistry), Task 155 (Agent session types), Task 156 (BehaviorTree sessions)
 
 **Spec Reference:** `docs/superpowers/specs/2026-03-23-agent-sessions-design.md` — AgentNode Configuration, AgentNode Tick Lifecycle sections
 
