@@ -9,6 +9,8 @@ export interface TreeSessionState {
   lastMessageAt: number;
   /** When true, the tree is held after interrupt — tick messages are no-ops. */
   held?: boolean;
+  /** Named session registry. Optional for backward compatibility. Defaults to empty when absent. */
+  sessions?: Record<string, string>;
 }
 
 export interface TreeEvent {

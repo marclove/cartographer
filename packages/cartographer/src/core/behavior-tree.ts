@@ -66,7 +66,7 @@ export class BehaviorTree {
   readonly root: BTreeNode;
 
   /** Named session registry for agent conversation sharing. */
-  readonly sessionRegistry: SessionRegistry;
+  sessionRegistry: SessionRegistry;
 
   /** Content hash of the root node — fingerprint of the entire tree topology. */
   get rootHash(): string {
