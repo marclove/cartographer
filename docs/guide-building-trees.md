@@ -115,7 +115,7 @@ The `context` option applies context overrides to a subtree, which is how you sc
 
 ```typescript
 b.sequence('scoped', { context: { onElicitation: myHandler } }, (b) => {
-  b.agent('worker', { prompt: 'work' }); // inherits myHandler
+  b.agent('worker', { agent: workerAgent, prompt: 'work' }); // inherits myHandler
 });
 ```
 

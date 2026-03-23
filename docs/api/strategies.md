@@ -59,22 +59,21 @@ interface ParallelPolicy {
 
 ```typescript
 import type { AgentStrategyConfig } from "cartographer";
-import type { Options } from "@anthropic-ai/claude-agent-sdk";
 
 interface AgentStrategyConfig {
   prompt: string | ((children: BTreeNode[], context: TreeContext) => string);
   childDescriptions?: Record<string, string>;
   cache?: boolean;
-  options?: Partial<Options>;
+  agent: Agent;
 }
 ```
 
 | Field               | Type                     | Required | Default | Description                                                                                                                                                                                                                                                  |
 | ------------------- | ------------------------ | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `prompt`            | `string \| function`     | Yes      | —       | Base prompt for Claude. Function receives children and context.                                                                                                                                                                                              |
+| `prompt`            | `string \| function`     | Yes      | —       | Base prompt for the agent. Function receives children and context.                                                                                                                                                                                           |
 | `childDescriptions` | `Record<string, string>` | No       | —       | Maps child name to human description                                                                                                                                                                                                                         |
 | `cache`             | `boolean`                | No       | `false` | When `true`, the strategy caches its decision across execution cycles. Composites already guarantee intra-cycle stability (strategy is called once per cycle). This flag controls whether the result persists after a cycle completes. Cleared on `reset()`. |
-| `options`           | `Partial<Options>`       | No       | —       | [Agent SDK options](https://platform.claude.com/docs/en/agent-sdk/typescript#options) passed directly to the SDK. Defaults to `model: 'sonnet'` and `effort: 'low'` when not specified.                                                                      |
+| `agent`             | `Agent`                  | Yes      | —       | The Agent instance used for strategy decisions. Configure model, effort, and other provider options on the agent.                                                                                                                                            |
 
 ## Default Strategies
 
@@ -126,7 +125,7 @@ All agent strategies use Claude to make decisions. They call `buildStrategyPromp
 
 On agent failure (SDK error, invalid response), all gracefully fall back to default behavior.
 
-All three strategies handle elicitation consistently with `AgentNode`. During each SDK call, the handler is resolved as `config.options.onElicitation ?? context.onElicitation`, wrapped via `wrapElicitation()`, and forwarded to `queryStructured()`. If no handler exists at any level, elicitation requests are automatically declined and an `agent:elicitation_declined` event is emitted. See the [Elicitation guide](../guide-elicitation.md) for handler levels and precedence.
+All three strategies handle elicitation consistently with `AgentNode`. During each agent call, `context.onElicitation` is passed to `agent.send()`. If no handler exists, elicitation requests are automatically declined and an `agent:elicitation_declined` event is emitted. See the [Elicitation guide](../guide-elicitation.md) for handler levels and precedence.
 
 ### AgentSelectionStrategy
 
@@ -166,7 +165,7 @@ Emits `strategy:decision` with `strategy: 'agent-parallel'`, plus the full suite
 
 ### Strategy Observability Events
 
-All three agent strategies emit the same `agent:*` events as `AgentNode` during their SDK calls. The event sequence for each strategy invocation is:
+All three agent strategies emit the same `agent:*` events as `AgentNode` during their agent calls. The event sequence for each strategy invocation is:
 
 1. `agent:prompt` — emitted before calling the SDK
 2. Intermediate events as the SDK streams — `agent:thinking`, `agent:text`, `agent:tool_use`, `agent:stream`, `agent:message`, `agent:init`, `agent:status`, `agent:rate_limit`, `agent:tool_progress`
@@ -181,12 +180,15 @@ If the SDK throws an exception (as opposed to returning an error result), no `ag
 ### Example
 
 ```typescript
+const strategyAgent = new ClaudeSDKAgent({
+  name: "strategy",
+  model: "claude-haiku-4-5",
+  effort: "low",
+});
+
 const strategy = new AgentSelectionStrategy({
   prompt: "Choose the best data source",
-  options: {
-    model: "claude-haiku-4-5",
-    effort: "low",
-  },
+  agent: strategyAgent,
   childDescriptions: {
     cache: "Fast, possibly stale",
     api: "Fresh, slower",
@@ -208,4 +210,14 @@ function wrapElicitation(
 ): OnElicitation;
 ```
 
-Wraps an optional elicitation handler so the SDK always receives a function. If `handler` is defined, delegates to it. Otherwise emits `agent:elicitation_declined` and returns `{ action: 'decline' }`. Used internally by `AgentNode` and all three agent strategies; exported for custom strategy implementations.
+Wraps an optional elicitation handler so the SDK always receives a function. If `handler` is defined, delegates to it. Otherwise emits `agent:elicitation_declined` and returns `{ action: 'decline' }`. Used internally by `ClaudeSDKAgent` and all three agent strategies; exported for custom agent and strategy implementations.
+
+### buildStrategyPrompt
+
+```typescript
+import { buildStrategyPrompt } from "cartographer";
+
+function buildStrategyPrompt(config: AgentStrategyConfig, children: BTreeNode[], context: TreeContext): string;
+```
+
+Builds the full prompt string that agent strategies send to the agent. Combines the base prompt with child names/descriptions and a JSON snapshot of the current blackboard state. Used internally by the three agent strategies; exported for custom strategy implementations.

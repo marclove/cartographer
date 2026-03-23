@@ -49,6 +49,12 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `RunContext`          | Context provided to CLI tree factory functions       |
 | `TreeRunConfig`       | Configuration returned by CLI tree factory functions |
 | `FormatterOptions`    | Configuration for CLI output formatter               |
+| `AgentConfig`         | Configuration for the `Agent` abstract class         |
+| `AgentSendOptions`    | Per-invocation options for `Agent.send()`            |
+| `AgentMessage`        | Discriminated union of agent response messages       |
+| `AgentInfo`           | Provider-agnostic agent metadata                     |
+| `AgentUsage`          | Token usage information from a completed turn        |
+| `ClaudeSDKAgentConfig`| Configuration for `ClaudeSDKAgent`                   |
 
 ## [Core](core.md)
 
@@ -121,11 +127,13 @@ Re-exported from the internal type definitions. See individual reference pages f
 
 ## [Agent Integration](agent.md)
 
-| Export                         | Description                                                                                                                                                                                                   |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `createBlackboardMcpServer`    | Creates an MCP server that exposes the blackboard to Claude agents. See [Agent Integration guide](../guide-agent-integration.md) for usage.                                                                   |
-| `emitMessageEvents`            | Emits granular `agent:*` observability events for a raw SDK message. Used internally by `AgentNode` and agent strategies; available for custom strategy implementations.                                      |
-| `createStrategyMessageHandler` | Creates a message handler for strategy SDK calls that emits per-message observability events plus `agent:response`/`agent:error` lifecycle events. Intended as the `onMessage` callback to `queryStructured`. |
+| Export                         | Description                                                                                                                                   |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Agent`                        | Abstract base class for all agent implementations. See [Agent Integration guide](../guide-agent-integration.md).                              |
+| `ClaudeSDKAgent`               | Concrete Agent wrapping the Claude Agent SDK.                                                                                                 |
+| `createBlackboardMcpServer`    | Creates an MCP server that exposes the blackboard to agents.                                                                                  |
+| `wrapElicitation`              | Wraps an optional elicitation handler with auto-decline fallback. Used internally; exported for custom implementations.                        |
+| `buildStrategyPrompt`          | Builds the full prompt string for agent strategy calls, including child descriptions and blackboard state.                                     |
 
 ## [Application Server](actor.md)
 

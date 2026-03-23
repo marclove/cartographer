@@ -617,33 +617,35 @@ export interface ConditionNodeConfig {
 }
 
 /**
- * Configuration for an `AgentNode` — a leaf node that calls the Claude SDK.
+ * Configuration for an `AgentNode` — a leaf node that delegates to an Agent.
  *
- * Every agent call is an agentic SDK invocation. The blackboard is always
- * exposed via a built-in MCP server. Configure additional tools, MCP
- * servers, system prompts, turn limits, budget caps, and any other SDK
- * option via the `options` field, which is passed directly to the SDK's
- * `query()` function.
+ * The `agent` field carries a configured Agent instance that handles all
+ * provider-specific concerns (model, tools, MCP servers, structured output,
+ * budget caps). The blackboard is always exposed via a built-in MCP server
+ * injected by the Agent.
  *
- * To request **structured output**, set `options.outputFormat` with a
- * JSON schema. The SDK validates the response and the parsed result is
- * stored on the blackboard at `{name}:output`. You can combine structured
- * output with tools, multi-turn interaction, and all other options.
+ * To request **structured output**, configure `outputFormat` on the Agent.
+ * The provider validates the response and the parsed result is stored on
+ * the blackboard at `{name}:output`. You can combine structured output
+ * with tools, multi-turn interaction, and all other agent options.
  *
  * Without `outputFormat`, the raw text response is stored on the blackboard.
  *
  * @example
  * ```ts
  * // Structured output — classify user intent
+ * const classifyAgent = new ClaudeSDKAgent({
+ *   name: 'classify-intent',
+ *   model: 'claude-haiku-4-5',
+ *   outputFormat: {
+ *     type: 'json_schema',
+ *     schema: { type: 'object', properties: { intent: { type: 'string' }, confidence: { type: 'number' } } },
+ *   },
+ * });
  * const classifier = new AgentNode({
  *   name: 'classify-intent',
+ *   agent: classifyAgent,
  *   prompt: (ctx) => `Classify: ${ctx.blackboard.get('userMessage')}`,
- *   options: {
- *     outputFormat: {
- *       type: 'json_schema',
- *       schema: { type: 'object', properties: { intent: { type: 'string' }, confidence: { type: 'number' } } },
- *     },
- *   },
  *   mapResult: (output) =>
  *     (output as { confidence: number }).confidence > 0.8
  *       ? NodeStatus.SUCCESS
@@ -651,15 +653,17 @@ export interface ConditionNodeConfig {
  * });
  *
  * // Multi-turn with tools — research and write a report
+ * const researchAgent = new ClaudeSDKAgent({
+ *   name: 'research-agent',
+ *   systemPrompt: 'You are a research assistant.',
+ *   allowedTools: ['Read', 'Edit', 'WebSearch'],
+ *   maxTurns: 10,
+ *   maxBudgetUsd: 0.50,
+ * });
  * const researcher = new AgentNode({
  *   name: 'research-agent',
+ *   agent: researchAgent,
  *   prompt: 'Research the topic and write a summary',
- *   options: {
- *     systemPrompt: 'You are a research assistant.',
- *     allowedTools: ['web-search', 'read-url'],
- *     maxTurns: 10,
- *     maxBudgetUsd: 0.50,
- *   },
  *   blackboardNamespace: 'research',
  * });
  * ```

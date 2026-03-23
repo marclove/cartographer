@@ -295,6 +295,12 @@ builder.timeout("timed-retry", { timeoutMs: 10000 }, (b) => {
 Gate an expensive agent call behind a budget check:
 
 ```typescript
+const expensiveAgent = new ClaudeSDKAgent({
+  name: "expensive-agent",
+  model: "claude-sonnet-4-6",
+  maxBudgetUsd: 0.5,
+});
+
 builder.guard(
   "check-budget",
   {
@@ -302,8 +308,8 @@ builder.guard(
   },
   (b) => {
     b.agent("expensive-agent", {
+      agent: expensiveAgent,
       prompt: "Analyze the data",
-      options: { maxBudgetUsd: 0.5 },
     });
   },
 );

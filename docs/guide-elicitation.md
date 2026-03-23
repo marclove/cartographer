@@ -1,6 +1,6 @@
 # Elicitation
 
-MCP servers can request user input during agent execution — for example, an OAuth server asking for credentials, or a form server requesting configuration values. The Agent SDK surfaces these as *elicitation requests*. By default, all SDK calls — both `AgentNode` executions and agent strategy decisions — silently decline elicitation requests, but you can provide handlers at three levels with clear precedence rules.
+MCP servers can request user input during agent execution — for example, an OAuth server asking for credentials, or a form server requesting configuration values. The Agent SDK surfaces these as *elicitation requests*. By default, all agent calls — both `AgentNode` executions and agent strategy decisions — silently decline elicitation requests, but you can provide handlers at two levels with clear precedence rules.
 
 ---
 
@@ -37,15 +37,17 @@ A handler returns `{ action, content? }` where `action` is one of:
 
 ## Handler Levels
 
-Cartographer supports three levels of elicitation handlers, from broadest to most specific. These apply uniformly to both `AgentNode` executions and agent strategy SDK calls.
+Cartographer supports two levels of elicitation handlers. These apply uniformly to both `AgentNode` executions and agent strategy calls.
 
 ### Tree-Level Handler
 
 Set a default handler for all `AgentNode` instances and agent strategies in the tree using `TreeBuilder.onElicitation()` or `BehaviorTreeConfig.onElicitation`:
 
 ```typescript
-import { TreeBuilder } from 'cartographer';
+import { TreeBuilder, ClaudeSDKAgent } from 'cartographer';
 import type { OnElicitation } from 'cartographer';
+
+const workerAgent = new ClaudeSDKAgent({ name: 'worker', model: 'claude-sonnet-4-6' });
 
 const handler: OnElicitation = async (request, { signal }) => {
   // Only respond to requests from the expected MCP server
@@ -58,7 +60,7 @@ const handler: OnElicitation = async (request, { signal }) => {
 const tree = new TreeBuilder('with-elicitation')
   .onElicitation(handler)
   .sequence('main', (b) => {
-    b.agent('worker', { prompt: 'Do work that may require auth' });
+    b.agent('worker', { agent: workerAgent, prompt: 'Do work that may require auth' });
   })
   .build();
 ```
@@ -75,55 +77,37 @@ const tree = new TreeBuilder('scoped-elicitation')
   .sequence('main', (b) => {
     // This subtree uses a different handler
     b.sequence('oauth-branch', { context: { onElicitation: oauthHandler } }, (b) => {
-      b.agent('oauth-agent', { prompt: 'Connect to OAuth service' });
+      b.agent('oauth-agent', { agent: oauthAgent, prompt: 'Connect to OAuth service' });
     });
 
     // This agent inherits the tree-level handler
-    b.agent('other-agent', { prompt: 'Other work' });
+    b.agent('other-agent', { agent: generalAgent, prompt: 'Other work' });
   })
   .build();
 ```
 
 The closest handler to an `AgentNode` wins. In the example above, `oauth-agent` sees `oauthHandler` while `other-agent` sees `defaultHandler`.
 
-### Node-Level Handler
-
-For maximum specificity, set `onElicitation` directly in the agent's `options`:
-
-```typescript
-b.agent('specific-agent', {
-  prompt: 'Work requiring credentials',
-  options: {
-    onElicitation: async (request) => {
-      if (request.serverName === 'credentials-server' && request.mode === 'form') {
-        return { action: 'accept', content: { apiKey: process.env.API_KEY } };
-      }
-      return { action: 'decline' };
-    },
-  },
-});
-```
-
 ---
 
 ## Handler Precedence
 
-Both `AgentNode` and agent strategies resolve the elicitation handler with the same priority:
+Both `AgentNode` and agent strategies resolve the elicitation handler the same way:
 
-1. **`options.onElicitation`** (node-level or `config.options.onElicitation` for strategies) — highest priority
-2. **`context.onElicitation`** (inherited through context layering) — middle priority
-3. **Auto-decline** with `agent:elicitation_declined` event — fallback
+1. **`context.onElicitation`** (inherited through context layering) — highest priority
+2. **Auto-decline** with `agent:elicitation_declined` event — fallback
+
+`AgentNode` passes `context.onElicitation` to the agent's `send()` method. Agent strategies do the same. If no handler exists at any level, the agent auto-declines the request and emits a `provider_event` that the BT layer translates into `agent:elicitation_declined`.
 
 The resolution logic is shared via the `wrapElicitation` helper:
 
 ```typescript
 import { wrapElicitation } from 'cartographer';
 
-// Both AgentNode and strategies resolve the same way:
-const userHandler = options.onElicitation ?? context.onElicitation;
-const wrapped = wrapElicitation(userHandler, node, context.events);
+// The handler is resolved from context:
+const wrapped = wrapElicitation(context.onElicitation, node, context.events);
 
-// `wrapped` always returns a response — delegates to `userHandler` if
+// `wrapped` always returns a response — delegates to the handler if
 // present, otherwise emits agent:elicitation_declined and declines.
 ```
 
@@ -131,7 +115,7 @@ const wrapped = wrapElicitation(userHandler, node, context.events);
 
 ## Decline Events
 
-When no handler exists at any level, the request is automatically declined and an `agent:elicitation_declined` event is emitted. This applies to both `AgentNode` calls and agent strategy SDK calls. Use this for logging or alerting:
+When no handler exists at any level, the request is automatically declined and an `agent:elicitation_declined` event is emitted. This applies to both `AgentNode` calls and agent strategy calls. Use this for logging or alerting:
 
 ```typescript
 tree.events.on('agent:elicitation_declined', ({ node, request }) => {
@@ -152,44 +136,30 @@ The event payload contains:
 
 ## Elicitation in Agent Strategies
 
-Agent strategies (`AgentSelectionStrategy`, `AgentExecutionStrategy`, `AgentParallelStrategy`) make their own SDK calls via `queryStructured()`. These calls now handle elicitation using the same resolution and wrapping logic as `AgentNode`.
+Agent strategies (`AgentSelectionStrategy`, `AgentExecutionStrategy`, `AgentParallelStrategy`) make their own agent calls via the configured `Agent` instance. These calls handle elicitation using the same resolution logic as `AgentNode`.
 
-Strategies resolve their handler as `config.options.onElicitation ?? context.onElicitation`. Since strategies receive the `TreeContext` from their parent composite, a tree-level or subtree-level handler is automatically inherited:
+Strategies pass `context.onElicitation` to `agent.send()`. Since strategies receive the `TreeContext` from their parent composite, a tree-level or subtree-level handler is automatically inherited:
 
 ```typescript
-import { TreeBuilder, AgentSelectionStrategy } from 'cartographer';
+import { TreeBuilder, AgentSelectionStrategy, ClaudeSDKAgent } from 'cartographer';
+
+const strategyAgent = new ClaudeSDKAgent({ name: 'strategy', model: 'claude-haiku-4-5', effort: 'low' });
+const workerAgent = new ClaudeSDKAgent({ name: 'worker', model: 'claude-sonnet-4-6' });
 
 const tree = new TreeBuilder('with-strategy-elicitation')
   .onElicitation(async (request) => {
-    // This handler is called for both the strategy's SDK call
-    // and the AgentNode's SDK call — only accept known servers
+    // This handler is called for both the strategy's agent call
+    // and the AgentNode's agent call — only accept known servers
     if (request.serverName === 'auth-server' && request.mode === 'form') {
       return { action: 'accept', content: { token: process.env.API_KEY } };
     }
     return { action: 'decline' };
   })
-  .selector('pick', { strategy: new AgentSelectionStrategy({ prompt: 'Pick best' }) }, (b) => {
-    b.agent('worker-a', { prompt: 'Plan A' });
-    b.agent('worker-b', { prompt: 'Plan B' });
+  .selector('pick', { strategy: new AgentSelectionStrategy({ prompt: 'Pick best', agent: strategyAgent }) }, (b) => {
+    b.agent('worker-a', { agent: workerAgent, prompt: 'Plan A' });
+    b.agent('worker-b', { agent: workerAgent, prompt: 'Plan B' });
   })
   .build();
-```
-
-You can also set a strategy-specific handler via `config.options.onElicitation`, which takes precedence over the context-level handler:
-
-```typescript
-const strategy = new AgentSelectionStrategy({
-  prompt: 'Pick best approach',
-  options: {
-    onElicitation: async (request) => {
-      // Only used during this strategy's SDK call
-      if (request.serverName === 'config-server' && request.mode === 'form') {
-        return { action: 'accept', content: { apiKey: '...' } };
-      }
-      return { action: 'decline' };
-    },
-  },
-});
 ```
 
 ---

@@ -165,7 +165,7 @@ const node = new ConditionNode({
 import { AgentNode } from "cartographer";
 ```
 
-Leaf node that invokes the Claude Agent SDK. Every call is an agentic SDK invocation. SDK options are passed directly via the `options` field, giving you access to the full range of Agent SDK capabilities.
+Leaf node that delegates prompt processing to a configured Agent. The Agent handles all provider-specific concerns (SDK configuration, MCP servers, structured output) while AgentNode focuses on BT integration: prompt resolution, event emission, blackboard I/O, `mapResult`, and caching.
 
 ### Constructor
 
@@ -175,63 +175,66 @@ new AgentNode(config: AgentNodeConfig)
 
 ### AgentNodeConfig
 
-| Field                 | Type                                                    | Required | Default | Description                                                                                                                                                                                                                                                              |
-| --------------------- | ------------------------------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id`                  | `string`                                                | No       | --      | Custom node identifier. Auto-generated UUID when omitted.                                                                                                                                                                                                                |
-| `name`                | `string`                                                | Yes      | --      | Node name                                                                                                                                                                                                                                                                |
-| `prompt`              | `string \| ((context: TreeContext) => string)`          | Yes      | --      | Prompt sent to Claude. Can be a static string or a function that builds the prompt from context.                                                                                                                                                                         |
-| `mapResult`           | `(output: unknown, context: TreeContext) => NodeStatus` | No       | --      | Maps the agent output to a `NodeStatus`. When omitted, any successful response returns `SUCCESS`.                                                                                                                                                                        |
-| `blackboardNamespace` | `string`                                                | No       | --      | When set, the auto-attached blackboard MCP server operates on a scoped namespace instead of the full blackboard.                                                                                                                                                         |
-| `cache`               | `boolean`                                               | No       | `false` | When `true`, the node calls Claude once and returns the cached status on subsequent ticks. Cleared on `reset()`.                                                                                                                                                         |
-| `options`             | `Partial<Options>`                                      | No       | --      | Agent SDK options passed directly to the SDK. Includes `model`, `effort`, `outputFormat`, `allowedTools`, `mcpServers`, `systemPrompt`, `maxTurns`, `maxBudgetUsd`, `permissionMode`, and [many more](https://platform.claude.com/docs/en/agent-sdk/typescript#options). |
+| Field                 | Type                                                    | Required | Default | Description                                                                                                                 |
+| --------------------- | ------------------------------------------------------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `id`                  | `string`                                                | No       | --      | Custom node identifier. Auto-generated UUID when omitted.                                                                   |
+| `name`                | `string`                                                | Yes      | --      | Node name                                                                                                                   |
+| `agent`               | `Agent`                                                 | Yes      | --      | The Agent instance used to process prompts. Configure model, tools, output format, and other provider options on the agent. |
+| `prompt`              | `string \| ((context: TreeContext) => string)`          | Yes      | --      | Prompt sent to the agent. Can be a static string or a function that builds the prompt from context.                         |
+| `mapResult`           | `(output: unknown, context: TreeContext) => NodeStatus` | No       | --      | Maps the agent output to a `NodeStatus`. When omitted, any successful response returns `SUCCESS`.                           |
+| `blackboardNamespace` | `string`                                                | No       | --      | When set, the auto-attached blackboard MCP server operates on a scoped namespace instead of the full blackboard.            |
+| `cache`               | `boolean`                                               | No       | `false` | When `true`, the node calls the agent once and returns the cached status on subsequent ticks. Cleared on `reset()`.         |
 
 ### Behavior
 
-- Every call is an agentic SDK invocation. All SDK options are available via the `options` field.
-- A blackboard MCP server is automatically attached, exposing three tools to the agent: `blackboard_read`, `blackboard_write`, and `blackboard_keys`.
+- Every call delegates to the configured Agent. The Agent handles provider-specific concerns (SDK configuration, MCP servers, structured output, tool merging, `$schema` stripping).
+- A blackboard MCP server is automatically attached by the Agent, exposing three tools: `blackboard_read`, `blackboard_write`, and `blackboard_keys`.
 - On success, the result is written to the blackboard at key `{name}:output`.
-- When `options.outputFormat` is provided, the SDK validates the response against the schema. If `mapResult` is provided, its return value determines the node status.
-- Custom `options.mcpServers` and `options.allowedTools` are merged with the blackboard server config.
-- If the `outputFormat.schema` contains a `$schema` meta-property (as produced by `z.toJSONSchema()`), it is automatically stripped before passing to the SDK.
-- Emits the full set of agent observability events: `agent:prompt`, `agent:thinking`, `agent:text`, `agent:tool_use`, `agent:response`, `agent:error`, `agent:stream`, `agent:message`, `agent:tool_progress`, `agent:init`, `agent:status`, and `agent:rate_limit`. See [TreeEvents](core.md#treeevents-interface) for payload details.
+- If the agent's `outputFormat` is configured, the provider validates the response against the schema. If `mapResult` is provided, its return value determines the node status.
+- Emits the full set of agent observability events: `agent:prompt`, `agent:thinking`, `agent:text`, `agent:tool_use`, `agent:response`, `agent:error`, `agent:tool_progress`, `agent:init`, `agent:status`, and `agent:rate_limit`. See [TreeEvents](core.md#treeevents-interface) for payload details.
 
 ### Elicitation Handling
 
-`AgentNode` always provides an `onElicitation` callback to the SDK. The handler is resolved with the following precedence:
+`AgentNode` passes `context.onElicitation` to the agent's `send()` method. The handler is resolved with the following precedence:
 
-1. **Node-level** — `options.onElicitation` on the `AgentNodeConfig`.
-2. **Context-level** — `context.onElicitation`, inherited through context layering from a parent node or tree-level config.
-3. **Auto-decline** — If no handler is found at any level, the request is declined and an `agent:elicitation_declined` event is emitted with the request payload.
+1. **Context-level** — `context.onElicitation`, inherited through context layering from a parent node or tree-level config.
+2. **Auto-decline** — If no handler is found, the request is declined and an `agent:elicitation_declined` event is emitted with the request payload.
 
-See [Elicitation](../guide-agent-integration.md#elicitation) for usage examples.
+See [Elicitation](../guide-elicitation.md) for usage examples.
 
 ### Example
 
 ```typescript
 import { z } from "zod/v4";
-import { AgentNode } from "cartographer";
+import { AgentNode, ClaudeSDKAgent } from "cartographer";
+
+const classifyAgent = new ClaudeSDKAgent({
+  name: "classify",
+  model: "claude-haiku-4-5",
+  outputFormat: {
+    type: "json_schema",
+    schema: z.toJSONSchema(z.object({ label: z.string() })) as any,
+  },
+});
 
 const classifier = new AgentNode({
   name: "classify",
+  agent: classifyAgent,
   prompt: "Classify the following text.",
-  options: {
-    model: "claude-haiku-4-5",
-    outputFormat: {
-      type: "json_schema",
-      schema: z.toJSONSchema(z.object({ label: z.string() })) as any,
-    },
-  },
+});
+
+const coderAgent = new ClaudeSDKAgent({
+  name: "implement-feature",
+  model: "claude-sonnet-4-6",
+  allowedTools: ["Read", "Edit", "Bash"],
+  permissionMode: "acceptEdits",
+  maxTurns: 20,
 });
 
 const coder = new AgentNode({
   name: "implement-feature",
+  agent: coderAgent,
   prompt: (ctx) => `Implement: ${ctx.blackboard.get<string>("task")}`,
-  options: {
-    model: "claude-sonnet-4-6",
-    allowedTools: ["Read", "Edit", "Bash"],
-    permissionMode: "acceptEdits",
-    maxTurns: 20,
-  },
 });
 ```
 
@@ -253,8 +256,8 @@ const node = receive(name: string, options?: ReceiveOptions);
 
 ### ReceiveOptions
 
-| Field        | Type                                                 | Required | Description                                                |
-| ------------ | ---------------------------------------------------- | -------- | ---------------------------------------------------------- |
+| Field        | Type                                                 | Required | Description                                                 |
+| ------------ | ---------------------------------------------------- | -------- | ----------------------------------------------------------- |
 | `mapPayload` | `(payload: unknown, blackboard: Blackboard) => void` | No       | Callback to extract data from the consumed command payload. |
 
 ### Behavior

@@ -1,25 +1,60 @@
 # Agent Integration
 
-AgentNode integrates Claude via the Agent SDK, bringing AI-powered reasoning into behavior trees. Every AgentNode call is an agentic SDK invocation. SDK options are passed directly via the `options` field, giving you access to the full range of Agent SDK capabilities.
+Cartographer integrates AI agents into behavior trees through a two-layer architecture: **Agents** define how to talk to an AI provider, and **AgentNodes** wire those agents into the tree's tick lifecycle. This separation means you configure provider details (model, tools, output format) once on an Agent and reuse it across multiple nodes and strategies.
+
+---
+
+## Agents
+
+An `Agent` is a configured AI agent that processes prompts and streams responses. The abstract `Agent` class defines the provider-agnostic interface; `ClaudeSDKAgent` is the concrete implementation for Claude.
+
+### Defining an Agent
+
+```typescript
+import { ClaudeSDKAgent } from "cartographer";
+
+const classifier = new ClaudeSDKAgent({
+  name: "classify",
+  model: "claude-haiku-4-5",
+  effort: "low",
+});
+```
+
+`ClaudeSDKAgentConfig` is a flat intersection of `AgentConfig` (just `name`) and the SDK's `Partial<Options>`. All SDK options — `model`, `effort`, `outputFormat`, `allowedTools`, `mcpServers`, `systemPrompt`, `maxTurns`, `maxBudgetUsd`, `permissionMode`, and more — sit at the top level. See the [Agent SDK documentation](https://platform.claude.com/docs/en/agent-sdk/typescript#options) for the full list.
+
+### Reusing Agents
+
+A single Agent instance can be shared across multiple AgentNodes and strategies. The agent manages conversation state internally — each `send()` call starts a new turn within the same session:
+
+```typescript
+const haiku = new ClaudeSDKAgent({
+  name: "haiku-agent",
+  model: "claude-haiku-4-5",
+});
+
+// Same agent, different nodes
+b.agent("classify", { agent: haiku, prompt: classifyPrompt });
+b.agent("summarize", { agent: haiku, prompt: summarizePrompt });
+```
+
+For agent definitions in larger projects, extract them into a dedicated module (see the [content pipeline example](../apps/content-pipeline/agents.ts) for this pattern).
 
 ---
 
 ## AgentNode Config
 
 ```typescript
-import type { Options } from "@anthropic-ai/claude-agent-sdk";
-
 interface AgentNodeConfig {
   name: string;
+  agent: Agent;
   prompt: string | ((context: TreeContext) => string);
   mapResult?: (output: unknown, context: TreeContext) => NodeStatus;
   blackboardNamespace?: string;
   cache?: boolean;
-  options?: Partial<Options>;
 }
 ```
 
-The `options` field accepts any property from the Agent SDK's `Options` type -- `model`, `effort`, `outputFormat`, `allowedTools`, `mcpServers`, `systemPrompt`, `maxTurns`, `maxBudgetUsd`, `permissionMode`, and many more. See the [Agent SDK documentation](https://platform.claude.com/docs/en/agent-sdk/typescript#options) for the full list of available options.
+The `agent` field is the Agent instance that handles all provider-specific concerns. The node focuses on BT integration: prompt resolution, blackboard I/O, event emission, `mapResult`, and caching.
 
 All AgentNode calls share these behaviors:
 
@@ -34,24 +69,27 @@ All AgentNode calls share these behaviors:
 At its simplest, an AgentNode sends a prompt to Claude and writes the result to the blackboard:
 
 ```typescript
-import { AgentNode } from "cartographer";
+import { AgentNode, ClaudeSDKAgent } from "cartographer";
+
+const researchAgent = new ClaudeSDKAgent({
+  name: "research",
+  model: "claude-sonnet-4-6",
+  maxTurns: 10,
+  maxBudgetUsd: 0.5,
+  systemPrompt: "You are a research assistant. Be thorough but concise.",
+  permissionMode: "acceptEdits",
+  allowedTools: ["mcp__web__search"],
+  mcpServers: {
+    web: webSearchServer,
+  },
+});
 
 const researcher = new AgentNode({
   name: "research-topic",
+  agent: researchAgent,
   prompt: (ctx) => `Research the following topic and write a summary.
 
 Topic: ${ctx.blackboard.get<string>("topic")}`,
-  options: {
-    model: "claude-sonnet-4-6",
-    maxTurns: 10,
-    maxBudgetUsd: 0.5,
-    systemPrompt: "You are a research assistant. Be thorough but concise.",
-    permissionMode: "acceptEdits",
-    allowedTools: ["mcp__web__search"],
-    mcpServers: {
-      web: webSearchServer,
-    },
-  },
 });
 ```
 
@@ -59,42 +97,45 @@ Details:
 
 - Emits `agent:tool_use` for each tool use block in assistant messages.
 - Emits `agent:error` when the SDK returns an error result (max turns, budget, execution error).
-- Merges user-provided `mcpServers` with the auto-attached blackboard server.
-- Merges user-provided `allowedTools` with `mcp__blackboard__*`.
+- The agent merges user-provided `mcpServers` with the auto-attached blackboard server.
+- The agent merges user-provided `allowedTools` with `mcp__blackboard__*`.
 - Returns `SUCCESS` if the agent result subtype is `'success'`, `FAILURE` otherwise.
 
 ---
 
 ## Structured Output with `outputFormat`
 
-Use `options.outputFormat` to receive a response validated against a JSON schema. The SDK validates the response and the structured output is available as the first argument to `mapResult` and also stored at `{name}:output`.
+Configure `outputFormat` on the agent to receive a response validated against a JSON schema. The SDK validates the response and the structured output is available as the first argument to `mapResult` and also stored at `{name}:output`.
 
-If you're using Zod, convert your schema with `z.toJSONSchema()`. Cartographer automatically strips the `$schema` meta-property that `toJSONSchema()` adds, since the SDK does not accept it.
+If you're using Zod, convert your schema with `z.toJSONSchema()`. The agent automatically strips the `$schema` meta-property that `toJSONSchema()` adds, since the SDK does not accept it.
 
 If `mapResult` is not provided, a successful agent call returns `SUCCESS`.
 
 ```typescript
 import { z } from "zod/v4";
-import { AgentNode, NodeStatus } from "cartographer";
+import { AgentNode, ClaudeSDKAgent, NodeStatus } from "cartographer";
+
+const classifyAgent = new ClaudeSDKAgent({
+  name: "classify-intent",
+  model: "claude-haiku-4-5",
+  effort: "low",
+  outputFormat: {
+    type: "json_schema",
+    schema: z.toJSONSchema(
+      z.object({
+        category: z.enum(["question", "complaint", "feedback", "other"]),
+        confidence: z.number(),
+      }),
+    ) as any,
+  },
+});
 
 const classifier = new AgentNode({
   name: "classify-intent",
+  agent: classifyAgent,
   prompt: (ctx) => `Classify the following user message into one of the categories.
 
 Message: ${ctx.blackboard.get<string>("userMessage")}`,
-  options: {
-    model: "claude-haiku-4-5",
-    effort: "low",
-    outputFormat: {
-      type: "json_schema",
-      schema: z.toJSONSchema(
-        z.object({
-          category: z.enum(["question", "complaint", "feedback", "other"]),
-          confidence: z.number(),
-        }),
-      ) as any,
-    },
-  },
   mapResult: (output, ctx) => {
     const result = output as { category: string; confidence: number };
     return result.confidence > 0.8 ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
@@ -102,13 +143,11 @@ Message: ${ctx.blackboard.get<string>("userMessage")}`,
 });
 ```
 
-All SDK options are available regardless of whether `outputFormat` is set.
-
 ---
 
 ## Blackboard MCP Server
 
-`createBlackboardMcpServer(blackboard, namespace?)` creates an MCP server that is automatically attached to every AgentNode.
+`createBlackboardMcpServer(blackboard, namespace?)` creates an MCP server that the agent automatically attaches when a blackboard is provided via send options (which AgentNode always does).
 
 ```typescript
 import { createBlackboardMcpServer } from "cartographer";
@@ -132,18 +171,22 @@ The `prompt` field accepts either a string or a function `(context: TreeContext)
 
 ```typescript
 import { z } from "zod/v4";
+import { ClaudeSDKAgent } from "cartographer";
 
-const summarizer = new AgentNode({
+const summarizeAgent = new ClaudeSDKAgent({
   name: "summarize",
+  outputFormat: {
+    type: "json_schema",
+    schema: z.toJSONSchema(z.object({ summary: z.string() })) as any,
+  },
+});
+
+// In the builder:
+b.agent("summarize", {
+  agent: summarizeAgent,
   prompt: (ctx) => {
     const data = ctx.blackboard.get<string[]>("articles");
     return `Summarize these ${data?.length ?? 0} articles:\n${data?.join("\n")}`;
-  },
-  options: {
-    outputFormat: {
-      type: "json_schema",
-      schema: z.toJSONSchema(z.object({ summary: z.string() })) as any,
-    },
   },
 });
 ```
@@ -152,7 +195,7 @@ const summarizer = new AgentNode({
 
 ## Elicitation
 
-MCP servers can request user input during agent execution. By default, `AgentNode` silently declines all elicitation requests, but you can provide handlers at the tree, subtree, or node level.
+MCP servers can request user input during agent execution. By default, `ClaudeSDKAgent` silently declines all elicitation requests, but you can provide handlers at the tree or subtree level via context layering.
 
 See the dedicated [Elicitation guide](guide-elicitation.md) for handler examples, precedence rules, decline events, and request types.
 
@@ -165,17 +208,28 @@ Agent strategies use Claude to make composite-level decisions. See [guide-compos
 ### Config
 
 ```typescript
-import type { Options } from "@anthropic-ai/claude-agent-sdk";
-
 interface AgentStrategyConfig {
   prompt: string | ((children: BTreeNode[], context: TreeContext) => string);
   childDescriptions?: Record<string, string>;
   cache?: boolean;
-  options?: Partial<Options>;
+  agent: Agent;
 }
 ```
 
-The `options` field accepts the same [Agent SDK `Options`](https://platform.claude.com/docs/en/agent-sdk/typescript#options) as `AgentNodeConfig`. Agent strategies default to `model: 'sonnet'` and `effort: 'low'` when not specified.
+The `agent` field is the Agent instance used for strategy decisions. Configure model, effort, and other SDK options on the agent:
+
+```typescript
+const strategyAgent = new ClaudeSDKAgent({
+  name: "strategy",
+  model: "claude-haiku-4-5",
+  effort: "low",
+});
+
+const strategy = new AgentSelectionStrategy({
+  prompt: "Pick the best approach",
+  agent: strategyAgent,
+});
+```
 
 ### Implementations
 
@@ -185,9 +239,9 @@ The `options` field accepts the same [Agent SDK `Options`](https://platform.clau
 
 All three use `buildStrategyPrompt()`, which constructs a prompt including child names/descriptions and current blackboard state. On agent failure, they fall back to default behavior (original order / all-must-succeed).
 
-Agent strategies emit the full suite of `agent:*` observability events during their SDK calls — `agent:prompt` before calling Claude, intermediate events like `agent:thinking` and `agent:text` as the SDK streams, and `agent:response` or `agent:error` when the result arrives. After a successful call, they also emit `strategy:decision` with the parsed decision payload. This means any observer listening for `agent:*` events (including `createTreeLogger`) automatically captures strategy SDK interactions with no additional setup.
+Agent strategies emit the full suite of `agent:*` observability events during their agent calls — `agent:prompt` before calling the agent, intermediate events like `agent:thinking` and `agent:text` as the agent streams, and `agent:response` or `agent:error` when the result arrives. After a successful call, they also emit `strategy:decision` with the parsed decision payload. This means any observer listening for `agent:*` events (including `createTreeLogger`) automatically captures strategy interactions with no additional setup.
 
-Agent strategies also handle elicitation consistently with `AgentNode`. They inherit `onElicitation` from the tree context (set via `TreeBuilder.onElicitation()` or context overrides) and support per-strategy overrides via `config.options.onElicitation`. When no handler is available, elicitation requests are declined and an `agent:elicitation_declined` event is emitted. See the [Elicitation guide](guide-elicitation.md) for details.
+Agent strategies also handle elicitation consistently with `AgentNode`. They pass `context.onElicitation` to the agent's `send()` method, inheriting whatever handler was set via `TreeBuilder.onElicitation()` or context overrides. When no handler is available, elicitation requests are declined and an `agent:elicitation_declined` event is emitted. See the [Elicitation guide](guide-elicitation.md) for details.
 
 ---
 
@@ -195,13 +249,13 @@ Agent strategies also handle elicitation consistently with `AgentNode`. They inh
 
 Both `AgentNode` and the agent strategies accept a `cache: true` option.
 
-**AgentNode caching:** When enabled, the first Claude API call is made normally, but the result is stored and returned directly on subsequent ticks without calling Claude again. The cache is cleared when `reset()` is called. This is useful in multi-tick workflows where the tree is ticked repeatedly by a scheduler.
+**AgentNode caching:** When enabled, the first agent call is made normally, but the result is stored and returned directly on subsequent ticks without calling the agent again. The cache is cleared when `reset()` is called. This is useful in multi-tick workflows where the tree is ticked repeatedly by a scheduler.
 
 ```typescript
-// Agent node: call Claude once, return cached status on subsequent ticks
+// Agent node: call the agent once, return cached status on subsequent ticks
 b.agent("classify", {
+  agent: classifyAgent,
   prompt: "Classify this ticket",
-  options: { model: "claude-haiku-4-5" },
   cache: true,
 });
 ```
@@ -212,12 +266,12 @@ b.agent("classify", {
 // Agent strategy: reuse the ordering across execution cycles until reset()
 const strategy = new AgentSelectionStrategy({
   prompt: "Pick the best approach",
-  options: { model: "claude-haiku-4-5" },
+  agent: new ClaudeSDKAgent({ name: "strategy", model: "claude-haiku-4-5" }),
   cache: true,
 });
 ```
 
-Caches persist across ticks within an execution cycle, avoiding redundant Claude calls. They are cleared when `reset()` is called on the tree or when a composite's cycle ends.
+Caches persist across ticks within an execution cycle, avoiding redundant agent calls. They are cleared when `reset()` is called on the tree or when a composite's cycle ends.
 
 ---
 
@@ -225,9 +279,9 @@ Caches persist across ticks within an execution cycle, avoiding redundant Claude
 
 Control costs with:
 
-- `options.maxBudgetUsd` on AgentNode.
-- `options.effort: 'low'` for simple tasks.
-- `options.model: 'claude-haiku-4-5'` for fast, inexpensive operations.
+- `maxBudgetUsd` on the agent.
+- `effort: 'low'` on the agent for simple tasks.
+- `model: 'claude-haiku-4-5'` on the agent for fast, inexpensive operations.
 - Track spending via `agent:response` and `agent:error` events (both include a `cost` field).
 
 ```typescript
@@ -259,26 +313,40 @@ This example combines structured and unstructured agent calls in a single tree. 
 
 ```typescript
 import { z } from "zod/v4";
-import { TreeBuilder, NodeStatus, AgentNode } from "cartographer";
+import { TreeBuilder, NodeStatus, ClaudeSDKAgent } from "cartographer";
+
+// --- Define agents ---
+
+const classifyAgent = new ClaudeSDKAgent({
+  name: "classify",
+  model: "claude-haiku-4-5",
+  effort: "low",
+  outputFormat: {
+    type: "json_schema",
+    schema: z.toJSONSchema(
+      z.object({
+        category: z.enum(["billing", "technical", "general"]),
+        urgency: z.enum(["low", "medium", "high"]),
+      }),
+    ) as any,
+  },
+});
+
+const urgentAgent = new ClaudeSDKAgent({
+  name: "handle-urgent",
+  model: "claude-sonnet-4-6",
+  maxTurns: 5,
+  maxBudgetUsd: 0.25,
+});
+
+// --- Build tree ---
 
 const tree = new TreeBuilder("classification-pipeline")
   .sequence("classify-and-act", (b) => {
     // Step 1: Classify with structured output (fast, cheap)
     b.agent("classify", {
+      agent: classifyAgent,
       prompt: (ctx) => `Classify this support ticket: ${ctx.blackboard.get<string>("ticket")}`,
-      options: {
-        model: "claude-haiku-4-5",
-        effort: "low",
-        outputFormat: {
-          type: "json_schema",
-          schema: z.toJSONSchema(
-            z.object({
-              category: z.enum(["billing", "technical", "general"]),
-              urgency: z.enum(["low", "medium", "high"]),
-            }),
-          ) as any,
-        },
-      },
     });
 
     // Step 2: Route based on classification
@@ -290,15 +358,11 @@ const tree = new TreeBuilder("classification-pipeline")
         });
         // Step 3: Handle urgent tickets thoroughly
         b.agent("handle-urgent", {
+          agent: urgentAgent,
           prompt: (ctx) => {
             const ticket = ctx.blackboard.get<string>("ticket");
             const classification = ctx.blackboard.get("classify:output");
             return `Draft an urgent response for this ${JSON.stringify(classification)} ticket: ${ticket}`;
-          },
-          options: {
-            model: "claude-sonnet-4-6",
-            maxTurns: 5,
-            maxBudgetUsd: 0.25,
           },
         });
       });
@@ -315,7 +379,7 @@ const tree = new TreeBuilder("classification-pipeline")
 
 ## Where to go next
 
-- [Elicitation](guide-elicitation.md) -- Handling MCP server input requests at tree, subtree, and node levels.
+- [Elicitation](guide-elicitation.md) -- Handling MCP server input requests at tree and subtree levels.
 - [TreeContext and Context Layering](guide-context.md) -- How TreeContext propagates and how to override fields per subtree.
 - [Leaf Nodes](guide-nodes.md) -- ActionNode, ConditionNode, and custom nodes.
 - [Composites and Strategies](guide-composites.md) -- Selector, sequence, parallel, and the strategy pattern.

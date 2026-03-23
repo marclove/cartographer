@@ -144,36 +144,34 @@ The optional `reset()` method is called by composites during their own `reset()`
 Agent strategies use Claude to make runtime decisions about child ordering or parallel policy. All three accept the same configuration:
 
 ```typescript
-import type { Options } from "@anthropic-ai/claude-agent-sdk";
-
 interface AgentStrategyConfig {
   prompt: string | ((children: BTreeNode[], context: TreeContext) => string);
   childDescriptions?: Record<string, string>;
   cache?: boolean;
-  options?: Partial<Options>;
+  agent: Agent;
 }
 ```
 
-The `options` field accepts any property from the [Agent SDK's `Options` type](https://platform.claude.com/docs/en/agent-sdk/typescript#options). Agent strategies default to `model: 'sonnet'` and `effort: 'low'` when not specified.
+The `agent` field is an Agent instance that handles the strategy's AI calls. Configure model, effort, and other provider options on the agent:
 
-- **`AgentSelectionStrategy`** — Claude reorders selector children based on context.
-- **`AgentExecutionStrategy`** — Claude reorders sequence children based on context.
-- **`AgentParallelStrategy`** — Claude adjusts parallel policy based on context.
+- **`AgentSelectionStrategy`** — The agent reorders selector children based on context.
+- **`AgentExecutionStrategy`** — The agent reorders sequence children based on context.
+- **`AgentParallelStrategy`** — The agent adjusts parallel policy based on context.
 
-All agent strategies use `buildStrategyPrompt`, which includes child descriptions and current blackboard state in the prompt sent to Claude. On agent failure, each strategy falls back to default behavior (original order for selection/execution, all-must-succeed for parallel).
+All agent strategies use `buildStrategyPrompt`, which includes child descriptions and current blackboard state in the prompt sent to the agent. On agent failure, each strategy falls back to default behavior (original order for selection/execution, all-must-succeed for parallel).
 
-Agent strategies emit `agent:*` observability events throughout their SDK calls — `agent:prompt` before calling Claude, intermediate events (`agent:thinking`, `agent:text`, etc.) as the SDK streams, and `agent:response` or `agent:error` when the result arrives. After a successful call, a `strategy:decision` event is emitted with the strategy name and decision payload. See the [Strategies API reference](api/strategies.md#strategy-observability-events) for the full event sequence.
+Agent strategies emit `agent:*` observability events throughout their agent calls — `agent:prompt` before calling the agent, intermediate events (`agent:thinking`, `agent:text`, etc.) as the agent streams, and `agent:response` or `agent:error` when the result arrives. After a successful call, a `strategy:decision` event is emitted with the strategy name and decision payload. See the [Strategies API reference](api/strategies.md#strategy-observability-events) for the full event sequence.
 
 #### Order Commitment vs Strategy Caching
 
 Composites handle intra-cycle order stability automatically: the strategy is consulted once when a new execution cycle begins, and the returned order is committed until the cycle completes (SUCCESS/FAILURE) or the node is reset. This means the strategy is never called redundantly while a child is RUNNING.
 
-When `cache: true` is set on the config, the strategy also caches its decision _across_ execution cycles. After a cycle completes and a new one starts, the cached result is reused without calling Claude again. The cache is cleared when `reset()` is called on the composite.
+When `cache: true` is set on the config, the strategy also caches its decision _across_ execution cycles. After a cycle completes and a new one starts, the cached result is reused without calling the agent again. The cache is cleared when `reset()` is called on the composite.
 
 ```typescript
 const strategy = new AgentExecutionStrategy({
   prompt: "Order these deployment steps for the current environment",
-  options: { model: "claude-haiku-4-5" },
+  agent: new ClaudeSDKAgent({ name: "strategy", model: "claude-haiku-4-5" }),
   cache: true, // Reuse across cycles; cleared on reset()
 });
 ```
@@ -181,7 +179,13 @@ const strategy = new AgentExecutionStrategy({
 **Example with agent strategy:**
 
 ```typescript
-import { TreeBuilder, AgentSelectionStrategy } from "cartographer";
+import { TreeBuilder, AgentSelectionStrategy, ClaudeSDKAgent } from "cartographer";
+
+const strategyAgent = new ClaudeSDKAgent({
+  name: "selector-strategy",
+  model: "claude-haiku-4-5",
+  effort: "low",
+});
 
 const tree = new TreeBuilder("smart-selector")
   .selector(
@@ -189,10 +193,7 @@ const tree = new TreeBuilder("smart-selector")
     {
       strategy: new AgentSelectionStrategy({
         prompt: "Pick the best data source based on current state",
-        options: {
-          model: "claude-haiku-4-5",
-          effort: "low",
-        },
+        agent: strategyAgent,
         childDescriptions: {
           "try-cache": "Fast but may be stale",
           "try-api": "Always fresh but slower",

@@ -426,7 +426,7 @@ describe('ClaudeSDKAgent', () => {
     it('returns allowedTools and mcpServers from config', () => {
       const agent = new ClaudeSDKAgent({
         name: 'my-agent',
-        allowedTools: ['read', 'write'],
+        allowedTools: ['Read', 'Edit'],
         mcpServers: { tools: { type: 'stdio', command: 'echo' } } as any,
       });
       const info = agent.getInfo();
