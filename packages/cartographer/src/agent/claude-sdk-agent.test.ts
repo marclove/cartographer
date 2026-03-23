@@ -173,7 +173,19 @@ describe('ClaudeSDKAgent', () => {
       expect(callArgs.prompt).toBe('hello world');
     });
 
-    it('sets persistSession: false on query options', async () => {
+    it('sets persistSession: false when session options are provided (named sessions)', async () => {
+      mockQuery.mockReturnValue(mockMessages([
+        { type: 'result', subtype: 'success', result: 'ok', total_cost_usd: 0 },
+      ]) as any);
+
+      const agent = new ClaudeSDKAgent({ name: 'test' });
+      await collectMessages(agent.send('prompt', { session: { id: 'named-session' } }));
+
+      const callArgs = mockQuery.mock.calls[0][0] as any;
+      expect(callArgs.options.persistSession).toBe(false);
+    });
+
+    it('does not set persistSession: false for private sessions (no session options)', async () => {
       mockQuery.mockReturnValue(mockMessages([
         { type: 'result', subtype: 'success', result: 'ok', total_cost_usd: 0 },
       ]) as any);
@@ -182,7 +194,7 @@ describe('ClaudeSDKAgent', () => {
       await collectMessages(agent.send('prompt'));
 
       const callArgs = mockQuery.mock.calls[0][0] as any;
-      expect(callArgs.options.persistSession).toBe(false);
+      expect(callArgs.options.persistSession).toBeUndefined();
     });
 
     it('creates a fresh query() call for each send()', async () => {
