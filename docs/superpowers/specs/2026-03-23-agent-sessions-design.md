@@ -180,7 +180,6 @@ class ClaudeSDKAgent extends Agent {
       prompt,
       options: {
         ...baseOpts,
-        persistSession: false,  // Cartographer manages persistence via StateStore
         ...(resumeId && { resume: resumeId }),
         ...(resumeId && sessionOpts?.fork && { forkSession: true }),
       },
@@ -227,7 +226,7 @@ Key behaviors:
 
 `buildQueryOptions()` consolidates existing logic from `createQuery()`: merging config, injecting blackboard MCP server, setting up the auto-decline elicitation wrapper, converting outputSchema to outputFormat. The `resume` and `forkSession` fields are passed inside `options` (the SDK's `Options` type), not at the top-level query parameter.
 
-`persistSession` is set to `false` by default. Cartographer manages session persistence via `StateStore`, and the query-per-send model would otherwise accumulate session files on disk for every `send()` call.
+SDK disk persistence (`persistSession: true`, the default) is required for both named and private sessions. The `SessionRegistry` stores only session IDs (name → provider ID mappings); the full conversation transcript is managed by the SDK on disk. Setting `persistSession: false` would prevent `resume` from working. Session disk accumulation is accepted as a tradeoff — cleanup can be addressed separately if needed.
 
 Signal/abort handling: each query gets the signal from the current send's options directly. No interrupt-wiring through the demux loop.
 

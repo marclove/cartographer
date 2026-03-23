@@ -87,15 +87,10 @@ export class ClaudeSDKAgent extends Agent {
     const resumeId = sessionOpts ? sessionOpts.id : this._privateSessionId;
 
     const queryOpts = this.buildQueryOptions(options);
-    // Named sessions (sessionOpts present): Cartographer manages persistence
-    // via StateStore, so disable SDK disk persistence to avoid accumulation.
-    // Private sessions (no sessionOpts): leave persistSession at SDK default
-    // so the transcript is available for resume across query-per-send calls.
     const queryInstance = query({
       prompt,
       options: {
         ...queryOpts,
-        ...(sessionOpts ? { persistSession: false } : {}),
         ...(resumeId ? { resume: resumeId } : {}),
         ...(resumeId && sessionOpts?.fork ? { forkSession: true } : {}),
       },
