@@ -41,6 +41,25 @@ export interface AgentSendOptions {
    * Zod should convert via z.toJSONSchema() before calling.
    */
   outputSchema?: Record<string, unknown>;
+  /**
+   * Session options controlling which conversation to resume, fork, or create.
+   * When omitted, the agent manages its own private session.
+   */
+  session?: AgentSessionOptions;
+}
+
+/**
+ * Session options for Agent.send().
+ *
+ * Controls whether the agent creates a new session, resumes an existing
+ * session, or forks from one. These options are provider-agnostic —
+ * each concrete Agent maps them to its provider's session API.
+ */
+export interface AgentSessionOptions {
+  /** Provider session ID to resume. When undefined, a new session is created. */
+  id?: string;
+  /** Fork from the session instead of appending to it. Requires `id` to be set. */
+  fork?: boolean;
 }
 
 /**
@@ -75,7 +94,8 @@ export type AgentMessage =
   | { type: 'tool_use'; name: string; input?: unknown }
   | { type: 'result'; subtype: 'success'; output: unknown; cost?: number; usage?: AgentUsage }
   | { type: 'result'; subtype: 'error'; errors?: unknown[]; cost?: number; usage?: AgentUsage }
-  | { type: 'provider_event'; subtype: string; data: unknown };
+  | { type: 'provider_event'; subtype: string; data: unknown }
+  | { type: 'session_start'; sessionId: string };
 
 /**
  * Abstract base class for all agent implementations.

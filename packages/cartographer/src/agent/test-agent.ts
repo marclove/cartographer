@@ -13,6 +13,8 @@ import type { AgentMessage, AgentSendOptions, AgentInfo, AgentConfig } from './a
 export class TestAgent extends Agent {
   private messages: AgentMessage[] = [];
   private _sessionId: string | null = null;
+  private _sessionCounter = 0;
+  private _privateSessionId: string | null = null;
   private _info: AgentInfo;
 
   constructor(config: AgentConfig & { info?: Partial<AgentInfo> } = { name: 'test-agent' }) {
@@ -29,7 +31,26 @@ export class TestAgent extends Agent {
   }
 
   async *send(_prompt: string, options?: AgentSendOptions): AsyncIterable<AgentMessage> {
-    this._sessionId = 'test-session';
+    const sessionOpts = options?.session;
+    let sessionId: string;
+
+    if (!sessionOpts) {
+      // Private session — stable across sends
+      if (!this._privateSessionId) {
+        this._privateSessionId = `test-session-${++this._sessionCounter}`;
+      }
+      sessionId = this._privateSessionId;
+    } else if (sessionOpts.id && !sessionOpts.fork) {
+      // Resume: use provided ID
+      sessionId = sessionOpts.id;
+    } else {
+      // New session or fork: generate new ID
+      sessionId = `test-session-${++this._sessionCounter}`;
+    }
+
+    this._sessionId = sessionId;
+    yield { type: 'session_start', sessionId };
+
     for (const msg of this.messages) {
       if (options?.onMessage) {
         try { options.onMessage(msg); } catch { /* swallowed per spec */ }

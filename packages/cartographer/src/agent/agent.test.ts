@@ -25,9 +25,10 @@ describe('Agent', () => {
       messages.push(msg);
     }
 
-    expect(messages).toHaveLength(2);
-    expect(messages[0]).toEqual({ type: 'text', content: 'hello' });
-    expect(messages[1]).toEqual({ type: 'result', subtype: 'success', output: 'done' });
+    expect(messages).toHaveLength(3);
+    expect(messages[0]).toEqual(expect.objectContaining({ type: 'session_start' }));
+    expect(messages[1]).toEqual({ type: 'text', content: 'hello' });
+    expect(messages[2]).toEqual({ type: 'result', subtype: 'success', output: 'done' });
   });
 
   it('sessionId is set after send', async () => {
@@ -36,7 +37,7 @@ describe('Agent', () => {
 
     for await (const _ of agent.send('prompt')) { /* consume */ }
 
-    expect(agent.sessionId).toBe('test-session');
+    expect(agent.sessionId).toEqual(expect.any(String));
   });
 
   it('onMessage callback is invoked for each message', async () => {
@@ -69,7 +70,7 @@ describe('Agent', () => {
       messages.push(msg);
     }
 
-    expect(messages).toHaveLength(2);
+    expect(messages).toHaveLength(3); // session_start + 2 configured messages
   });
 
   it('getInfo() returns agent metadata', () => {
