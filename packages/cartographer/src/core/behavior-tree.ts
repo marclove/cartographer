@@ -6,6 +6,7 @@ import { ObservableBlackboard } from './observable-blackboard.js';
 import { BaseNode } from '../nodes/base.js';
 import { TreeScheduler } from '../scheduler/tree-scheduler.js';
 import { SessionRegistry } from './session-registry.js';
+import { validateSessionConcurrency } from './session-validation.js';
 
 /**
  * The top-level runner for a behavior tree.
@@ -82,6 +83,7 @@ export class BehaviorTree {
     this.abortController = new AbortController();
     this.sessionRegistry = config.sessionRegistry ?? new SessionRegistry();
     BehaviorTree.validateUniqueIds(this.root);
+    validateSessionConcurrency(this.root);
     if (config.onElicitation && this.root instanceof BaseNode) {
       this.root.mergeContextOverrides({ onElicitation: config.onElicitation });
     }
