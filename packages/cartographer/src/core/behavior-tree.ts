@@ -11,10 +11,10 @@ import { validateSessionConcurrency } from './session-validation.js';
 /**
  * The top-level runner for a behavior tree.
  *
- * `BehaviorTree` owns the root node, the shared blackboard, the event
- * emitter, and an abort controller. Each call to {@link tick} constructs a
- * {@link TreeContext} and passes it to the root node, which propagates it
- * through the entire tree.
+ * `BehaviorTree` owns the root node, the named session registry, the shared
+ * blackboard, the event emitter, and an abort controller. Each call to
+ * {@link tick} constructs a {@link TreeContext} and passes it to the
+ * root node, which propagates it through the entire tree.
  *
  * **Basic usage:**
  * ```ts
@@ -47,7 +47,7 @@ export class BehaviorTree {
   /**
    * The shared key-value store accessible to every node during a tick.
    *
-   * If no blackboard was supplied in the config, a `InMemoryBlackboard` is
+   * If no blackboard was supplied in the config, an `InMemoryBlackboard` is
    * created automatically. The optional `toRecord()` method is used by
    * {@link run} to produce a plain-object snapshot of all stored values.
    */
@@ -198,6 +198,7 @@ export class BehaviorTree {
    * - Composite child-resumption indices (RUNNING state)
    * - Retry and repeat attempt counters
    * - Agent node cached results
+   * - Session registry (all named sessions are discarded)
    *
    * Also replaces the internal `AbortController` so that a previously
    * aborted tree can be ticked again.
@@ -221,7 +222,8 @@ export class BehaviorTree {
    *
    * Calls `abort()` on the root node (propagating to all descendants)
    * and triggers the `AbortController`, setting `context.signal.aborted`
-   * to `true` for any nodes that check it.
+   * to `true` for any nodes that check it. Also clears the session
+   * registry, discarding all named sessions.
    *
    * After calling `abort()`, call {@link reset} before ticking again to
    * obtain a fresh abort signal.
@@ -247,8 +249,10 @@ export class BehaviorTree {
    *
    * Unlike {@link abort}, interrupt preserves composite cycle state
    * (completedMap, committedOrder) so that previously completed children
-   * are not re-executed. The tree remains tickable immediately — no
-   * {@link reset} call needed.
+   * are not re-executed. The session registry is also preserved, allowing
+   * agents to resume their conversations on the next tick.
+   *
+   * The tree remains tickable immediately — no {@link reset} call needed.
    *
    * Does NOT trigger the tree's AbortController (that would permanently
    * prevent further ticks).

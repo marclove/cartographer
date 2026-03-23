@@ -6,15 +6,35 @@ import type { SessionConfig } from '../types.js';
  * Validate that no two AgentNodes in resume mode on the same named session
  * can execute concurrently within a ParallelNode.
  *
- * Fork-mode agents are excluded — any number can fork the same session concurrently.
+ * Resume-mode agents append messages to a shared conversation, so running
+ * two of them concurrently on the same session would produce interleaved,
+ * unpredictable conversation state. This validation runs at tree construction
+ * time (called by {@link BehaviorTree}'s constructor) to catch these conflicts
+ * early rather than at runtime.
  *
- * @throws {Error} If resume-mode agents on the same session are in different
- *   branches of the same ParallelNode.
+ * Fork-mode agents (`session.fork: true` or a named fork string) are excluded
+ * from this check — any number of agents can fork the same session concurrently
+ * because each fork creates an independent conversation branch.
+ *
+ * The check walks the entire tree looking for ParallelNode instances, then
+ * compares resume-session names across each parallel branch pair. Agents in
+ * sequential composites (Sequence, Selector) are safe because they never
+ * execute simultaneously.
+ *
+ * @param root - The root node of the behavior tree to validate.
+ * @throws {Error} If resume-mode agents on the same named session appear in
+ *   different branches of the same ParallelNode.
  */
 export function validateSessionConcurrency(root: BTreeNode): void {
   walkForParallelNodes(root);
 }
 
+/**
+ * Recursively walk the tree to find all ParallelNode instances and
+ * validate their branches for session concurrency conflicts.
+ *
+ * @param node - The current node being visited during traversal.
+ */
 function walkForParallelNodes(node: BTreeNode): void {
   if (node instanceof ParallelNode) {
     checkParallelBranches(node);
@@ -24,6 +44,17 @@ function walkForParallelNodes(node: BTreeNode): void {
   }
 }
 
+/**
+ * Check a single ParallelNode for session concurrency conflicts.
+ *
+ * Collects the set of resume-mode session names from each branch, then
+ * compares every branch pair. If any session name appears in two or more
+ * branches, those agents would execute concurrently on the same conversation,
+ * which is not allowed.
+ *
+ * @param parallel - The ParallelNode whose branches are being validated.
+ * @throws {Error} If the same resume-mode session name appears in multiple branches.
+ */
 function checkParallelBranches(parallel: BTreeNode): void {
   const branchSessions: Set<string>[] = parallel.children.map((child) =>
     collectResumeSessions(child),
@@ -43,6 +74,17 @@ function checkParallelBranches(parallel: BTreeNode): void {
   }
 }
 
+/**
+ * Recursively collect all resume-mode session names from a subtree.
+ *
+ * Visits the given node and all its descendants, returning the set of named
+ * sessions that are configured in resume mode (i.e., `fork` is not set).
+ * Fork-mode sessions are excluded because they create independent conversation
+ * branches and are safe to run concurrently.
+ *
+ * @param node - The root of the subtree to scan.
+ * @returns A set of session names used in resume mode within this subtree.
+ */
 function collectResumeSessions(node: BTreeNode): Set<string> {
   const sessions = new Set<string>();
 
@@ -60,7 +102,16 @@ function collectResumeSessions(node: BTreeNode): Set<string> {
   return sessions;
 }
 
-/** Duck-type check for AgentNode's sessionConfig getter. */
+/**
+ * Extract the session configuration from a node, if present.
+ *
+ * Uses a duck-type check for the `sessionConfig` property rather than
+ * importing AgentNode directly, avoiding a circular dependency between
+ * the core validation module and the nodes package.
+ *
+ * @param node - Any behavior tree node.
+ * @returns The node's {@link SessionConfig} if it has one, or `null` otherwise.
+ */
 function getSessionConfig(node: BTreeNode): SessionConfig | null {
   if ('sessionConfig' in node) {
     const config = (node as any).sessionConfig;

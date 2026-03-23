@@ -26,6 +26,31 @@ export class ClaudeSDKAgent extends Agent {
   private _activeQuery: ReturnType<typeof query> | null = null;
   private _closed = false;
 
+  /**
+   * Creates a new ClaudeSDKAgent.
+   *
+   * All SDK options (model, effort, maxTurns, allowedTools, mcpServers, etc.)
+   * are passed as top-level properties alongside `name` in the config object.
+   *
+   * @param config - Agent name and optional SDK options. The MCP server name
+   *   `"blackboard"` is reserved — a built-in blackboard server is injected
+   *   automatically when AgentNode provides a blackboard via `send()`.
+   *
+   * @throws Error if `config.mcpServers` contains a key named `"blackboard"`.
+   *
+   * @example
+   * ```typescript
+   * const agent = new ClaudeSDKAgent({
+   *   name: 'classifier',
+   *   model: 'claude-haiku-4-5',
+   *   effort: 'low',
+   *   outputFormat: {
+   *     type: 'json_schema',
+   *     schema: { type: 'object', properties: { label: { type: 'string' } } },
+   *   },
+   * });
+   * ```
+   */
   constructor(config: ClaudeSDKAgentConfig) {
     super(config);
 
@@ -40,10 +65,46 @@ export class ClaudeSDKAgent extends Agent {
     this.config = config;
   }
 
+  /**
+   * The current session ID, or `null` if no SDK call has completed yet.
+   *
+   * Updated after each `send()` call when the SDK returns its `init` message.
+   * For agents without explicit session options, this reflects the private
+   * session that is automatically resumed across successive `send()` calls.
+   */
   get sessionId(): string | null {
     return this._sessionId;
   }
 
+  /**
+   * Send a prompt to Claude and return an async iterable of response messages.
+   *
+   * Each call creates a fresh SDK `query()`. If no explicit session options are
+   * provided, the agent automatically resumes its private session so conversation
+   * history accumulates across turns. When `options.session` is provided, the
+   * caller controls which session to resume or fork.
+   *
+   * The returned iterable yields {@link AgentMessage} values in order: a
+   * `session_start` message first, then `thinking`, `text`, `tool_use`, and
+   * `provider_event` messages as the SDK streams them, and finally a `result`
+   * message indicating success or error.
+   *
+   * @param prompt - The user prompt to send to Claude.
+   * @param options - Per-invocation options including blackboard access,
+   *   abort signal, structured output schema, and session control.
+   * @returns An async iterable of provider-agnostic {@link AgentMessage} values.
+   *
+   * @throws Error if the agent has been closed via {@link close}.
+   *
+   * @example
+   * ```typescript
+   * for await (const msg of agent.send('Classify this ticket')) {
+   *   if (msg.type === 'result' && msg.subtype === 'success') {
+   *     console.log(msg.output);
+   *   }
+   * }
+   * ```
+   */
   send(prompt: string, options?: AgentSendOptions): AsyncIterable<AgentMessage> {
     if (this._closed) {
       throw new Error(`Agent "${this.name}" is closed and cannot accept new prompts.`);
@@ -57,6 +118,15 @@ export class ClaudeSDKAgent extends Agent {
     };
   }
 
+  /**
+   * Return provider-agnostic metadata about this agent for dashboard introspection.
+   *
+   * Includes the agent's name and, when configured, the model, allowed tools,
+   * and MCP server names. This information is used by the CLI formatter and
+   * dashboard UIs to display agent details without coupling to SDK internals.
+   *
+   * @returns An {@link AgentInfo} object with the agent's identifying metadata.
+   */
   getInfo(): AgentInfo {
     const info: AgentInfo = { name: this.name };
     if (this.config.model) info.model = this.config.model;
@@ -65,6 +135,15 @@ export class ClaudeSDKAgent extends Agent {
     return info;
   }
 
+  /**
+   * Permanently close this agent, releasing SDK resources.
+   *
+   * Marks the agent as closed so subsequent `send()` calls throw immediately.
+   * If an SDK query is currently in flight, it is closed via the SDK's `close()`
+   * method, which terminates the underlying subprocess.
+   *
+   * This method is idempotent — calling it multiple times has no additional effect.
+   */
   async close(): Promise<void> {
     this._closed = true;
     if (this._activeQuery) {
@@ -73,8 +152,26 @@ export class ClaudeSDKAgent extends Agent {
     }
   }
 
-  // --- Private ---
-
+  /**
+   * Core async generator that drives a single SDK `query()` call.
+   *
+   * Handles session resolution (private vs. explicit), creates the SDK query
+   * instance, and iterates over its messages. Each SDK message is mapped to
+   * one or more {@link AgentMessage} values via {@link mapSdkMessage}.
+   *
+   * The `init` system message receives special handling: it captures the
+   * session ID (updating both the public accessor and, when applicable, the
+   * private session tracker) and yields a `session_start` message before the
+   * mapped provider event.
+   *
+   * The `onMessage` callback from options is invoked for every yielded message.
+   * Errors thrown by the callback are caught and emitted as `provider_event`
+   * messages with subtype `onMessage_error` so they remain observable without
+   * interrupting the stream.
+   *
+   * @param prompt - The user prompt forwarded to the SDK.
+   * @param options - Per-invocation send options.
+   */
   private async *_createSendIterator(
     prompt: string,
     options?: AgentSendOptions,
@@ -152,6 +249,28 @@ export class ClaudeSDKAgent extends Agent {
     }
   }
 
+  /**
+   * Build the SDK `Options` object from the agent config and per-call send options.
+   *
+   * Merges the agent's static configuration with per-invocation overrides:
+   *
+   * 1. **MCP servers** — copies user-configured servers and injects the built-in
+   *    blackboard MCP server when a blackboard is provided, adding
+   *    `mcp__blackboard__*` to allowed tools.
+   *
+   * 2. **Elicitation** — always installs a handler so the SDK never hangs waiting
+   *    for interactive input. Delegates to the user's handler if provided;
+   *    otherwise auto-declines and emits an `elicitation_declined` provider event.
+   *
+   * 3. **Output format** — converts `sendOptions.outputSchema` (JSON Schema) into
+   *    the SDK's `outputFormat` shape, or strips the `$schema` property from an
+   *    existing `outputFormat.schema` to satisfy SDK validation.
+   *
+   * 4. **Signal** — forwards the abort signal for cancellation support.
+   *
+   * @param sendOptions - Per-invocation options from the `send()` caller.
+   * @returns A plain object suitable for spreading into the SDK `query()` call.
+   */
   private buildQueryOptions(sendOptions?: AgentSendOptions): Record<string, unknown> {
     const { name: _name, ...sdkConfig } = this.config;
     const userOptions = sdkConfig as Partial<Options>;
@@ -213,6 +332,25 @@ export class ClaudeSDKAgent extends Agent {
     };
   }
 
+  /**
+   * Map a single SDK message to one or more provider-agnostic {@link AgentMessage} values.
+   *
+   * The SDK uses a discriminated union of message types. This method translates
+   * each variant into the framework's own message types:
+   *
+   * - `assistant` → one message per content block (`thinking`, `text`, `tool_use`)
+   * - `result` → a single `result` message with `success` or `error` subtype.
+   *   For success results, structured output is preferred over raw text; raw text
+   *   is JSON-parsed as a fallback.
+   * - `system` → a `provider_event` with subtype `init` or `status`
+   * - `tool_progress` → a `provider_event` with normalized field names
+   * - `rate_limit_event` → a `provider_event` wrapping rate limit info
+   * - All other SDK types → a `provider_event` pass-through with the raw message
+   *
+   * @param msg - A single message from the SDK's async iterable.
+   * @returns An array of zero or more mapped messages. The array may contain
+   *   multiple entries for `assistant` messages with several content blocks.
+   */
   private mapSdkMessage(msg: SDKMessage): AgentMessage[] {
     const messages: AgentMessage[] = [];
 

@@ -52,6 +52,14 @@ export class AgentNode extends BaseNode {
   private cachedStatus: NodeStatus | null = null;
   private _lastTerminalStatus: NodeStatus | null = null;
 
+  /**
+   * Create a new AgentNode.
+   *
+   * @param config - The agent node configuration. At minimum requires `name`,
+   *   `agent` (the {@link Agent} instance), and `prompt` (static string or
+   *   context-aware function). See {@link AgentNodeConfig} for optional fields
+   *   like `cache`, `mapResult`, `blackboardNamespace`, and `session`.
+   */
   constructor(config: AgentNodeConfig) {
     super(config.name, config.id);
     this.config = config;
@@ -62,7 +70,14 @@ export class AgentNode extends BaseNode {
     return this.config.agent.getInfo();
   }
 
-  /** Normalized session config, or null if no session is configured. */
+  /**
+   * Normalized session configuration, or `null` if no session is configured.
+   *
+   * Converts the shorthand string form (`session: "triage"`) into the full
+   * {@link SessionConfig} object (`{ name: "triage" }`). Used internally by
+   * {@link resolveSessionOptions} and by the session concurrency validator
+   * at tree construction time.
+   */
   get sessionConfig(): SessionConfig | null {
     if (!this.config.session) return null;
     return typeof this.config.session === 'string'
@@ -83,7 +98,11 @@ export class AgentNode extends BaseNode {
   }
 
   /**
-   * Clear the cached status so the next tick calls the agent again.
+   * Reset the node to its initial state.
+   *
+   * Clears both the cached status and any in-flight work, so the next
+   * tick starts a fresh agent call. Called by the tree's `reset()` method
+   * and when a parent composite resets its children.
    */
   reset(): void {
     this.cachedStatus = null;
@@ -91,7 +110,11 @@ export class AgentNode extends BaseNode {
   }
 
   /**
-   * Abort the in-flight agent call, if any.
+   * Abort any in-flight agent call and discard all execution state.
+   *
+   * Detaches the in-flight promise (suppressing its rejection) so the node
+   * can be garbage collected cleanly. Unlike {@link interrupt}, abort does
+   * not preserve cached results.
    */
   abort(): void {
     const pending = this._inflightState?.promise;
@@ -115,6 +138,12 @@ export class AgentNode extends BaseNode {
 
   /**
    * Serialize this node's execution state for persistence.
+   *
+   * Only the last terminal status (SUCCESS or FAILURE) is persisted.
+   * In-flight state and cached results are transient and not serialized.
+   *
+   * @returns A {@link NodeState} containing `lastStatus` if a terminal
+   *   status has been reached, or an empty object otherwise.
    */
   override serialize(): NodeState {
     return this._lastTerminalStatus !== null
@@ -124,6 +153,10 @@ export class AgentNode extends BaseNode {
 
   /**
    * Restore this node's execution state from a previously serialized snapshot.
+   *
+   * @param state - The serialized state produced by {@link serialize}.
+   * @param _hashToNode - Node lookup map (unused by AgentNode; required by the
+   *   base interface for composites that need to re-link child references).
    */
   override restore(state: NodeState, _hashToNode: Map<string, BTreeNode>): void {
     if (state.lastStatus !== undefined) {
@@ -134,8 +167,18 @@ export class AgentNode extends BaseNode {
   /**
    * Run the agent's tick logic.
    *
-   * On the first tick, kicks off the agent call in the background and
-   * returns `RUNNING`. On subsequent ticks, polls for a completed result.
+   * Uses a fire-and-poll pattern across ticks:
+   *
+   * 1. **Cache hit** — if `cache: true` and a previous result exists, return
+   *    the cached status immediately without contacting the agent.
+   * 2. **Poll** — if an in-flight call exists, check whether it has settled.
+   *    Return the result/error if done, or `RUNNING` if still pending.
+   * 3. **Start** — no in-flight work exists, so kick off
+   *    {@link _executeAgentCall} in the background and return `RUNNING`.
+   *    The promise result is captured via `.then()` for polling on the next tick.
+   *
+   * @param context - The current tick's tree context (blackboard, events, signal, sessions).
+   * @returns The node's status for this tick.
    */
   protected async execute(context: TreeContext): Promise<NodeStatus> {
     // Return the cached result from a previous tick.
@@ -176,8 +219,23 @@ export class AgentNode extends BaseNode {
   }
 
   /**
-   * The actual agent call logic, extracted from execute() so it can run
-   * in the background while execute() returns RUNNING immediately.
+   * Execute the full agent call lifecycle: resolve the prompt, send it to the
+   * agent, process streaming messages, and return the final status.
+   *
+   * Runs in the background (started by {@link execute}) so that `execute()`
+   * can return `RUNNING` immediately. The method:
+   *
+   * 1. Resolves the prompt (static string or dynamic function).
+   * 2. Emits `agent:prompt` before calling the agent.
+   * 3. Iterates the agent's response stream, registering the session on
+   *    `session_start` and delegating other messages to {@link emitAgentEvent}.
+   * 4. On `result`, calls {@link handleSuccess} or emits `agent:error` and
+   *    returns `FAILURE`.
+   * 5. Returns `FAILURE` if the stream ends without a `result` message.
+   *
+   * @param context - The current tick's tree context.
+   * @param sessionOpts - Resolved session options from {@link resolveSessionOptions}.
+   * @returns The terminal status (`SUCCESS` or `FAILURE`) once the agent completes.
    */
   private async _executeAgentCall(
     context: TreeContext,
@@ -223,7 +281,19 @@ export class AgentNode extends BaseNode {
   }
 
   /**
-   * Handle a successful agent result: store on blackboard, apply mapResult.
+   * Process a successful agent result.
+   *
+   * 1. Emits `agent:response` with the output and cost.
+   * 2. Writes the output to the blackboard under `{name}:output` (or
+   *    `{namespace}:{name}:output` when a blackboard namespace is set).
+   * 3. If `mapResult` is configured, delegates status determination to it;
+   *    otherwise returns `SUCCESS`.
+   * 4. Caches the resulting status when `cache: true`.
+   *
+   * @param output - The agent's parsed output (structured or text).
+   * @param cost - The total cost in USD reported by the agent, if available.
+   * @param context - The current tick's tree context.
+   * @returns The node status to propagate up the tree.
    */
   private handleSuccess(output: unknown, cost: number | undefined, context: TreeContext): NodeStatus {
     context.events.emit('agent:response', {
@@ -252,6 +322,22 @@ export class AgentNode extends BaseNode {
     return NodeStatus.SUCCESS;
   }
 
+  /**
+   * Resolve the session options to pass to `Agent.send()` based on the node's
+   * session configuration and the current session registry.
+   *
+   * - **No session configured** → returns `undefined` (agent manages its own
+   *   private session).
+   * - **Fork mode** → looks up the parent session ID in the registry and returns
+   *   `{ id, fork: true }`. Throws if the parent session has not been registered
+   *   yet (a resume-mode agent must run first).
+   * - **Resume mode** → returns `{ id }` if the session exists in the registry,
+   *   or `{}` to create a new session on first use.
+   *
+   * @param context - The current tick's tree context (provides session registry).
+   * @returns Session options for `Agent.send()`, or `undefined` if no session is configured.
+   * @throws Error if fork mode is used but the parent session does not exist.
+   */
   private resolveSessionOptions(context: TreeContext): AgentSessionOptions | undefined {
     const config = this.sessionConfig;
     if (!config) return undefined;
@@ -273,6 +359,18 @@ export class AgentNode extends BaseNode {
     return existingId ? { id: existingId } : {};
   }
 
+  /**
+   * Register the provider session ID in the tree's session registry.
+   *
+   * Registration behavior depends on the fork mode:
+   * - **Named fork** (`fork: "analyst"`) → registers under the fork name.
+   * - **Resume mode** (no fork) → registers under the session's own name.
+   * - **Anonymous fork** (`fork: true`) → not registered, since the session
+   *   is ephemeral and should not be resumed by other agents.
+   *
+   * @param context - The current tick's tree context (provides session registry).
+   * @param sessionId - The provider session ID returned by the agent.
+   */
   private registerSession(context: TreeContext, sessionId: string): void {
     const config = this.sessionConfig;
     if (!config) return;
@@ -286,7 +384,18 @@ export class AgentNode extends BaseNode {
   }
 
   /**
-   * Map an AgentMessage to the corresponding BT agent:* event.
+   * Map an {@link AgentMessage} to the corresponding `agent:*` tree event.
+   *
+   * Called as the `onMessage` callback during the agent's response stream.
+   * Most message types map 1:1 to a tree event. `provider_event` messages
+   * are mapped via a lookup table from SDK subtypes to tree event names.
+   *
+   * `session_start` is a no-op here — it is handled directly by
+   * {@link _executeAgentCall} via {@link registerSession}. `result` events
+   * are also emitted directly in `_executeAgentCall` rather than here.
+   *
+   * @param msg - The agent message to translate.
+   * @param context - The current tick's tree context (provides the event emitter).
    */
   private emitAgentEvent(msg: AgentMessage, context: TreeContext): void {
     switch (msg.type) {
