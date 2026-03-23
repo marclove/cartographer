@@ -4,6 +4,7 @@ import { NodeStatus } from '../types.js';
 import type { TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
+import { SessionRegistry } from '../core/session-registry.js';
 import type { TreeEvents } from '../types.js';
 import { isReactiveNode } from '../composites/is-reactive-node.js';
 
@@ -11,6 +12,7 @@ function createContext(): TreeContext {
   return {
     blackboard: new InMemoryBlackboard(),
     events: new EventEmitter<TreeEvents>(),
+    sessions: new SessionRegistry(),
   };
 }
 

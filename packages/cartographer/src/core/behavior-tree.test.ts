@@ -7,6 +7,7 @@ import { ConditionNode } from '../nodes/condition.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { InMemoryBlackboard } from './blackboard.js';
 import { EventEmitter } from './event-emitter.js';
+import { SessionRegistry } from './session-registry.js';
 
 const flush = () => new Promise(r => setTimeout(r, 0));
 
@@ -476,5 +477,112 @@ describe('BehaviorTree.start()', () => {
     await handle.stop();
 
     expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
+  });
+});
+
+describe('BehaviorTree sessions', () => {
+  const flush = () => new Promise(r => setTimeout(r, 0));
+
+  it('provides SessionRegistry in TreeContext', async () => {
+    let capturedContext: TreeContext | undefined;
+    const tree = new BehaviorTree({
+      name: 'test',
+      root: new ActionNode({
+        name: 'root',
+        action: (ctx) => {
+          capturedContext = ctx;
+          return NodeStatus.SUCCESS;
+        },
+      }),
+    });
+
+    await tree.tick();
+    expect(capturedContext!.sessions).toBeInstanceOf(SessionRegistry);
+  });
+
+  it('resets registry on SUCCESS', async () => {
+    const tree = new BehaviorTree({
+      name: 'test',
+      root: new ActionNode({
+        name: 'root',
+        action: (ctx) => {
+          ctx.sessions.set('my-session', 'sess-123');
+          return NodeStatus.SUCCESS;
+        },
+      }),
+    });
+
+    await tree.tick(); // RUNNING (inflight)
+    await flush();
+    await tree.tick(); // SUCCESS
+
+    expect(tree.sessionRegistry.has('my-session')).toBe(false);
+  });
+
+  it('resets registry on FAILURE', async () => {
+    const tree = new BehaviorTree({
+      name: 'test',
+      root: new ActionNode({
+        name: 'root',
+        action: (ctx) => {
+          ctx.sessions.set('my-session', 'sess-456');
+          return NodeStatus.FAILURE;
+        },
+      }),
+    });
+
+    await tree.tick(); // RUNNING (inflight)
+    await flush();
+    await tree.tick(); // FAILURE
+
+    expect(tree.sessionRegistry.has('my-session')).toBe(false);
+  });
+
+  it('preserves registry across RUNNING ticks and clears on SUCCESS', async () => {
+    // Use a manually resolved promise so we control when the action finishes
+    let resolveAction!: (s: NodeStatus) => void;
+    const actionPromise = new Promise<NodeStatus>(r => { resolveAction = r; });
+
+    const tree = new BehaviorTree({
+      name: 'test',
+      root: new ActionNode({
+        name: 'root',
+        action: (ctx) => {
+          ctx.sessions.set('session', 'sess-abc');
+          return actionPromise;
+        },
+      }),
+    });
+
+    // Tick 1: ActionNode starts inflight (action hasn't resolved yet) → RUNNING
+    const result1 = await tree.tick();
+    expect(result1).toBe(NodeStatus.RUNNING);
+    // Session was set inside the action, which is running
+    // Registry should still have the session (tree is RUNNING)
+    expect(tree.sessionRegistry.has('session')).toBe(true);
+
+    // Resolve the action with SUCCESS
+    resolveAction(NodeStatus.SUCCESS);
+    await flush();
+
+    // Tick 2: ActionNode picks up the cached SUCCESS result → tree SUCCESS
+    const result2 = await tree.tick();
+    expect(result2).toBe(NodeStatus.SUCCESS);
+    // Registry should be cleared after terminal status
+    expect(tree.sessionRegistry.has('session')).toBe(false);
+  });
+
+  it('accepts a pre-built SessionRegistry via config', () => {
+    const registry = new SessionRegistry();
+    registry.set('existing', 'sess-pre');
+
+    const tree = new BehaviorTree({
+      name: 'test',
+      root: new ActionNode({ name: 'root', action: () => NodeStatus.SUCCESS }),
+      sessionRegistry: registry,
+    });
+
+    expect(tree.sessionRegistry).toBe(registry);
+    expect(tree.sessionRegistry.get('existing')).toBe('sess-pre');
   });
 });

@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import type { OnElicitation, ElicitationRequest, ModelUsage } from '@anthropic-ai/claude-agent-sdk';
 import type { Agent } from './agent/agent.js';
 import type { NodeState } from './core/serialization.js';
+import type { SessionRegistry } from './core/session-registry.js';
 
 // --- Node Status ---
 
@@ -270,6 +271,9 @@ export interface TreeContext {
    * AgentNode descendants will use it unless a closer ancestor overrides it.
    */
   onElicitation?: OnElicitation;
+
+  /** Named session registry for agent conversation sharing. */
+  sessions: SessionRegistry;
 }
 
 // --- Node Interface ---
@@ -953,6 +957,9 @@ export interface BehaviorTreeConfig {
    * in the tree inherit it unless a closer ancestor overrides it.
    */
   onElicitation?: OnElicitation;
+
+  /** Pre-built session registry. When omitted, an empty one is created. */
+  sessionRegistry?: SessionRegistry;
 }
 
 // --- Scheduler ---

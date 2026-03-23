@@ -5,6 +5,7 @@ import { InMemoryBlackboard } from './blackboard.js';
 import { ObservableBlackboard } from './observable-blackboard.js';
 import { BaseNode } from '../nodes/base.js';
 import { TreeScheduler } from '../scheduler/tree-scheduler.js';
+import { SessionRegistry } from './session-registry.js';
 
 /**
  * The top-level runner for a behavior tree.
@@ -63,6 +64,9 @@ export class BehaviorTree {
 
   readonly root: BTreeNode;
 
+  /** Named session registry for agent conversation sharing. */
+  readonly sessionRegistry: SessionRegistry;
+
   /** Content hash of the root node — fingerprint of the entire tree topology. */
   get rootHash(): string {
     return this.root.contentHash();
@@ -76,6 +80,7 @@ export class BehaviorTree {
     this.blackboard = config.blackboard ?? new InMemoryBlackboard();
     this.events = new EventEmitter<TreeEvents>();
     this.abortController = new AbortController();
+    this.sessionRegistry = config.sessionRegistry ?? new SessionRegistry();
     BehaviorTree.validateUniqueIds(this.root);
     if (config.onElicitation && this.root instanceof BaseNode) {
       this.root.mergeContextOverrides({ onElicitation: config.onElicitation });
@@ -137,12 +142,16 @@ export class BehaviorTree {
       blackboard: new ObservableBlackboard(this.blackboard, this.events),
       events: this.events,
       signal: this.abortController.signal,
+      sessions: this.sessionRegistry,
     };
 
     const start = performance.now();
     const status = await this.root.tick(context);
     const durationMs = performance.now() - start;
     this.events.emit('tree:tick', { tree: this.name, status, durationMs });
+    if (status !== NodeStatus.RUNNING) {
+      this.sessionRegistry.reset();
+    }
     return status;
   }
 
