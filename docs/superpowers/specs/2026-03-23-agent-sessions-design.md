@@ -75,13 +75,13 @@ interface AgentSendOptions {
 }
 ```
 
-A new `AgentMessage` type communicates the session ID back to the caller:
+A new `AgentMessage` variant communicates the session ID back to the caller:
 
 ```typescript
-{ type: 'session_start', sessionId: string }
+| { type: 'session_start'; sessionId: string }
 ```
 
-This is emitted as the first message in every `send()` stream. It keeps the return type as `AsyncIterable<AgentMessage>` with no breaking change to the interface signature.
+This is emitted as the first message in every `send()` stream. The return type remains `AsyncIterable<AgentMessage>`, but the `AgentMessage` discriminated union is extended with the new variant. This is a breaking change for consumers that exhaustively switch on `msg.type` — all existing switch/if-else chains (including `emitAgentEvent` in `AgentNode` and `onMessage` callbacks) must handle or skip the new `session_start` type. `AgentNode._executeAgentCall` captures it for registry updates and does not forward it to `emitAgentEvent`.
 
 The existing `sessionId` getter on the `Agent` abstract class remains, returning the session ID from the most recent send.
 
@@ -152,46 +152,86 @@ The core change: each `send()` call creates a fresh SDK `query()` instead of reu
 class ClaudeSDKAgent extends Agent {
   private readonly config: ClaudeSDKAgentConfig
   private _privateSessionId: string | null = null
+  private _activeQuery: Query | null = null
   private _closed = false
 
-  async *send(prompt: string, options?: AgentSendOptions): AsyncIterable<AgentMessage> {
-    const sessionOpts = options?.session
-    const resumeId = sessionOpts?.id ?? this._privateSessionId
+  send(prompt: string, options?: AgentSendOptions): AsyncIterable<AgentMessage> {
+    const agent = this
+    return {
+      [Symbol.asyncIterator]() {
+        return agent._createSendIterator(prompt, options)
+      }
+    }
+  }
 
+  private async *_createSendIterator(
+    prompt: string,
+    options?: AgentSendOptions
+  ): AsyncGenerator<AgentMessage> {
+    const sessionOpts = options?.session
+    // Distinguish "no session options" (use private session) from
+    // "session options with no id" (create new named session)
+    const resumeId = sessionOpts
+      ? sessionOpts.id            // explicit session — undefined means "create new"
+      : this._privateSessionId    // no session config — use private session
+
+    const baseOpts = this.buildQueryOptions(prompt, options)
     const queryInstance = query({
-      ...this.buildQueryOptions(prompt, options),
-      ...(resumeId && { resume: resumeId }),
-      ...(resumeId && sessionOpts?.fork && { forkSession: true }),
+      prompt,
+      options: {
+        ...baseOpts,
+        persistSession: false,  // Cartographer manages persistence via StateStore
+        ...(resumeId && { resume: resumeId }),
+        ...(resumeId && sessionOpts?.fork && { forkSession: true }),
+      },
     })
 
-    for await (const message of queryInstance) {
-      if (message.type === 'system' && message.subtype === 'init') {
-        const sessionId = message.session_id
+    this._activeQuery = queryInstance
 
-        if (!sessionOpts) {
-          this._privateSessionId = sessionId
+    try {
+      for await (const message of queryInstance) {
+        if (message.type === 'system' && message.subtype === 'init') {
+          const sessionId = message.session_id
+
+          if (!sessionOpts) {
+            this._privateSessionId = sessionId
+          }
+
+          yield { type: 'session_start', sessionId }
+          continue
         }
 
-        yield { type: 'session_start', sessionId }
-        continue
+        yield this.mapSdkMessage(message)
       }
-
-      yield this.mapSdkMessage(message)
+    } finally {
+      this._activeQuery = null
     }
+  }
+
+  async close(): Promise<void> {
+    this._closed = true
+    this._activeQuery?.close()
+    this._activeQuery = null
   }
 }
 ```
+
+The `send()` method returns a manually constructed `AsyncIterable` (not an `async *` generator directly) to match the abstract class return type. The actual generator logic lives in `_createSendIterator`.
 
 Key behaviors:
 - **No session options, first send**: Fresh query, SDK assigns session ID, stored as `_privateSessionId`.
 - **No session options, subsequent sends**: Query with `resume: _privateSessionId` — conversation continues.
 - **Resume named session**: Query with `resume: id` from registry.
 - **Fork named session**: Query with `resume: id` + `forkSession: true`.
-- **New named session (first use)**: Fresh query, caller registers the returned session ID.
+- **New named session (first use)**: Fresh query (no `resume`), caller registers the returned session ID.
 
-`buildQueryOptions()` consolidates existing logic from `createQuery()`: merging config, injecting blackboard MCP server, setting up onElicitation, converting outputSchema to outputFormat.
+`buildQueryOptions()` consolidates existing logic from `createQuery()`: merging config, injecting blackboard MCP server, setting up the auto-decline elicitation wrapper, converting outputSchema to outputFormat. The `resume` and `forkSession` fields are passed inside `options` (the SDK's `Options` type), not at the top-level query parameter.
+
+`persistSession` is set to `false` by default. Cartographer manages session persistence via `StateStore`, and the query-per-send model would otherwise accumulate session files on disk for every `send()` call.
 
 Signal/abort handling: each query gets the signal from the current send's options directly. No interrupt-wiring through the demux loop.
+
+`close()` aborts the active query (if any) and sets the `_closed` flag to reject future `send()` calls.
 
 ### Private Sessions
 
@@ -199,11 +239,22 @@ Agents without a named session config continue to manage their own conversation 
 
 ### Tree Lifecycle
 
-**BehaviorTree** creates the `SessionRegistry` and manages its lifecycle:
+**BehaviorTree** creates or accepts the `SessionRegistry` and manages its lifecycle:
 
 ```typescript
+interface BehaviorTreeConfig {
+  root: BTreeNode
+  // ... existing fields
+  sessionRegistry?: SessionRegistry  // optional — for TreeActor to inject a restored registry
+}
+
 class BehaviorTree {
-  private readonly sessionRegistry = new SessionRegistry()
+  private readonly sessionRegistry: SessionRegistry
+
+  constructor(config: BehaviorTreeConfig) {
+    this.sessionRegistry = config.sessionRegistry ?? new SessionRegistry()
+    // ... existing constructor logic, including validation
+  }
 
   async tick(): Promise<NodeStatus> {
     const context: TreeContext = {
@@ -224,6 +275,8 @@ class BehaviorTree {
 }
 ```
 
+The `sessionRegistry` config option allows `TreeActor` to inject a restored registry when hydrating a tree from persisted state. When omitted, BehaviorTree creates a fresh empty registry.
+
 ### TreeActor Serialization
 
 `TreeSessionState` gains a `sessions` field:
@@ -233,15 +286,17 @@ interface TreeSessionState {
   blackboard: Record<string, unknown>
   treeState: SerializedTreeState
   treeStructure?: { id, name, type, children }
-  sessions: Record<string, string>  // new — name to provider session ID
+  sessions?: Record<string, string>  // new — name to provider session ID (optional for backward compat)
   createdAt: number
   lastMessageAt: number
   held?: boolean
 }
 ```
 
+The `sessions` field is optional. Existing serialized states without it default to an empty registry (`{}`).
+
 TreeActor's `process()` pipeline:
-- **Load**: Restore `SessionRegistry.fromRecord(state.sessions)` alongside blackboard and node state.
+- **Load**: Restore `SessionRegistry.fromRecord(state.sessions ?? {})` alongside blackboard and node state. Inject the restored registry into the tree via `BehaviorTreeConfig.sessionRegistry`.
 - **Save**: Include `sessionRegistry.toRecord()` in the serialized state.
 - **Reset**: When the tree reaches terminal status, `tick()` clears the registry, and the saved state reflects this.
 
@@ -263,7 +318,7 @@ validateSessionConcurrency(root):
 ```
 
 - Two resume-mode agents on session `"triage"` under a SequenceNode: valid (sequential execution).
-- Two resume-mode agents on session `"triage"` under a SelectorNode: valid (only one executes).
+- Two resume-mode agents on session `"triage"` under a SelectorNode: valid (only one executes, since SelectorNode ticks children sequentially and stops at the first non-FAILURE result). Note: this safety guarantee depends on the sequential tick-and-stop semantics of SelectorNode. If a future composite allows speculative parallel evaluation of selector children, the validation would need updating.
 - Two resume-mode agents on session `"triage"` under different branches of a ParallelNode: error.
 - Fork-mode agents are excluded from this check — any number of agents can fork the same session concurrently.
 
