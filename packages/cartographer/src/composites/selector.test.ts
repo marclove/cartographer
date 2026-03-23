@@ -632,6 +632,7 @@ describe('SelectorNode serialize/restore', () => {
     return {
       blackboard: new InMemoryBlackboard(),
       events: new EventEmitter<TreeEvents>(),
+      sessions: new SessionRegistry(),
     };
   }
 
@@ -754,6 +755,7 @@ describe('SelectorNode edge cases', () => {
     return {
       blackboard: new InMemoryBlackboard(),
       events: new EventEmitter<TreeEvents>(),
+      sessions: new SessionRegistry(),
     };
   }
 
