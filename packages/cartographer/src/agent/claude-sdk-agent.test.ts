@@ -224,7 +224,7 @@ describe('ClaudeSDKAgent', () => {
       expect(received.some((m) => m.type === 'text')).toBe(true);
     });
 
-    it('swallows errors thrown by onMessage', async () => {
+    it('swallows errors thrown by onMessage and emits provider_event:onMessage_error', async () => {
       mockQuery.mockReturnValue(mockMessages([
         { type: 'assistant', message: { content: [{ type: 'text', text: 'hi' }] } },
         { type: 'result', subtype: 'success', result: 'ok', total_cost_usd: 0 },
@@ -236,8 +236,13 @@ describe('ClaudeSDKAgent', () => {
       }));
 
       // Should still yield messages despite onMessage error
-      expect(msgs.length).toBeGreaterThanOrEqual(1);
       expect(msgs.some((m) => m.type === 'text')).toBe(true);
+      // Should emit a provider_event with subtype onMessage_error
+      const errorEvents = msgs.filter(
+        (m) => m.type === 'provider_event' && (m as any).subtype === 'onMessage_error',
+      );
+      expect(errorEvents.length).toBeGreaterThan(0);
+      expect((errorEvents[0] as any).data).toBe('boom');
     });
   });
 

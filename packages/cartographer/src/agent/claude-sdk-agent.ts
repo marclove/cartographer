@@ -117,7 +117,15 @@ export class ClaudeSDKAgent extends Agent {
           const mapped = this.mapSdkMessage(msg);
           for (const m of mapped) {
             if (options?.onMessage) {
-              try { options.onMessage(m); } catch { /* swallowed */ }
+              try {
+                options.onMessage(m);
+              } catch (err) {
+                yield {
+                  type: 'provider_event',
+                  subtype: 'onMessage_error',
+                  data: err instanceof Error ? err.message : String(err),
+                };
+              }
             }
             yield m;
           }
@@ -127,7 +135,15 @@ export class ClaudeSDKAgent extends Agent {
         const mapped = this.mapSdkMessage(msg);
         for (const m of mapped) {
           if (options?.onMessage) {
-            try { options.onMessage(m); } catch { /* swallowed */ }
+            try {
+              options.onMessage(m);
+            } catch (err) {
+              yield {
+                type: 'provider_event',
+                subtype: 'onMessage_error',
+                data: err instanceof Error ? err.message : String(err),
+              };
+            }
           }
           yield m;
         }

@@ -572,6 +572,28 @@ describe('BehaviorTree sessions', () => {
     expect(tree.sessionRegistry.has('session')).toBe(false);
   });
 
+  it('clears session registry on reset()', () => {
+    const tree = new BehaviorTree({
+      name: 'test',
+      root: new ActionNode({ name: 'root', action: () => NodeStatus.SUCCESS }),
+    });
+    tree.sessionRegistry.set('triage', 'session-id');
+    expect(tree.sessionRegistry.has('triage')).toBe(true);
+    tree.reset();
+    expect(tree.sessionRegistry.has('triage')).toBe(false);
+  });
+
+  it('clears session registry on abort()', () => {
+    const tree = new BehaviorTree({
+      name: 'test',
+      root: new ActionNode({ name: 'root', action: () => NodeStatus.SUCCESS }),
+    });
+    tree.sessionRegistry.set('triage', 'session-id');
+    expect(tree.sessionRegistry.has('triage')).toBe(true);
+    tree.abort();
+    expect(tree.sessionRegistry.has('triage')).toBe(false);
+  });
+
   it('accepts a pre-built SessionRegistry via config', () => {
     const registry = new SessionRegistry();
     registry.set('existing', 'sess-pre');

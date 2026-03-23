@@ -212,6 +212,7 @@ export class BehaviorTree {
   reset(): void {
     this.root.reset();
     this.abortController = new AbortController();
+    this.sessionRegistry.reset();
     this.events.emit('tree:reset', { tree: this.name });
   }
 
@@ -237,6 +238,7 @@ export class BehaviorTree {
   abort(): void {
     this.root.abort();
     this.abortController.abort();
+    this.sessionRegistry.reset();
     this.events.emit('tree:abort', { tree: this.name });
   }
 
