@@ -3,6 +3,7 @@ import { TreeActor } from './tree-actor.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { ActionNode } from '../nodes/action.js';
 import { InMemoryStateStore } from '../state/in-memory-state-store.js';
+import type { TreeSessionState } from '../state/state-store.js';
 import { NodeStatus } from '../types.js';
 import { untilSuccess } from '../decorators/until-success.js';
 import { receive } from '../nodes/receive.js';
@@ -340,9 +341,9 @@ describe('TreeActor - sessions', () => {
     await actor1.process({ type: 'tick' });
 
     // Remove sessions field to simulate old serialized state without sessions
-    const existing = await store.getState('default');
-    const { sessions: _sessions, ...withoutSessions } = existing!;
-    await store.saveState('default', withoutSessions as typeof existing);
+    const existing = (await store.getState('default'))!;
+    const { sessions: _sessions, ...withoutSessions } = existing;
+    await store.saveState('default', withoutSessions as TreeSessionState);
 
     // Second tick — should work fine with empty sessions (backward compat)
     const actor2 = new TreeActor({ createTree, stateStore: store, stateKey: 'default' });
