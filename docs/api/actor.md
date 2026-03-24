@@ -55,6 +55,7 @@ import { ActorServer } from "cartographer";
 | `port`           | `number`                  | `PORT` env or `3148` | Listen port.                                     |
 | `context`        | `Record<string, unknown>` | `{}`                 | Injected into blackboard as `context:*` on init. |
 | `topologyPolicy` | `'fail' \| 'reset'`       | `'fail'`             | Topology mismatch handling.                      |
+| `maxQueueDepth`  | `number`                  | `16`                 | Maximum number of messages that can wait in the queue while the server is processing. Returns `429` when full. |
 
 ### Methods
 
@@ -110,6 +111,10 @@ interface StateStore {
   releaseLock(key: string, requestId: string): Promise<void>;
   appendEvents(key: string, events: TreeEvent[]): Promise<void>;
   readEvents(key: string, lastEventId?: string): AsyncIterable<TreeEvent>;
+  enqueueMessage(stateKey: string, message: ActorMessage, maxQueueDepth: number): Promise<{ position: number; queueSize: number }>;
+  dequeueMessage(stateKey: string): Promise<ActorMessage | null>;
+  getQueueSize(stateKey: string): Promise<number>;
+  getQueuedMessages(stateKey: string): Promise<ActorMessage[]>;
 }
 ```
 
@@ -169,11 +174,16 @@ Requires `ioredis` as a peer dependency.
 ## Message Event Types
 
 ```typescript
-import type { MessageProcessedEvent, MessageInterruptedEvent, MessageFailedEvent } from "cartographer";
+import type {
+  MessageQueuedEvent, MessageDequeuedEvent,
+  MessageProcessedEvent, MessageInterruptedEvent, MessageFailedEvent,
+} from "cartographer";
 ```
 
 | Type                      | Fields                                      | Description                                                       |
 | ------------------------- | ------------------------------------------- | ----------------------------------------------------------------- |
+| `MessageQueuedEvent`      | `{ messageId: string; position: number }`   | Emitted when a message is enqueued because the server is busy.    |
+| `MessageDequeuedEvent`    | `{ messageId: string }`                     | Emitted when a queued message begins processing.                  |
 | `MessageProcessedEvent`   | `{ messageId: string; treeStatus: string }` | Emitted when processing completes.                                |
 | `MessageInterruptedEvent` | `{ messageId: string }`                     | Emitted when processing is interrupted via `POST /api/interrupt`. |
 | `MessageFailedEvent`      | `{ messageId: string; error: string }`      | Emitted when processing throws an error.                          |

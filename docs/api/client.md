@@ -16,17 +16,19 @@ Creates a client connected to an `ActorServer` at the given URL.
 
 ### Message Methods
 
-#### `command(name: string, payload?: unknown): Promise<{ id: string }>`
+#### `command(name: string, payload?: unknown): Promise<SendResponse>`
 
 Sends a command message. Shorthand for `POST /api/commands/:name`.
 
-#### `write(key: string, value: unknown): Promise<{ id: string }>`
+#### `write(key: string, value: unknown): Promise<SendResponse>`
 
 Writes a value to the blackboard. Shorthand for `POST /api/blackboard/:key`.
 
-#### `send(msg: object): Promise<{ id: string }>`
+#### `send(msg: object): Promise<SendResponse>`
 
 Sends any message type via `POST /api/messages`.
+
+All three methods return a `SendResponse` with `status: 'processing'` when the message is being processed immediately, or `status: 'queued'` with a `position` when the server is busy and the message was enqueued.
 
 #### `commandAndWait(name: string, payload?: unknown): Promise<{ messageId, treeStatus }>`
 
@@ -88,17 +90,31 @@ Closes the SSE connection.
 
 ---
 
-## ConflictError
+## SendResponse
 
 ```typescript
-import { ConflictError } from 'cartographer';
+interface SendResponse {
+  id: string;
+  status?: 'processing' | 'queued';
+  position?: number;
+}
 ```
 
-Thrown when the server returns `409 Conflict` (another message is being processed).
+Returned by `command()`, `write()`, and `send()`. When the server processes the message immediately, `status` is `'processing'`. When the server is busy and the message is enqueued, `status` is `'queued'` and `position` indicates the message's place in the queue (1-based).
+
+---
+
+## QueueFullError
 
 ```typescript
-class ConflictError extends Error {
-  name: 'ConflictError';
-  message: 'Session is currently processing a message';
+import { QueueFullError } from '@cartographer/client';
+```
+
+Thrown when the server returns `429` because the message queue is full. This only happens when the server is processing a message and the queue has reached its configured `maxQueueDepth`.
+
+```typescript
+class QueueFullError extends Error {
+  name: 'QueueFullError';
+  message: 'Server message queue is full';
 }
 ```

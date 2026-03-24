@@ -207,6 +207,7 @@ const server = new ActorServer({
   port: 3148, // Optional (default: PORT env var or 3148)
   context: { tenantId: "abc" }, // Optional: written to blackboard as context:*
   topologyPolicy: "fail", // Optional: 'fail' or 'reset' on tree shape change
+  maxQueueDepth: 16, // Optional: max queued messages while processing (default: 16)
 });
 
 const { port } = await server.start();
@@ -236,6 +237,8 @@ The `context` option injects key-value pairs into the blackboard on initializati
 
 All write endpoints use an **async 202 pattern**: the server acquires a lock, returns `202 Accepted` with a message ID immediately, then processes the message in the background. When processing completes, a `message:processed` or `message:failed` event is emitted via the event stream.
 
+If the server is already processing a message, incoming messages are placed in a bounded queue and return `202 Accepted` with `status: 'queued'` and a `position`. Queued messages are processed in FIFO order after the current message completes. See [Message Queue](#message-queue) below.
+
 | Method | Path                   | Body                             | Description                     |
 | ------ | ---------------------- | -------------------------------- | ------------------------------- |
 | POST   | `/api/messages`        | `{ type, name?, payload?, ... }` | Send any message type.          |
@@ -253,18 +256,30 @@ These endpoints bypass the processing lock and take effect immediately.
 
 #### Error Responses
 
-| Status | Meaning                                       |
-| ------ | --------------------------------------------- |
-| 400    | Invalid request (missing `type`, etc.).       |
-| 404    | Unknown route.                                |
-| 409    | Another message is currently being processed. |
-| 500    | Internal server error.                        |
+| Status | Meaning                                                    |
+| ------ | ---------------------------------------------------------- |
+| 400    | Invalid request (missing `type`, etc.).                    |
+| 404    | Unknown route.                                             |
+| 429    | Message queue is full (server is busy and queue overflow). |
+| 500    | Internal server error.                                     |
 
 ### Locking
 
-Only one message is processed at a time per session. The server acquires an exclusive lock before processing and releases it on completion. If a second request arrives while processing is in progress, it receives a `409 Conflict` response.
+Only one message is processed at a time per session. The server acquires an exclusive lock before processing and releases it on completion. For long-running agent calls, the lock is renewed every 10 seconds via a heartbeat to prevent expiration.
 
-For long-running agent calls, the lock is renewed every 10 seconds via a heartbeat to prevent expiration.
+### Message Queue
+
+When a message arrives while the server is processing, it is placed in a bounded, persistent queue rather than being rejected. The server returns `202 Accepted` with `status: 'queued'` and a `position` indicating where the message sits in the queue (1-based).
+
+Queued messages are processed in FIFO order. After each message completes, the server drains the next message from the queue automatically. The queue is persisted in the `StateStore`, so messages survive server restarts.
+
+The queue depth is controlled by `maxQueueDepth` (default: 16). When the queue is full, the server returns `429` and the client throws a `QueueFullError`.
+
+The full message lifecycle is observable via SSE events:
+
+1. `message:queued` — message was enqueued (includes `position`)
+2. `message:dequeued` — queued message is now being processed
+3. `message:processed` / `message:failed` / `message:interrupted` — processing completed
 
 ### SSE Event Stream
 
@@ -281,6 +296,14 @@ const source = new EventSource("http://localhost:3148/api/events");
 source.addEventListener("snapshot", (e) => {
   const state = JSON.parse(e.data);
   console.log("Initial state:", state.blackboard);
+});
+source.addEventListener("message:queued", (e) => {
+  const { messageId, position } = JSON.parse(e.data);
+  console.log(`Message ${messageId} queued at position ${position}`);
+});
+source.addEventListener("message:dequeued", (e) => {
+  const { messageId } = JSON.parse(e.data);
+  console.log(`Message ${messageId} is now processing`);
 });
 source.addEventListener("message:processed", (e) => {
   const { messageId, treeStatus } = JSON.parse(e.data);
@@ -435,16 +458,19 @@ client.disconnect();
 
 ### Error Handling
 
-When the server returns `409 Conflict` (another message is being processed), the client throws a `ConflictError`:
+When the server is busy, messages are automatically queued. The client only throws an error if the queue is full (`429`):
 
 ```typescript
-import { ConflictError } from "cartographer";
+import { QueueFullError } from "@cartographer/client";
 
 try {
-  await client.command("approve");
+  const response = await client.command("approve");
+  if (response.status === "queued") {
+    console.log(`Queued at position ${response.position}`);
+  }
 } catch (err) {
-  if (err instanceof ConflictError) {
-    console.log("Server is busy, try again later");
+  if (err instanceof QueueFullError) {
+    console.log("Server queue is full, try again later");
   }
 }
 ```

@@ -169,9 +169,12 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `CommandMessage`           | Command message type                                             |
 | `WriteMessage`             | Write message type                                               |
 | `SignalMessage`            | Signal message type (stop, reset, abort, resume)                 |
+| `MessageQueuedEvent`       | Event emitted when a message is enqueued                         |
+| `MessageDequeuedEvent`     | Event emitted when a queued message begins processing            |
 | `MessageProcessedEvent`    | Event emitted on message completion                              |
 | `MessageInterruptedEvent`  | Event emitted when a message is interrupted                      |
 | `MessageFailedEvent`       | Event emitted on message failure                                 |
+| `QueuedResult`             | Result returned by `processMessage()` when a message is queued   |
 | `generateMessageId`        | Utility to generate unique message IDs                           |
 
 ## [State](state.md)
@@ -191,7 +194,8 @@ Re-exported from the internal type definitions. See individual reference pages f
 | ----------------------------- | ----------------------------------------------------- |
 | `createCartographerClient`    | Create a client connected to an `ActorServer`         |
 | `CartographerClient`          | Client interface (action, write, interrupt, resume)   |
-| `ConflictError`               | Thrown on 409 (another message is being processed)    |
+| `SendResponse`                | Response from `command()`, `write()`, `send()`        |
+| `QueueFullError`              | Thrown on 429 (message queue is full)                 |
 
 ## [Logging](logging.md)
 

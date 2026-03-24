@@ -70,6 +70,6 @@ Your background determines the fastest path through these docs.
 - [Config](api/config.md) -- `TreeRegistry`.
 - [Scheduler](api/scheduler.md) -- `TreeScheduler`, `SchedulerConfig`, `SchedulerEvents`.
 - [Actor](api/actor.md) -- `TreeActor`, `ActorServer`, `ActorMessage`, `StateStore`, `InMemoryStateStore`, `RedisStateStore`.
-- [Client](api/client.md) -- `createCartographerClient`, `CartographerClient`, `ConflictError`.
+- [Client](api/client.md) -- `createCartographerClient`, `CartographerClient`, `QueueFullError`.
 - [Serialization](api/serialization.md) -- `serializeTree`, `restoreTree`, `buildHashIndex`, `computeContentHash`.
 - [CLI](api/cli.md) -- `RunContext`, `TreeRunConfig`, `FormatterOptions`, `createFormatter`.
