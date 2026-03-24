@@ -42,6 +42,7 @@ Persisted snapshot of a tree's session, saved and restored by `TreeActor`.
 | `createdAt`     | `number`                  | Unix timestamp when the session was created.                              |
 | `lastMessageAt` | `number`                  | Unix timestamp of the most recent message processed.                      |
 | `held`          | `boolean` (optional)      | When `true`, the tree is held after interrupt — tick messages are no-ops. |
+| `sessions`      | `Record<string, string>` (optional) | Named session registry mapping session names to provider session IDs. Defaults to empty when absent. |
 
 ---
 

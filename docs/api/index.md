@@ -54,7 +54,9 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `AgentMessage`        | Discriminated union of agent response messages       |
 | `AgentInfo`           | Provider-agnostic agent metadata                     |
 | `AgentUsage`          | Token usage information from a completed turn        |
+| `AgentSessionOptions` | Session options for `Agent.send()` (resume, fork)    |
 | `ClaudeSDKAgentConfig`| Configuration for `ClaudeSDKAgent`                   |
+| `SessionConfig`       | Named session participation config for `AgentNode`   |
 
 ## [Core](core.md)
 
@@ -63,6 +65,7 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `BehaviorTree`       | Tree runner — builds, ticks, and manages a behavior tree |
 | `InMemoryBlackboard` | Default `Blackboard` implementation backed by a `Map`    |
 | `EventEmitter`       | Typed event emitter used throughout the library          |
+| `SessionRegistry`    | Named session registry for agent conversation sharing    |
 
 ## [Leaf Nodes](nodes.md)
 

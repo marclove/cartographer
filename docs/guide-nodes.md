@@ -83,7 +83,7 @@ Typical uses: checking blackboard state, evaluating environment conditions, gati
 
 ## AgentNode
 
-`AgentNode` integrates AI agents into the behavior tree. Each AgentNode references an `Agent` instance that handles provider-specific concerns (model selection, tools, MCP servers, structured output, budget caps). The node focuses on BT integration: prompt resolution, event emission, blackboard I/O, `mapResult`, and caching.
+`AgentNode` integrates AI agents into the behavior tree. Each AgentNode references an `Agent` instance that handles provider-specific concerns (model selection, tools, MCP servers, structured output, budget caps). The node focuses on BT integration: prompt resolution, event emission, blackboard I/O, `mapResult`, caching, and [named session participation](guide-agent-integration.md#sessions).
 
 ### Behavior
 

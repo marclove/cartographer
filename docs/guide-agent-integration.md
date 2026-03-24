@@ -24,7 +24,7 @@ const classifier = new ClaudeSDKAgent({
 
 ### Reusing Agents
 
-A single Agent instance can be shared across multiple AgentNodes and strategies. The agent manages conversation state internally — each `send()` call starts a new turn within the same session:
+A single Agent instance can be shared across multiple AgentNodes and strategies. Without a `session` config, each node gets its own private conversation — the agent manages an internal session that accumulates turns across `send()` calls:
 
 ```typescript
 const haiku = new ClaudeSDKAgent({
@@ -32,10 +32,12 @@ const haiku = new ClaudeSDKAgent({
   model: "claude-haiku-4-5",
 });
 
-// Same agent, different nodes
+// Same agent, independent private conversations per node
 b.agent("classify", { agent: haiku, prompt: classifyPrompt });
 b.agent("summarize", { agent: haiku, prompt: summarizePrompt });
 ```
+
+To share a conversation across multiple nodes, use [named sessions](#sessions).
 
 For agent definitions in larger projects, extract them into a dedicated module (see the [content pipeline example](../apps/content-pipeline/agents.ts) for this pattern).
 
@@ -51,6 +53,7 @@ interface AgentNodeConfig {
   mapResult?: (output: unknown, context: TreeContext) => NodeStatus;
   blackboardNamespace?: string;
   cache?: boolean;
+  session?: string | SessionConfig;
 }
 ```
 
@@ -198,6 +201,145 @@ b.agent("summarize", {
 MCP servers can request user input during agent execution. By default, `ClaudeSDKAgent` silently declines all elicitation requests, but you can provide handlers at the tree or subtree level via context layering.
 
 See the dedicated [Elicitation guide](guide-elicitation.md) for handler examples, precedence rules, decline events, and request types.
+
+---
+
+## Sessions
+
+By default, each AgentNode maintains its own private conversation with its agent. Named sessions let multiple AgentNodes participate in the same conversation — one node starts the conversation, and later nodes resume it with full history. This is useful when a multi-step workflow needs continuity: a triage agent classifies a ticket, then a handler agent picks up the same conversation to act on it.
+
+### Configuring Sessions
+
+Add a `session` field to `AgentNodeConfig`. The shorthand string form and the full object form are equivalent:
+
+```typescript
+// Shorthand — resume mode
+b.agent("triage", { agent, prompt: triagePrompt, session: "support" });
+
+// Equivalent full form
+b.agent("triage", {
+  agent,
+  prompt: triagePrompt,
+  session: { name: "support" },
+});
+```
+
+### Session Modes
+
+There are two modes for participating in a named session:
+
+**Resume mode** (default) — the agent appends to the session's conversation. If the session does not exist yet, a new one is created and registered. If it already exists, the agent resumes it with full history.
+
+```typescript
+// First agent creates the "support" session
+b.agent("triage", { agent: triageAgent, prompt: triagePrompt, session: "support" });
+
+// Second agent resumes the same conversation
+b.agent("respond", { agent: responder, prompt: respondPrompt, session: "support" });
+```
+
+**Fork mode** — the agent branches from an existing session, creating an independent copy of the conversation. The original session is unaffected. Fork mode requires the parent session to already exist (a resume-mode agent must run first).
+
+```typescript
+// Anonymous fork — ephemeral, not registered in the session registry
+b.agent("analyst", {
+  agent: analystAgent,
+  prompt: analysisPrompt,
+  session: { name: "support", fork: true },
+});
+
+// Named fork — registered under the fork name for downstream resumption
+b.agent("analyst", {
+  agent: analystAgent,
+  prompt: analysisPrompt,
+  session: { name: "support", fork: "analysis" },
+});
+```
+
+An anonymous fork (`fork: true`) is useful for one-off branches that no other node needs to resume. A named fork (`fork: "analysis"`) registers the forked session under the given name, so other agents can resume from the fork point.
+
+### SessionConfig
+
+```typescript
+interface SessionConfig {
+  name: string;
+  fork?: true | string;
+}
+```
+
+| Field  | Type             | Description                                                                                   |
+| ------ | ---------------- | --------------------------------------------------------------------------------------------- |
+| `name` | `string`         | The named session to participate in.                                                          |
+| `fork` | `true \| string` | Optional. `true` creates an anonymous fork. A string creates a named fork registered under that name. When absent, the agent resumes (appends to) the session. |
+
+### Session Lifecycle
+
+The tree's `SessionRegistry` maps session names to provider session IDs. It is managed automatically:
+
+- **Created or restored** when the tree starts ticking (or when `TreeActor` hydrates state).
+- **Preserved** across ticks that return `RUNNING` and across `interrupt()` calls — agents can resume their conversations on the next tick.
+- **Cleared** when the tree reaches a terminal status (`SUCCESS` or `FAILURE`), or when `abort()` or `reset()` is called.
+
+This means sessions live for the duration of a single tree run. If you need sessions to survive across independent runs, use `TreeActor` with a `StateStore` — the actor serializes and restores the session registry alongside the blackboard and tree state.
+
+### Session Concurrency Validation
+
+Resume-mode agents on the same named session must not execute concurrently — interleaved messages would produce unpredictable conversation state. Cartographer enforces this at construction time: if two AgentNodes configured to resume the same session appear in different branches of a `ParallelNode`, the `BehaviorTree` constructor throws.
+
+Fork-mode agents are exempt from this check because each fork creates an independent conversation branch.
+
+```typescript
+// This throws at construction time:
+b.parallel("bad", (b) => {
+  b.agent("a", { agent, prompt: "...", session: "shared" });  // resume
+  b.agent("b", { agent, prompt: "...", session: "shared" });  // resume — conflict!
+});
+
+// This is fine — forks are independent:
+b.parallel("ok", (b) => {
+  b.agent("a", { agent, prompt: "...", session: { name: "shared", fork: true } });
+  b.agent("b", { agent, prompt: "...", session: { name: "shared", fork: true } });
+});
+```
+
+### Worked Example: Triage and Fork
+
+```typescript
+import { TreeBuilder, ClaudeSDKAgent } from "cartographer";
+
+const triageAgent = new ClaudeSDKAgent({
+  name: "triage",
+  model: "claude-haiku-4-5",
+  effort: "low",
+});
+
+const handlerAgent = new ClaudeSDKAgent({
+  name: "handler",
+  model: "claude-sonnet-4-6",
+  maxTurns: 10,
+});
+
+const tree = new TreeBuilder("support-pipeline")
+  .sequence("handle-ticket", (b) => {
+    // Step 1: Triage creates the "support" session
+    b.agent("triage", {
+      agent: triageAgent,
+      prompt: (ctx) => `Classify this support ticket: ${ctx.blackboard.get("ticket")}`,
+      session: "support",
+    });
+
+    // Step 2: Handler forks the conversation to draft a response
+    // without polluting the triage history
+    b.agent("draft-response", {
+      agent: handlerAgent,
+      prompt: "Based on the triage above, draft a customer response.",
+      session: { name: "support", fork: true },
+    });
+  })
+  .build();
+```
+
+The triage agent creates the "support" session and classifies the ticket. The handler agent forks from that session — it sees the full triage conversation but its response drafting does not modify the original session.
 
 ---
 

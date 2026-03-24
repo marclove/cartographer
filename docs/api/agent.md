@@ -48,7 +48,7 @@ Clean up resources (e.g., SDK subprocess, ACP session). After calling `close()`,
 import { ClaudeSDKAgent } from "cartographer";
 ```
 
-Concrete Agent implementation wrapping the Claude Agent SDK. Uses the SDK's `query()` API with an `AsyncQueue` to bridge `send()` calls into the SDK's async iterable input pattern.
+Concrete Agent implementation wrapping the Claude Agent SDK V1 stable API. Each `send()` call creates a fresh SDK `query()` with automatic session management.
 
 ### Constructor
 
@@ -92,8 +92,7 @@ const researcher = new ClaudeSDKAgent({
 
 ### Behavior
 
-- **Lazy initialization**: The SDK `query()` call is created on the first `send()`. Subsequent sends reuse the same long-lived connection.
-- **Turn demuxing**: Multiple `send()` calls are serialized — each turn's response messages are routed to the correct caller via an internal demux loop.
+- **Query per send**: Each `send()` call creates a fresh SDK `query()`. When no explicit session options are provided, the agent automatically resumes its private session so conversation history accumulates across turns. When `options.session` is provided, the caller controls which session to resume or fork.
 - **Blackboard MCP**: When `send()` receives a `blackboard` in its options, a blackboard MCP server is automatically injected under the reserved name `"blackboard"`. The constructor throws if your `mcpServers` config already uses this name.
 - **Structured output**: When `outputFormat` is set on the config, the SDK validates responses against the schema. When `AgentSendOptions.outputSchema` is provided per-send, it takes precedence. In both cases, `$schema` meta-properties (as produced by `z.toJSONSchema()`) are automatically stripped.
 - **Elicitation**: The agent always provides an `onElicitation` callback to the SDK so it never hangs. If `AgentSendOptions.onElicitation` is provided, it delegates to that handler. Otherwise, the request is auto-declined and a `provider_event` message with subtype `'elicitation_declined'` is emitted so the BT layer can fire `agent:elicitation_declined`.
@@ -132,6 +131,7 @@ interface AgentSendOptions {
   onElicitation?: OnElicitation;
   onMessage?: (msg: AgentMessage) => void;
   outputSchema?: Record<string, unknown>;
+  session?: AgentSessionOptions;
 }
 ```
 
@@ -145,6 +145,27 @@ Per-invocation options passed to `Agent.send()`:
 | `onElicitation`       | `OnElicitation`               | Elicitation handler for interactive input requests.                                                                                              |
 | `onMessage`           | `(msg: AgentMessage) => void` | Called for each message before it is yielded. Errors are caught and emitted as `provider_event` messages with subtype `'onMessage_error'`.       |
 | `outputSchema`        | `Record<string, unknown>`     | JSON schema for structured output. Overrides the agent's configured `outputFormat` for this send. This is a JSON Schema object, not a Zod schema. |
+| `session`             | `AgentSessionOptions`         | Session options controlling which conversation to resume, fork, or create. When omitted, the agent manages its own private session.               |
+
+### AgentSessionOptions
+
+```typescript
+import type { AgentSessionOptions } from "cartographer";
+
+interface AgentSessionOptions {
+  id?: string;
+  fork?: boolean;
+}
+```
+
+Provider-agnostic session options for `Agent.send()`. Controls whether the agent creates a new session, resumes an existing session, or forks from one.
+
+| Field  | Type      | Description                                                                                     |
+| ------ | --------- | ----------------------------------------------------------------------------------------------- |
+| `id`   | `string`  | Provider session ID to resume. When `undefined`, a new session is created.                      |
+| `fork` | `boolean` | Fork from the session instead of appending to it. Requires `id` to be set.                      |
+
+These options are provider-agnostic — each concrete Agent maps them to its provider's session API. For `ClaudeSDKAgent`, `id` maps to the SDK's `resume` option and `fork` maps to `forkSession`.
 
 ### AgentMessage
 
@@ -162,6 +183,7 @@ Discriminated union of messages yielded by `Agent.send()`. Provider-agnostic —
 | `{ type: 'result', subtype: 'success' }` | `output: unknown; cost?: number; usage?: AgentUsage` | Successful final result.    |
 | `{ type: 'result', subtype: 'error' }`   | `errors?: unknown[]; cost?: number; usage?: AgentUsage` | Error result.            |
 | `{ type: 'provider_event' }` | `subtype: string; data: unknown`                  | Provider-specific event (init, status, rate_limit, tool_progress, etc.). |
+| `{ type: 'session_start' }` | `sessionId: string`                               | Emitted when the provider creates or resumes a session. Used by AgentNode to register the session in the tree's registry. |
 
 ### AgentInfo
 

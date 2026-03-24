@@ -184,6 +184,7 @@ new AgentNode(config: AgentNodeConfig)
 | `mapResult`           | `(output: unknown, context: TreeContext) => NodeStatus` | No       | --      | Maps the agent output to a `NodeStatus`. When omitted, any successful response returns `SUCCESS`.                           |
 | `blackboardNamespace` | `string`                                                | No       | --      | When set, the auto-attached blackboard MCP server operates on a scoped namespace instead of the full blackboard.            |
 | `cache`               | `boolean`                                               | No       | `false` | When `true`, the node calls the agent once and returns the cached status on subsequent ticks. Cleared on `reset()`.         |
+| `session`             | `string \| SessionConfig`                               | No       | --      | Named session participation. Shorthand: `session: "triage"` equals `session: { name: "triage" }`. See [Sessions](../guide-agent-integration.md#sessions). |
 
 ### Behavior
 
@@ -191,6 +192,7 @@ new AgentNode(config: AgentNodeConfig)
 - A blackboard MCP server is automatically attached by the Agent, exposing three tools: `blackboard_read`, `blackboard_write`, and `blackboard_keys`.
 - On success, the result is written to the blackboard at key `{name}:output`.
 - If the agent's `outputFormat` is configured, the provider validates the response against the schema. If `mapResult` is provided, its return value determines the node status.
+- When `session` is configured, the node resolves session options from the tree's `SessionRegistry` and registers new session IDs when they are created. Resume mode appends to an existing conversation; fork mode branches from one. See [Sessions](../guide-agent-integration.md#sessions).
 - Emits the full set of agent observability events: `agent:prompt`, `agent:thinking`, `agent:text`, `agent:tool_use`, `agent:response`, `agent:error`, `agent:tool_progress`, `agent:init`, `agent:status`, and `agent:rate_limit`. See [TreeEvents](core.md#treeevents-interface) for payload details.
 
 ### Elicitation Handling

@@ -36,6 +36,7 @@ import { BehaviorTree } from "cartographer";
 | `root`          | `BTreeNode`     | Yes      | Root node                                                                                                                                                                                                                        |
 | `blackboard`    | `Blackboard`    | No       | Defaults to `new InMemoryBlackboard()`                                                                                                                                                                                           |
 | `onElicitation` | `OnElicitation` | No       | Default elicitation handler for all `AgentNode` descendants. When set, the root node's context overrides are updated so the handler is inherited throughout the tree. See [Elicitation](guide-agent-integration.md#elicitation). |
+| `sessionRegistry` | `SessionRegistry` | No    | Pre-built session registry. When omitted, an empty one is created. Used by `TreeActor` to restore sessions from persisted state. |
 
 ### Properties
 
@@ -46,6 +47,7 @@ import { BehaviorTree } from "cartographer";
 | `events`     | `EventEmitter<TreeEvents>` (readonly) | Event system for tree-level events                           |
 | `root`       | `BTreeNode` (readonly)                | The root node of the tree                                    |
 | `rootHash`   | `string` (getter)                     | Content hash of the root node — fingerprints the entire tree |
+| `sessionRegistry` | `SessionRegistry`                | Named session registry for agent conversation sharing. See [Sessions](../guide-agent-integration.md#sessions). |
 
 ### Methods
 
@@ -53,9 +55,9 @@ import { BehaviorTree } from "cartographer";
 | ----------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `tick`            | `(): Promise<NodeStatus>`                                                  | Tick the tree once. Creates a `TreeContext` from the blackboard, events, and an internal `AbortSignal`. |
 | `run`             | `(): Promise<{ status: NodeStatus; blackboard: Record<string, unknown> }>` | Tick the tree and return the status together with a blackboard snapshot.                                |
-| `reset`           | `(): void`                                                                 | Reset the root node and create a new `AbortController`.                                                 |
-| `abort`           | `(): void`                                                                 | Abort the root node and signal abort via the internal controller.                                       |
-| `interrupt`       | `(): void`                                                                 | Cancel in-flight work without destroying cycle state. No `reset()` needed. Emits `tree:interrupt`.      |
+| `reset`           | `(): void`                                                                 | Reset the root node, create a new `AbortController`, and clear the session registry.                    |
+| `abort`           | `(): void`                                                                 | Abort the root node, signal abort via the internal controller, and clear the session registry.          |
+| `interrupt`       | `(): void`                                                                 | Cancel in-flight work without destroying cycle state or session registry. No `reset()` needed. Emits `tree:interrupt`. |
 | `hasInflightWork` | `(): boolean`                                                              | Returns `true` if any node in the tree has unsettled async work.                                        |
 | `settled`         | `(): Promise<void>`                                                        | Resolves when all in-flight work across the tree has settled.                                           |
 | `start`           | `(options: { intervalMs: number; signal?: AbortSignal }): TickLoopHandle`  | Start a reactive tick loop. Returns a handle to stop it.                                                |

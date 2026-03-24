@@ -151,6 +151,7 @@ TreeContext {
   blackboard: Blackboard     -- shared key-value state
   events: TypedEventEmitter   -- event bus for lifecycle hooks
   signal?: AbortSignal        -- cooperative cancellation
+  sessions: SessionRegistry   -- named agent conversations
 }
 ```
 
@@ -260,6 +261,12 @@ A soft cancellation that cancels in-flight work (like abort) but preserves compo
 
 **Held State**
 A flag on `TreeSessionState` set after an interrupt in the application server. While held, tick messages are no-ops (preventing the scheduler from immediately restarting interrupted work). Cleared by action messages, write messages, or `signal: resume`.
+
+**Session (Named Session)**
+A named conversation that persists in the tree's `SessionRegistry`. Agents configured with `session: "name"` resume the same conversation across ticks. Agents with `session: { name: "...", fork: true }` branch from an existing session without modifying the original. See the [Sessions guide](guide-agent-integration.md#sessions).
+
+**Session Registry**
+A map from session names to provider session IDs, owned by `BehaviorTree`. Cleared on terminal status (SUCCESS/FAILURE), `abort()`, and `reset()`. Preserved across RUNNING ticks and `interrupt()`. Serialized by `TreeActor` for persistence across server restarts.
 
 **Strategy**
 A pluggable component that controls how a composite node orders its children or evaluates its policy. Strategies can be static (fixed rules) or agent-backed (AI-driven decisions).

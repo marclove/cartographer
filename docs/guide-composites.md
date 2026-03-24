@@ -106,6 +106,10 @@ interface ParallelPolicy {
 
 The default policy produced by `DefaultParallelStrategy` is `{ successCount: children.length }`, meaning every child must succeed.
 
+### Session Concurrency Constraint
+
+If two `AgentNode` children in different parallel branches are configured to resume the same named session, the `BehaviorTree` constructor throws an error. Concurrent resume-mode agents on the same session would interleave messages, producing unpredictable conversation state. Fork-mode agents are exempt — each fork creates an independent conversation branch that is safe to run concurrently. See [Sessions](guide-agent-integration.md#sessions) for details.
+
 ---
 
 ## Strategy Pattern

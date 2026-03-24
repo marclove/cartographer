@@ -21,6 +21,9 @@ interface TreeContext {
 
   /** Handler for MCP elicitation requests. */
   onElicitation?: OnElicitation;
+
+  /** Named session registry for agent conversation sharing. */
+  sessions: SessionRegistry;
 }
 ```
 
@@ -30,18 +33,20 @@ interface TreeContext {
 | `events`        | Event emitter for observability. All `node:*` and `agent:*` events flow through this emitter.                                       |
 | `signal`        | Set automatically by `BehaviorTree` when `abort()` is called. Nodes check `signal?.aborted` to bail out of long-running work.       |
 | `onElicitation` | Handler for MCP server elicitation requests. Consumed by `AgentNode` and agent strategies. See [Elicitation](guide-elicitation.md). |
+| `sessions`      | Named session registry mapping session names to provider session IDs. Consumed by `AgentNode` for conversation sharing. See [Sessions](guide-agent-integration.md#sessions). |
 
 ### Creating a Context
 
 `BehaviorTree` creates the context internally. In tests, construct one manually:
 
 ```typescript
-import { InMemoryBlackboard, EventEmitter } from "cartographer";
+import { InMemoryBlackboard, EventEmitter, SessionRegistry } from "cartographer";
 import type { TreeContext, TreeEvents } from "cartographer";
 
 const context: TreeContext = {
   blackboard: new InMemoryBlackboard(),
   events: new EventEmitter<TreeEvents>(),
+  sessions: new SessionRegistry(),
 };
 
 const status = await myNode.tick(context);
