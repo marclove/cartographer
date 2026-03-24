@@ -430,7 +430,7 @@ describe('ClaudeSDKAgent', () => {
         mcpServers: { tools: { type: 'stdio', command: 'echo' } } as any,
       });
       const info = agent.getInfo();
-      expect(info.tools).toEqual(['read', 'write']);
+      expect(info.tools).toEqual(['Read', 'Edit']);
       expect(info.mcpServers).toEqual(['tools']);
     });
   });
