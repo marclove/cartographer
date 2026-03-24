@@ -100,9 +100,23 @@ describe('ClaudeSDKAgent', () => {
       }));
     });
 
-    it('maps provider-specific events (stream, tool_progress, system, rate_limit)', async () => {
+    it('maps stream_event SDK messages to semantic stream type', async () => {
       mockQuery.mockReturnValue(mockMessages([
         { type: 'stream_event', event: { delta: 'hi' } },
+        { type: 'result', subtype: 'success', result: 'ok', total_cost_usd: 0 },
+      ]) as any);
+
+      const agent = new ClaudeSDKAgent({ name: 'test' });
+      const msgs = await collectMessages(agent.send('prompt'));
+
+      expect(msgs).toContainEqual({
+        type: 'stream',
+        event: expect.objectContaining({ type: 'stream_event', event: { delta: 'hi' } }),
+      });
+    });
+
+    it('maps provider-specific events (tool_progress, system, rate_limit)', async () => {
+      mockQuery.mockReturnValue(mockMessages([
         { type: 'tool_progress', tool_use_id: 't1', tool_name: 'read', elapsed_time_seconds: 1 },
         { type: 'system', subtype: 'init', session_id: 's1' },
         { type: 'rate_limit_event', rate_limit_info: { retryAfter: 5 } },
@@ -113,8 +127,8 @@ describe('ClaudeSDKAgent', () => {
       const msgs = await collectMessages(agent.send('prompt'));
 
       const providerEvents = msgs.filter((m) => m.type === 'provider_event');
-      // stream_event + tool_progress + init (from system) + rate_limit = 4
-      expect(providerEvents.length).toBeGreaterThanOrEqual(4);
+      // tool_progress + init (from system) + rate_limit = 3
+      expect(providerEvents.length).toBeGreaterThanOrEqual(3);
     });
 
     it('prefers structured_output for result when outputSchema is set', async () => {

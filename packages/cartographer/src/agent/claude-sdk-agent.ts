@@ -84,9 +84,9 @@ export class ClaudeSDKAgent extends Agent {
    * caller controls which session to resume or fork.
    *
    * The returned iterable yields {@link AgentMessage} values in order: a
-   * `session_start` message first, then `thinking`, `text`, `tool_use`, and
-   * `provider_event` messages as the SDK streams them, and finally a `result`
-   * message indicating success or error.
+   * `session_start` message first, then `thinking`, `text`, `tool_use`,
+   * `stream`, and `provider_event` messages as the SDK streams them, and
+   * finally a `result` message indicating success or error.
    *
    * @param prompt - The user prompt to send to Claude.
    * @param options - Per-invocation options including blackboard access,
@@ -333,6 +333,7 @@ export class ClaudeSDKAgent extends Agent {
    * - `result` → a single `result` message with `success` or `error` subtype.
    *   For success results, structured output is preferred over raw text; raw text
    *   is JSON-parsed as a fallback.
+   * - `stream_event` → a semantic `stream` message with the raw event
    * - `system` → a `provider_event` with subtype `init` or `status`
    * - `tool_progress` → a `provider_event` with normalized field names
    * - `rate_limit_event` → a `provider_event` wrapping rate limit info
@@ -400,7 +401,9 @@ export class ClaudeSDKAgent extends Agent {
         // Provider-specific events — use the SDK's discriminated types
         if ('type' in msg) {
           const m = msg as Record<string, unknown>;
-          if (m.type === 'tool_progress') {
+          if (m.type === 'stream_event') {
+            messages.push({ type: 'stream', event: msg });
+          } else if (m.type === 'tool_progress') {
             const tp = msg as SDKToolProgressMessage;
             messages.push({
               type: 'provider_event',

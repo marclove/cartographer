@@ -88,6 +88,9 @@ export class AgentParallelStrategy implements ParallelStrategy {
       case 'tool_use':
         context.events.emit('agent:tool_use', { node, tool: msg.name, input: msg.input });
         break;
+      case 'stream':
+        context.events.emit('agent:stream', { node, event: msg.event });
+        break;
       case 'result':
         if (msg.subtype === 'success') {
           context.events.emit('agent:response', { node, result: msg.output, cost: msg.cost });
@@ -97,7 +100,7 @@ export class AgentParallelStrategy implements ParallelStrategy {
         break;
       case 'provider_event': {
         const d = msg.data as Record<string, unknown>;
-        const eventMap: Record<string, string> = { stream: 'agent:stream', tool_progress: 'agent:tool_progress', init: 'agent:init', status: 'agent:status', rate_limit: 'agent:rate_limit' };
+        const eventMap: Record<string, string> = { tool_progress: 'agent:tool_progress', init: 'agent:init', status: 'agent:status', rate_limit: 'agent:rate_limit' };
         const eventName = eventMap[msg.subtype];
         if (eventName) (context.events.emit as any)(eventName, { node, ...d });
         break;

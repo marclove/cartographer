@@ -92,6 +92,7 @@ export type AgentMessage =
   | { type: 'thinking'; content: string }
   | { type: 'text'; content: string }
   | { type: 'tool_use'; name: string; input?: unknown }
+  | { type: 'stream'; event: unknown }
   | { type: 'result'; subtype: 'success'; output: unknown; cost?: number; usage?: AgentUsage }
   | { type: 'result'; subtype: 'error'; errors?: unknown[]; cost?: number; usage?: AgentUsage }
   | { type: 'provider_event'; subtype: string; data: unknown }

@@ -409,13 +409,15 @@ export class AgentNode extends BaseNode {
       case 'tool_use':
         context.events.emit('agent:tool_use', { node: this, tool: msg.name, input: msg.input });
         break;
+      case 'stream':
+        context.events.emit('agent:stream', { node: this, event: msg.event });
+        break;
       case 'session_start':
         // Handled by _executeAgentCall — not forwarded as a BT event
         break;
       case 'provider_event': {
         const d = msg.data as Record<string, unknown>;
         const eventMap: Record<string, string> = {
-          stream_event: 'agent:stream',
           tool_progress: 'agent:tool_progress',
           init: 'agent:init',
           status: 'agent:status',

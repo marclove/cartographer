@@ -246,9 +246,9 @@ describe('AgentNode - observability events', () => {
     );
   });
 
-  it('emits agent:stream for provider_event with subtype stream_event', async () => {
+  it('emits agent:stream for stream messages', async () => {
     const agent = createAgent([
-      { type: 'provider_event', subtype: 'stream_event', data: { delta: 'hello' } },
+      { type: 'stream', event: { type: 'content_block_delta', delta: { text: 'hello' } } },
       { type: 'result', subtype: 'success', output: 'done' },
     ]);
 
@@ -261,7 +261,7 @@ describe('AgentNode - observability events', () => {
     await node.tick(ctx);
 
     expect(streamSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ delta: 'hello' }),
+      expect.objectContaining({ event: { type: 'content_block_delta', delta: { text: 'hello' } } }),
     );
   });
 
