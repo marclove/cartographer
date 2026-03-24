@@ -49,6 +49,36 @@ describe('GuardNode', () => {
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
+  it('caches child terminal status while condition remains true', async () => {
+    const child = mockChild(NodeStatus.SUCCESS);
+    const node = new GuardNode({ name: 'guard', child, condition: () => true });
+    const ctx = createContext();
+
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(child.tick).toHaveBeenCalledTimes(1);
+
+    // Second tick should reuse cached result, not retick child
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(child.tick).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears cache when condition flips false, allowing re-run', async () => {
+    let allow = true;
+    const child = mockChild(NodeStatus.SUCCESS);
+    const node = new GuardNode({ name: 'guard', child, condition: () => allow });
+    const ctx = createContext();
+
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(child.tick).toHaveBeenCalledTimes(1);
+
+    allow = false;
+    expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
+
+    allow = true;
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
+    expect(child.tick).toHaveBeenCalledTimes(2);
+  });
+
   it('returns FAILURE when condition throws', async () => {
     const child = mockChild(NodeStatus.SUCCESS);
     const node = new GuardNode({

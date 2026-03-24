@@ -27,6 +27,7 @@ import { computeContentHash } from '../core/content-hash.js';
 export class GuardNode extends BaseNode {
   private child: GuardConfig['child'];
   private condition: GuardConfig['condition'];
+  private cachedChildStatus: NodeStatus | null = null;
 
   /**
    * Inflight state for an async condition evaluation.
@@ -59,10 +60,16 @@ export class GuardNode extends BaseNode {
       const allowed = this._conditionInflight.result;
       this._conditionInflight = null;
       if (!allowed) {
+        this.cachedChildStatus = null;
         this.child.abort();
         return NodeStatus.FAILURE;
       }
-      return this.child.tick(context);
+      if (this.cachedChildStatus !== null) return this.cachedChildStatus;
+      const status = await this.child.tick(context);
+      if (status !== NodeStatus.RUNNING) {
+        this.cachedChildStatus = status;
+      }
+      return status;
     }
 
     // Poll: inflight condition rejected with an error
@@ -89,10 +96,16 @@ export class GuardNode extends BaseNode {
     // Fast path: synchronous condition resolved immediately
     if (typeof conditionResult === 'boolean') {
       if (!conditionResult) {
+        this.cachedChildStatus = null;
         this.child.abort();
         return NodeStatus.FAILURE;
       }
-      return this.child.tick(context);
+      if (this.cachedChildStatus !== null) return this.cachedChildStatus;
+      const status = await this.child.tick(context);
+      if (status !== NodeStatus.RUNNING) {
+        this.cachedChildStatus = status;
+      }
+      return status;
     }
 
     // Async path: start inflight tracking, return RUNNING
@@ -111,16 +124,19 @@ export class GuardNode extends BaseNode {
 
   reset(): void {
     this._conditionInflight = null;
+    this.cachedChildStatus = null;
     this.child.reset();
   }
 
   abort(): void {
     this._conditionInflight = null;
+    this.cachedChildStatus = null;
     this.child.abort();
   }
 
   override interrupt(): void {
     this._conditionInflight = null;
+    this.cachedChildStatus = null;
     this.child.interrupt();
   }
 }
