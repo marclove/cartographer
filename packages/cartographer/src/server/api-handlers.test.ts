@@ -13,6 +13,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 }));
 
 import { AgentNode } from '../nodes/agent.js';
+import { TestAgent } from '../agent/test-agent.js';
 import {
   handleApiTree,
   handleApiStatus,
@@ -133,11 +134,14 @@ describe('handleApiNode', () => {
     const agent = new AgentNode({
       name: 'my-agent',
       prompt: 'hello',
-      options: {
-        model: 'claude-sonnet-4-20250514',
-        allowedTools: ['tool_a', 'tool_b'],
-        mcpServers: { server1: {} as any, server2: {} as any },
-      },
+      agent: new TestAgent({
+        name: 'my-agent',
+        info: {
+          model: 'claude-sonnet-4-20250514',
+          tools: ['tool_a', 'tool_b'],
+          mcpServers: ['server1', 'server2'],
+        },
+      }),
     });
     const tree = makeTree(agent);
     const res = createMockRes();
@@ -176,6 +180,7 @@ describe('handleApiNode', () => {
     const agent = new AgentNode({
       name: 'minimal-agent',
       prompt: 'hi',
+      agent: new TestAgent({ name: 'minimal-agent' }),
     });
     const tree = makeTree(agent);
     const res = createMockRes();

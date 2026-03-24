@@ -4,6 +4,7 @@ import { ActionNode } from '../../nodes/action.js';
 import { ParallelNode } from '../../composites/parallel.js';
 import { AgentSelectionStrategy } from '../../strategies/agent-selection.js';
 import { AgentParallelStrategy } from '../../strategies/agent-parallel.js';
+import { ClaudeSDKAgent } from '../../agent/claude-sdk-agent.js';
 import { createContext, collectEvents } from '../helpers.js';
 import { createTreeLogger } from '../../tree-logger.js';
 
@@ -20,7 +21,7 @@ describe('Agent Strategies Integration (Live API)', { timeout: 60_000 }, () => {
 
     const strategy = new AgentParallelStrategy({
       prompt: 'Choose a policy that requires at least 2 successes out of 3 children.',
-      options: { model: 'claude-haiku-4-5-20251001', effort: 'low' },
+      agent: new ClaudeSDKAgent({ name: 'parallel-strategy', model: 'claude-haiku-4-5-20251001', effort: 'low' }),
     });
 
     const children = [
@@ -64,7 +65,7 @@ describe('Agent Strategies Integration (Live API)', { timeout: 60_000 }, () => {
 
     const strategy = new AgentSelectionStrategy({
       prompt: 'Order these file processing steps in the most logical sequence for processing a file.',
-      options: { model: 'claude-haiku-4-5-20251001', effort: 'low' },
+      agent: new ClaudeSDKAgent({ name: 'selection-strategy', model: 'claude-haiku-4-5-20251001', effort: 'low' }),
       childDescriptions: {
         'upload-to-cloud': 'Upload the processed file to cloud storage',
         'validate-format': 'Check if the file format is valid',

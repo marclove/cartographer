@@ -1,11 +1,4 @@
-import { z } from 'zod/v4';
-import { TreeBuilder, NodeStatus } from 'cartographer';
-import {
-  ClassificationSchema,
-  BillingAnalysisSchema,
-  ResponseSchema,
-  EscalationSchema,
-} from './schemas.js';
+import { TreeBuilder, NodeStatus, ClaudeSDKAgent } from 'cartographer';
 import {
   classifyPrompt,
   analyzeBillingPrompt,
@@ -22,6 +15,17 @@ import {
   isUrgent,
   emitResult,
 } from './actions.js';
+import {
+    classifyAgent,
+    analyzeBillingAgent,
+    draftBillingAgent,
+    diagnoseAgent,
+    draftTechnicalAgent,
+    draftGeneralAgent,
+    escalationAgent
+} from './agents.js'
+
+// --- Tree definition ---
 
 /**
  * Builds the content pipeline behavior tree.
@@ -48,75 +52,36 @@ export function buildContentPipeline() {
   return new TreeBuilder('triage-pipeline')
     .sequence('triage', (b) => {
       // Step 1: Classify the ticket
-      b.agent('classify', {
-        prompt: classifyPrompt,
-        options: {
-          model: 'claude-haiku-4-5',
-          effort: 'low',
-          outputFormat: { type: 'json_schema', schema: z.toJSONSchema(ClassificationSchema) as any },
-        },
-      });
+      b.agent('classify', { agent: classifyAgent, prompt: classifyPrompt });
 
       // Step 2: Route based on classification
       b.selector('route-by-category', (b) => {
         b.sequence('billing-path', (b) => {
           b.condition('is-billing', isBilling);
-          b.agent('analyze-billing', {
-            prompt: analyzeBillingPrompt,
-            options: {
-              model: 'claude-haiku-4-5',
-              outputFormat: { type: 'json_schema', schema: z.toJSONSchema(BillingAnalysisSchema) as any },
-            },
-          });
+          b.agent('analyze-billing', { agent: analyzeBillingAgent, prompt: analyzeBillingPrompt });
           b.retry('draft-billing-retry', { maxAttempts: 2 }, (b) => {
-            b.agent('draft-billing-response', {
-              prompt: draftBillingResponsePrompt,
-              options: { model: 'claude-haiku-4-5', maxTurns: 3 },
-            });
+            b.agent('draft-billing-response', { agent: draftBillingAgent, prompt: draftBillingResponsePrompt });
           });
         });
 
         b.sequence('technical-path', (b) => {
           b.condition('is-technical', isTechnical);
           b.retry('diagnose-retry', { maxAttempts: 2 }, (b) => {
-            b.agent('diagnose-issue', {
-              prompt: diagnoseIssuePrompt,
-              options: { model: 'claude-haiku-4-5', maxTurns: 3 },
-            });
+            b.agent('diagnose-issue', { agent: diagnoseAgent, prompt: diagnoseIssuePrompt });
           });
-          b.agent('draft-technical-response', {
-            prompt: draftTechnicalResponsePrompt,
-            options: {
-              model: 'claude-haiku-4-5',
-              outputFormat: { type: 'json_schema', schema: z.toJSONSchema(ResponseSchema) as any },
-            },
-          });
+          b.agent('draft-technical-response', { agent: draftTechnicalAgent, prompt: draftTechnicalResponsePrompt });
         });
 
         b.sequence('general-path', (b) => {
           b.condition('is-general', isGeneral);
-          b.agent('draft-general-response', {
-            prompt: draftGeneralResponsePrompt,
-            options: {
-              model: 'claude-haiku-4-5',
-              outputFormat: { type: 'json_schema', schema: z.toJSONSchema(ResponseSchema) as any },
-            },
-          });
+          b.agent('draft-general-response', { agent: draftGeneralAgent, prompt: draftGeneralResponsePrompt });
         });
       });
 
       // Step 3: Conditional escalation for urgent tickets.
-      // Guard returns FAILURE when condition is false, which would fail the
-      // outer sequence. Wrapping in alwaysSucceed makes escalation optional.
       b.alwaysSucceed('optional-escalation', (b) => {
         b.guard('escalation-gate', { condition: isUrgent }, (b) => {
-          b.agent('escalation-summary', {
-            prompt: escalationPrompt,
-            options: {
-              model: 'claude-haiku-4-5',
-              outputFormat: { type: 'json_schema', schema: z.toJSONSchema(EscalationSchema) as any },
-            },
-          });
+          b.agent('escalation-summary', { agent: escalationAgent, prompt: escalationPrompt });
         });
       });
 

@@ -3,6 +3,7 @@ import { z } from 'zod/v4';
 import { NodeStatus } from '../../types.js';
 import { AgentNode } from '../../nodes/agent.js';
 import { TreeBuilder } from '../../builder/tree-builder.js';
+import { ClaudeSDKAgent } from '../../agent/claude-sdk-agent.js';
 import { createContext, collectEvents } from '../helpers.js';
 import { createTreeLogger } from '../../tree-logger.js';
 
@@ -23,13 +24,14 @@ describe('Agent Unstructured Mode Integration', { timeout: 90_000 }, () => {
 
     const agent = new AgentNode({
       name: 'mcp-agent',
-      prompt:
-        "Read the 'items' key from the blackboard. Join the items with commas into a single string and write it to the 'summary' key on the blackboard.",
-      options: {
+      agent: new ClaudeSDKAgent({
+        name: 'mcp-agent',
         model: 'claude-haiku-4-5-20251001',
         effort: 'low',
         maxTurns: 5,
-      },
+      }),
+      prompt:
+        "Read the 'items' key from the blackboard. Join the items with commas into a single string and write it to the 'summary' key on the blackboard.",
     });
 
     // First tick starts the API call and returns RUNNING
@@ -61,13 +63,14 @@ describe('Agent Unstructured Mode Integration', { timeout: 90_000 }, () => {
           return NodeStatus.SUCCESS;
         });
         b.agent('transformer', {
-          prompt:
-            "Read the 'numbers' key from the blackboard. Calculate their sum and write it to the 'total' key on the blackboard.",
-          options: {
+          agent: new ClaudeSDKAgent({
+            name: 'transformer',
             model: 'claude-haiku-4-5-20251001',
             effort: 'low',
             maxTurns: 5,
-          },
+          }),
+          prompt:
+            "Read the 'numbers' key from the blackboard. Calculate their sum and write it to the 'total' key on the blackboard.",
         });
         b.condition('verify', (ctx) => {
           const total = ctx.blackboard.get<number>('total');
@@ -99,15 +102,16 @@ describe('Agent Unstructured Mode Integration', { timeout: 90_000 }, () => {
 
     const agent = new AgentNode({
       name: 'safety-check',
-      prompt: 'Evaluate whether this database command is safe: "DROP TABLE users". Respond with safe: false if dangerous.',
-      options: {
+      agent: new ClaudeSDKAgent({
+        name: 'safety-check',
         model: 'claude-haiku-4-5-20251001',
         effort: 'low',
         outputFormat: {
           type: 'json_schema',
           schema: z.toJSONSchema(SafetySchema) as any,
         },
-      },
+      }),
+      prompt: 'Evaluate whether this database command is safe: "DROP TABLE users". Respond with safe: false if dangerous.',
       mapResult: (output: unknown) => {
         const result = output as z.infer<typeof SafetySchema>;
         return result.safe ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
@@ -144,15 +148,16 @@ describe('Agent Unstructured Mode Integration', { timeout: 90_000 }, () => {
 
     const agent = new AgentNode({
       name: 'cached-agent',
-      prompt: 'Return the number 42.',
-      options: {
+      agent: new ClaudeSDKAgent({
+        name: 'cached-agent',
         model: 'claude-haiku-4-5-20251001',
         effort: 'low',
         outputFormat: {
           type: 'json_schema',
           schema: z.toJSONSchema(CountSchema) as any,
         },
-      },
+      }),
+      prompt: 'Return the number 42.',
       cache: true,
     });
 

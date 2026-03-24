@@ -1,16 +1,53 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TreeBuilder } from '../builder/tree-builder.js';
 import { NodeStatus } from '../types.js';
+import type { BTreeNode, TypedEventEmitter, TreeEvents } from '../types.js';
+import { Agent } from '../agent/agent.js';
+import type { AgentMessage, AgentSendOptions, AgentInfo } from '../agent/agent.js';
+import { wrapElicitation } from '../agent/sdk-helpers.js';
+import { AgentSelectionStrategy } from '../strategies/agent-selection.js';
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: vi.fn(),
-  createSdkMcpServer: vi.fn(() => ({})),
-  tool: vi.fn((_name: string, _desc: string, _schema: unknown, handler: unknown) => handler),
-}));
+/**
+ * StubAgent for elicitation tests. Simulates the real SDK elicitation flow:
+ * always attempts elicitation during send(), routing through wrapElicitation
+ * when events/node context is provided (to test the declined path).
+ */
+class ElicitationStubAgent extends Agent {
+  private resultMessage: AgentMessage = { type: 'result', subtype: 'success', output: 'done', cost: 0.01 };
+  private _events?: TypedEventEmitter<TreeEvents>;
+  private _nodeProxy?: BTreeNode;
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
+  get sessionId(): string | null { return null; }
 
-const mockQuery = vi.mocked(query);
+  setResult(msg: AgentMessage): void {
+    this.resultMessage = msg;
+  }
+
+  /** Provide the tree events emitter and a node proxy so wrapElicitation can emit declined events. */
+  withContext(events: TypedEventEmitter<TreeEvents>, nodeProxy: BTreeNode): this {
+    this._events = events;
+    this._nodeProxy = nodeProxy;
+    return this;
+  }
+
+  async *send(_prompt: string, options?: AgentSendOptions): AsyncIterable<AgentMessage> {
+    // Simulate elicitation: if events/node context is available, use wrapElicitation
+    // to handle both the handler-present and handler-absent (declined) paths.
+    if (this._events && this._nodeProxy) {
+      const wrapped = wrapElicitation(options?.onElicitation, this._nodeProxy, this._events);
+      await wrapped(testRequest, { signal: new AbortController().signal });
+    } else if (options?.onElicitation) {
+      await options.onElicitation(testRequest, { signal: new AbortController().signal });
+    }
+    if (options?.onMessage) {
+      try { options.onMessage(this.resultMessage); } catch { /* swallowed */ }
+    }
+    yield this.resultMessage;
+  }
+
+  getInfo(): AgentInfo { return { name: this.name }; }
+  async close(): Promise<void> {}
+}
 
 const testRequest = {
   serverName: 'test-mcp-server',
@@ -18,18 +55,6 @@ const testRequest = {
   mode: 'form' as const,
   requestedSchema: { type: 'object', properties: { token: { type: 'string' } } },
 };
-
-function setupMockQuery() {
-  mockQuery.mockImplementation(async function* (args: any) {
-    const handler = args.options.onElicitation;
-    if (handler) {
-      await handler(testRequest, { signal: new AbortController().signal });
-    }
-    yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
-  } as any);
-}
-
-import { AgentSelectionStrategy } from '../strategies/agent-selection.js';
 
 describe('Strategy elicitation integration', () => {
   beforeEach(() => {
@@ -39,35 +64,23 @@ describe('Strategy elicitation integration', () => {
   it('strategy inherits onElicitation from tree context', async () => {
     const handler = vi.fn().mockResolvedValue({ action: 'accept', content: { token: 'abc' } });
 
-    // Mock that triggers elicitation during the strategy SDK call, then
-    // returns a valid ordering so the selector succeeds. The second call
-    // is for the AgentNode itself (the action child selected by the strategy).
-    let callCount = 0;
-    mockQuery.mockImplementation(async function* (args: any) {
-      callCount++;
-      const onElicit = args.options.onElicitation;
-      if (callCount === 1 && onElicit) {
-        // Strategy SDK call — invoke elicitation
-        await onElicit(testRequest, { signal: new AbortController().signal });
-      }
-      if (callCount === 1) {
-        // Strategy call — return ordering
-        yield {
-          type: 'result',
-          subtype: 'success',
-          structured_output: { ordering: ['worker'], reasoning: 'only one' },
-          total_cost_usd: 0.01,
-        };
-      } else {
-        // Agent call
-        yield { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 0.01 };
-      }
-    } as any);
+    // Strategy agent triggers elicitation during its send(), then returns
+    // a valid ordering so the selector succeeds.
+    const strategyAgent = new ElicitationStubAgent({ name: 'strategy' });
+    strategyAgent.setResult({
+      type: 'result',
+      subtype: 'success',
+      output: { ordering: ['worker'], reasoning: 'only one' },
+      cost: 0.01,
+    });
+
+    // Worker agent just succeeds
+    const workerAgent = new ElicitationStubAgent({ name: 'worker' });
 
     const tree = new TreeBuilder('test')
       .onElicitation(handler)
-      .selector('root', { strategy: new AgentSelectionStrategy({ prompt: 'Pick best' }) }, (b) => {
-        b.agent('worker', { prompt: 'do work' });
+      .selector('root', { strategy: new AgentSelectionStrategy({ prompt: 'Pick best', agent: strategyAgent }) }, (b) => {
+        b.agent('worker', { agent: workerAgent, prompt: 'do work' });
       })
       .build();
 
@@ -83,7 +96,6 @@ describe('Strategy elicitation integration', () => {
 describe('Elicitation integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    setupMockQuery();
   });
 
   it('tree-level onElicitation is inherited by AgentNodes', async () => {
@@ -92,7 +104,7 @@ describe('Elicitation integration', () => {
     const tree = new TreeBuilder('test')
       .onElicitation(handler)
       .sequence('root', (b) => {
-        b.agent('worker', { prompt: 'do work' });
+        b.agent('worker', { agent: new ElicitationStubAgent({ name: 'worker' }), prompt: 'do work' });
       })
       .build();
 
@@ -112,7 +124,7 @@ describe('Elicitation integration', () => {
       .onElicitation(treeHandler)
       .sequence('root', (b) => {
         b.sequence('scoped', { context: { onElicitation: subtreeHandler } }, (b) => {
-          b.agent('inner-agent', { prompt: 'inner work' });
+          b.agent('inner-agent', { agent: new ElicitationStubAgent({ name: 'inner-agent' }), prompt: 'inner work' });
         });
       })
       .build();
@@ -124,11 +136,21 @@ describe('Elicitation integration', () => {
   });
 
   it('emits agent:elicitation_declined when no handler exists at any level', async () => {
+    // Use a stub that routes through wrapElicitation to emit the declined event
+    // when no handler is provided via context.
+    const workerAgent = new ElicitationStubAgent({ name: 'worker' });
+
     const tree = new TreeBuilder('test')
       .sequence('root', (b) => {
-        b.agent('worker', { prompt: 'do work' });
+        b.agent('worker', { agent: workerAgent, prompt: 'do work' });
       })
       .build();
+
+    // Provide the tree-level events emitter so wrapElicitation can emit the declined event.
+    // This simulates the real SDK flow where the agent wraps the handler before calling the SDK.
+    // We use a stub node proxy since the actual AgentNode isn't accessible here.
+    const nodeProxy = { id: 'worker', name: 'worker' } as BTreeNode;
+    workerAgent.withContext(tree.events, nodeProxy);
 
     const declineSpy = vi.fn();
     tree.events.on('agent:elicitation_declined', declineSpy);
@@ -140,20 +162,22 @@ describe('Elicitation integration', () => {
     );
   });
 
-  it('node-level options.onElicitation overrides context-level', async () => {
+  it('scoped context onElicitation overrides tree-level', async () => {
     const treeHandler = vi.fn().mockResolvedValue({ action: 'accept' });
-    const nodeHandler = vi.fn().mockResolvedValue({ action: 'accept' });
+    const scopedHandler = vi.fn().mockResolvedValue({ action: 'accept' });
 
     const tree = new TreeBuilder('test')
       .onElicitation(treeHandler)
       .sequence('root', (b) => {
-        b.agent('worker', { prompt: 'do work', options: { onElicitation: nodeHandler } });
+        b.sequence('scoped', { context: { onElicitation: scopedHandler } }, (b) => {
+          b.agent('worker', { agent: new ElicitationStubAgent({ name: 'worker' }), prompt: 'do work' });
+        });
       })
       .build();
 
     await tree.tick();
 
-    expect(nodeHandler).toHaveBeenCalled();
+    expect(scopedHandler).toHaveBeenCalled();
     expect(treeHandler).not.toHaveBeenCalled();
   });
 
@@ -163,7 +187,7 @@ describe('Elicitation integration', () => {
     const tree = new TreeBuilder('test')
       .sequence('root', { context: { onElicitation: handler } }, (b) => {
         b.retry('with-retry', { maxAttempts: 2 }, (b) => {
-          b.agent('deep-agent', { prompt: 'deep work' });
+          b.agent('deep-agent', { agent: new ElicitationStubAgent({ name: 'deep-agent' }), prompt: 'deep work' });
         });
       })
       .build();
@@ -179,7 +203,7 @@ describe('Elicitation integration', () => {
     const tree = new TreeBuilder('test')
       .onElicitation(handler)
       .sequence('root', (b) => {
-        b.agent('worker', { prompt: 'do work' });
+        b.agent('worker', { agent: new ElicitationStubAgent({ name: 'worker' }), prompt: 'do work' });
       })
       .build();
 

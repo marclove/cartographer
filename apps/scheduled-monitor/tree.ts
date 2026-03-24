@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import { TreeBuilder, NodeStatus } from 'cartographer';
+import { TreeBuilder, NodeStatus, ClaudeSDKAgent } from 'cartographer';
 import {
   HealthAssessmentSchema,
   IncidentReportSchema,
@@ -24,6 +24,14 @@ import {
   clearIncidentState,
   logHealthy,
 } from './actions.js';
+import {
+    assessHealthAgent,
+    incidentReportAgent,
+    statusUpdateAgent,
+    resolutionAgent
+} from './agents.js';
+
+// --- Tree definition ---
 
 /**
  * Builds the health monitor behavior tree.
@@ -68,19 +76,9 @@ export function buildHealthMonitor(baseUrl: string) {
       b.action('update-history', updateHistory);
 
       // AI health assessment with timeout fallback.
-      // Wrapped in alwaysSucceed so the pipeline continues even
-      // if the agent times out — stale assessment is better than
-      // no response at all.
       b.alwaysSucceed('assess-with-fallback', (b) => {
         b.timeout('assess-timeout', { timeoutMs: 15_000 }, (b) => {
-          b.agent('assess-health', {
-            prompt: assessHealthPrompt,
-            options: {
-              model: 'claude-haiku-4-5',
-              effort: 'low',
-              outputFormat: { type: 'json_schema', schema: z.toJSONSchema(HealthAssessmentSchema) as any },
-            },
-          });
+          b.agent('assess-health', { agent: assessHealthAgent, prompt: assessHealthPrompt });
         });
       });
 
@@ -93,23 +91,11 @@ export function buildHealthMonitor(baseUrl: string) {
             // New outage: draft initial incident report
             b.sequence('new-outage', (b) => {
               b.condition('no-active-incident', noActiveIncident);
-              b.agent('draft-incident-report', {
-                prompt: draftIncidentReportPrompt,
-                options: {
-                  model: 'claude-haiku-4-5',
-                  outputFormat: { type: 'json_schema', schema: z.toJSONSchema(IncidentReportSchema) as any },
-                },
-              });
+              b.agent('draft-incident-report', { agent: incidentReportAgent, prompt: draftIncidentReportPrompt });
             });
             // Ongoing outage: periodic status update (throttled)
             b.guard('throttle-updates', { condition: enoughTimeSinceLastUpdate }, (b) => {
-              b.agent('draft-status-update', {
-                prompt: draftStatusUpdatePrompt,
-                options: {
-                  model: 'claude-haiku-4-5',
-                  outputFormat: { type: 'json_schema', schema: z.toJSONSchema(StatusUpdateSchema) as any },
-                },
-              });
+              b.agent('draft-status-update', { agent: statusUpdateAgent, prompt: draftStatusUpdatePrompt });
             });
             // Fallback: no update needed this tick
             b.action('skip-update', () => NodeStatus.SUCCESS);
@@ -120,13 +106,7 @@ export function buildHealthMonitor(baseUrl: string) {
         // Recovery path
         b.sequence('recovery-path', (b) => {
           b.condition('was-down-now-healthy', wasDownNowHealthy);
-          b.agent('draft-resolution', {
-            prompt: draftResolutionPrompt,
-            options: {
-              model: 'claude-haiku-4-5',
-              outputFormat: { type: 'json_schema', schema: z.toJSONSchema(ResolutionSummarySchema) as any },
-            },
-          });
+          b.agent('draft-resolution', { agent: resolutionAgent, prompt: draftResolutionPrompt });
           b.action('clear-incident', clearIncidentState);
         });
 
@@ -134,8 +114,6 @@ export function buildHealthMonitor(baseUrl: string) {
         b.action('log-healthy', logHealthy);
       });
 
-      // Increment cycle count at the end so it reflects completed cycles,
-      // matching TreeScheduler.cycleCount and dashboard semantics.
       b.action('increment-cycle', incrementCycleCount);
     })
     .build();

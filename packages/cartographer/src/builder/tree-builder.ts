@@ -85,6 +85,7 @@ function resolveStrategy(registry: TreeRegistry | undefined, ref: string): AnySt
  *       b.action('charge', async () => NodeStatus.SUCCESS);
  *     });
  *     b.agent('confirm', {
+ *       agent: confirmAgent,
  *       prompt: 'Generate an order confirmation message',
  *     });
  *   })
@@ -575,6 +576,7 @@ function applyContextOverrides(node: BTreeNode, context?: Partial<TreeContext>):
  *     });
  *
  *     b.agent('confirm', {
+ *       agent: confirmAgent,
  *       prompt: 'Generate a brief order confirmation message',
  *     });
  *   })

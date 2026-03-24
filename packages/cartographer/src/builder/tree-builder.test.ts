@@ -6,6 +6,9 @@ import { AgentSelectionStrategy } from '../strategies/agent-selection.js';
 import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
 import { TreeRegistry } from '../config/registry.js';
 import { DefaultExecutionStrategy } from '../strategies/default-execution.js';
+import { TestAgent } from '../agent/test-agent.js';
+
+const stubAgent = new TestAgent({ name: 'stub' });
 
 const flush = () => new Promise(r => setTimeout(r, 0));
 
@@ -111,7 +114,7 @@ describe('TreeBuilder', () => {
 
   it('supports strategy on selector', async () => {
     const tree = new TreeBuilder('strat-tree')
-      .selector('root', { strategy: new AgentSelectionStrategy({ prompt: 'test' }) }, (s) =>
+      .selector('root', { strategy: new AgentSelectionStrategy({ prompt: 'test', agent: stubAgent }) }, (s) =>
         s.action('only', () => NodeStatus.SUCCESS)
       )
       .build();
@@ -124,6 +127,7 @@ describe('TreeBuilder', () => {
         s
           .condition('check', () => true)
           .agent('classify', {
+            agent: stubAgent,
             prompt: 'Classify this',
           })
       )
@@ -512,7 +516,7 @@ describe('SingleChildBuilder methods', () => {
   it('agent() inside a decorator', () => {
     const tree = new TreeBuilder('test')
       .inverter('root', (b) => {
-        b.agent('ai', { prompt: 'test' });
+        b.agent('ai', { agent: stubAgent, prompt: 'test' });
       })
       .build();
     expect(tree).toBeDefined();

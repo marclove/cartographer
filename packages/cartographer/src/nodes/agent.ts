@@ -1,104 +1,45 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
 import { BaseNode } from './base.js';
 import { NodeStatus } from '../types.js';
 import type { AgentNodeConfig, BTreeNode, TreeContext } from '../types.js';
 import type { NodeState } from '../core/serialization.js';
-import { createBlackboardMcpServer } from '../agent/blackboard-mcp.js';
-import { emitMessageEvents, wrapElicitation } from '../agent/sdk-helpers.js';
+import type { AgentMessage, AgentInfo } from '../agent/agent.js';
 import { computeContentHash } from '../core/content-hash.js';
 
 /**
- * A leaf node that calls the Claude SDK when ticked.
+ * A leaf node that delegates prompt processing to an {@link Agent}.
  *
- * `AgentNode` brings AI reasoning into the behavior tree. Every call is
- * an agentic SDK invocation — Claude always has read/write access to the
- * blackboard via a built-in MCP server, and you can configure additional
- * tools, MCP servers, system prompts, turn limits, budget caps, and any
- * other SDK option via the `options` field.
- *
- * To request **structured output**, set `options.outputFormat` with a
- * JSON schema. The SDK validates the response and the parsed result is
- * stored on the blackboard at `{name}:output`. You can combine structured
- * output with tools, multi-turn interaction, and all other options.
- *
- * Without `outputFormat`, the raw text response is stored on the blackboard.
- *
- * ```ts
- * // Structured output with schema validation
- * const classify = new AgentNode({
- *   name: 'classify-intent',
- *   prompt: (ctx) => `Classify this message: ${ctx.blackboard.get('userMessage')}`,
- *   options: {
- *     model: 'claude-haiku-4-5-20251001',
- *     effort: 'low',
- *     outputFormat: {
- *       type: 'json_schema',
- *       schema: {
- *         type: 'object',
- *         properties: {
- *           intent: { type: 'string' },
- *           confidence: { type: 'number' },
- *         },
- *         required: ['intent', 'confidence'],
- *       },
- *     },
- *   },
- *   mapResult: (output, ctx) => {
- *     const { intent, confidence } = output as { intent: string; confidence: number };
- *     ctx.blackboard.set('intent', intent);
- *     return confidence >= 0.8 ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
- *   },
- * });
- * ```
- *
- * ```ts
- * // Multi-turn with tools
- * const research = new AgentNode({
- *   name: 'research-agent',
- *   prompt: (ctx) => `Research this topic: ${ctx.blackboard.get('topic')}`,
- *   options: {
- *     systemPrompt: 'You are a concise research assistant.',
- *     allowedTools: ['web-search', 'read-url'],
- *     maxTurns: 10,
- *     maxBudgetUsd: 0.25,
- *   },
- *   blackboardNamespace: 'research',
- * });
- * ```
+ * `AgentNode` brings AI reasoning into the behavior tree. It sends a
+ * prompt to its configured Agent and iterates the response messages.
+ * The Agent handles all provider-specific concerns (SDK configuration,
+ * MCP servers, structured output, etc.) while AgentNode focuses on
+ * BT integration: prompt resolution, event emission, blackboard I/O,
+ * `mapResult`, and caching.
  *
  * ---
  *
  * ## Blackboard namespace
  *
- * When `blackboardNamespace` is set, Claude's MCP tools operate on a
- * scoped view of the blackboard. Reads and writes are prefixed with the
- * namespace, keeping the agent's data isolated from other nodes. The full
- * prefixed keys (e.g. `research:output`) remain accessible from the root
- * blackboard.
+ * When `blackboardNamespace` is set, the agent accesses a scoped view
+ * of the blackboard. Reads and writes are prefixed with the namespace,
+ * keeping the agent's data isolated from other nodes. The full prefixed
+ * keys (e.g. `research:output`) remain accessible from the root blackboard.
  *
  * ## Result caching
  *
  * When `cache: true`, the status returned by the first successful execution
  * is stored internally and returned on all subsequent ticks without calling
- * the SDK. The cache is cleared when `reset()` is called.
+ * the agent. The cache is cleared when `reset()` is called.
  *
  * ## Events emitted
  *
  * | Event | When |
  * |---|---|
- * | `agent:prompt` | After the prompt is resolved, before calling the SDK |
- * | `agent:thinking` | When Claude produces a thinking (chain-of-thought) block |
- * | `agent:text` | When Claude produces a text content block |
+ * | `agent:prompt` | After the prompt is resolved, before calling the agent |
+ * | `agent:thinking` | When the agent produces a thinking (chain-of-thought) block |
+ * | `agent:text` | When the agent produces a text content block |
  * | `agent:tool_use` | For each tool call the agent makes |
- * | `agent:response` | When the SDK returns a successful final result |
- * | `agent:error` | When the SDK returns an error result |
- * | `agent:stream` | For each raw streaming delta event |
- * | `agent:message` | For every raw SDK message (catch-all) |
- * | `agent:tool_progress` | When a tool reports execution progress |
- * | `agent:init` | When the SDK emits a session init message |
- * | `agent:status` | When the SDK emits a status change |
- * | `agent:rate_limit` | When the SDK reports a rate limit event |
- * | `agent:elicitation_declined` | When an MCP server requests elicitation and no handler is configured |
+ * | `agent:response` | When the agent returns a successful final result |
+ * | `agent:error` | When the agent returns an error result |
  */
 export class AgentNode extends BaseNode {
   private config: AgentNodeConfig;
@@ -111,38 +52,14 @@ export class AgentNode extends BaseNode {
   private cachedStatus: NodeStatus | null = null;
   private _lastTerminalStatus: NodeStatus | null = null;
 
-  /**
-   * The `AbortController` for the currently in-flight SDK `query()` call.
-   * `null` when no call is in progress. Set at the start of `execute()`
-   * and cleared when it completes (success or failure).
-   */
-  private activeAbortController: AbortController | null = null;
-
-  /**
-   * Create a new agent node.
-   *
-   * @param config - The agent configuration including prompt, SDK options,
-   *   optional blackboard namespace, caching behavior, and result mapping.
-   *   See {@link AgentNodeConfig} for full details on each field.
-   */
   constructor(config: AgentNodeConfig) {
     super(config.name, config.id);
-
-    if (config.options?.mcpServers && 'blackboard' in config.options.mcpServers) {
-      throw new Error(
-        `AgentNode "${config.name}": the MCP server name "blackboard" is reserved. ` +
-        'AgentNode automatically injects a built-in blackboard MCP server under this name ' +
-        'to give Claude read/write access to the tree\'s blackboard. ' +
-        'Rename your MCP server to avoid the conflict (e.g. "my-blackboard").',
-      );
-    }
-
     this.config = config;
   }
 
-  /** Read-only access to the agent's SDK options for introspection (e.g. dashboard API). */
-  get agentOptions(): Partial<AgentNodeConfig['options']> & { model?: string; allowedTools?: string[]; mcpServers?: Record<string, unknown> } {
-    return this.config.options ?? {};
+  /** Read-only access to agent metadata for introspection (e.g. dashboard API). */
+  get agentOptions(): AgentInfo {
+    return this.config.agent.getInfo();
   }
 
   /**
@@ -158,95 +75,38 @@ export class AgentNode extends BaseNode {
   }
 
   /**
-   * Clear the cached status so the next tick calls the SDK again.
-   *
-   * Only has an effect when `cache: true` was set in the config. Has no
-   * effect when caching is disabled.
+   * Clear the cached status so the next tick calls the agent again.
    */
   reset(): void {
     this.cachedStatus = null;
-    this.activeAbortController = null;
     this._inflightState = null;
   }
 
   /**
-   * Abort the in-flight SDK request, if any.
-   *
-   * Called by `BehaviorTree.abort()` when the tree is aborted. Signals the
-   * `AbortController` passed to the SDK's `query()`, which cancels the
-   * underlying API request.
+   * Abort the in-flight agent call, if any.
    */
   abort(): void {
     const pending = this._inflightState?.promise;
-    AgentNode.catchSdkAbortRejections();
-    this.activeAbortController?.abort();
     this._inflightState = null;
-    // The abort causes the SDK child process to reject. Catch the orphaned
-    // promise to prevent an unhandled rejection.
     pending?.catch(() => {});
   }
 
   /**
-   * Cancel the in-flight SDK request without clearing cached results.
+   * Cancel the in-flight agent call without clearing cached results.
    *
    * Unlike {@link abort}, `interrupt()` preserves the `cachedStatus` from
-   * any previously completed execution. This means an agent that already
-   * returned a terminal result and was cached will continue to return that
-   * cached result after the interrupt. Only unsettled in-flight work is
-   * cancelled.
-   *
-   * Called by the tree runner when it needs to stop pending work (e.g.,
-   * before processing a new message) without fully resetting the tree.
+   * any previously completed execution.
    */
   override interrupt(): void {
     const pending = this._inflightState?.promise;
-    AgentNode.catchSdkAbortRejections();
-    this.activeAbortController?.abort();
     this._inflightState = null;
-    // The abort causes the SDK child process to reject. Catch the orphaned
-    // promise to prevent an unhandled rejection.
     pending?.catch(() => {});
     // Deliberately does NOT clear cachedStatus — previously completed
     // cached results survive interrupt.
   }
 
-  private static sdkAbortHandlerInstalled = false;
-
-  /**
-   * The SDK's handleControlRequest fires an internal write() to the child
-   * process during abort. That promise is detached — we can't .catch() it
-   * directly. Instead, listen for the unhandled rejection, match it by
-   * message + stack, and retroactively handle the promise. This triggers
-   * Node's 'rejectionHandled' event, which tells test runners to disregard it.
-   *
-   * Installed once for the process lifetime — the handler only matches
-   * `Operation aborted` errors with `handleControlRequest` in the stack,
-   * so there is no false-positive risk.
-   */
-  private static catchSdkAbortRejections(): void {
-    if (AgentNode.sdkAbortHandlerInstalled) return;
-    AgentNode.sdkAbortHandlerInstalled = true;
-    process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
-      if (
-        reason instanceof Error &&
-        reason.message === 'Operation aborted' &&
-        reason.stack?.includes('handleControlRequest')
-      ) {
-        promise.catch(() => {});
-      }
-    });
-  }
-
   /**
    * Serialize this node's execution state for persistence.
-   *
-   * Saves the last terminal status (`SUCCESS` or `FAILURE`) so that a
-   * restored tree knows whether this agent had already completed. If
-   * the agent has not yet reached a terminal status, returns an empty
-   * object.
-   *
-   * @returns A {@link NodeState} containing `lastStatus` if a terminal
-   *   result exists, or an empty object otherwise.
    */
   override serialize(): NodeState {
     return this._lastTerminalStatus !== null
@@ -256,14 +116,6 @@ export class AgentNode extends BaseNode {
 
   /**
    * Restore this node's execution state from a previously serialized snapshot.
-   *
-   * Rehydrates the last terminal status so the tree can resume correctly
-   * after a process restart. Parent composites use this to know whether
-   * the agent had already completed in a prior run.
-   *
-   * @param state - The serialized state produced by {@link serialize}.
-   * @param _hashToNode - Unused by `AgentNode` (leaf nodes have no children
-   *   to resolve), but required by the {@link BTreeNode} interface.
    */
   override restore(state: NodeState, _hashToNode: Map<string, BTreeNode>): void {
     if (state.lastStatus !== undefined) {
@@ -274,22 +126,11 @@ export class AgentNode extends BaseNode {
   /**
    * Run the agent's tick logic.
    *
-   * On the first tick, kicks off the SDK `query()` call in the background
-   * via {@link _executeSDKCall} and immediately returns `RUNNING`. On
-   * subsequent ticks, polls the in-flight state for a completed result or
-   * error. When the SDK call finishes, the resolved status is returned
-   * (and cached if `cache: true`).
-   *
-   * If caching is enabled and a cached result exists from a prior
-   * execution, it is returned immediately without contacting the SDK.
-   *
-   * @param context - The tree context carrying blackboard, events, and
-   *   optional abort signal.
-   * @returns `RUNNING` while the SDK call is in progress, or the terminal
-   *   status (`SUCCESS` / `FAILURE`) once it completes.
+   * On the first tick, kicks off the agent call in the background and
+   * returns `RUNNING`. On subsequent ticks, polls for a completed result.
    */
   protected async execute(context: TreeContext): Promise<NodeStatus> {
-    // Return the cached result from a previous tick without calling the SDK.
+    // Return the cached result from a previous tick.
     if (this.config.cache && this.cachedStatus !== null) {
       return this.cachedStatus;
     }
@@ -313,9 +154,9 @@ export class AgentNode extends BaseNode {
       return NodeStatus.RUNNING;
     }
 
-    // Start path: kick off the SDK call in the background
+    // Start path: kick off the agent call in the background
     const state: { promise: Promise<NodeStatus>; result?: NodeStatus; error?: Error } = {
-      promise: this._executeSDKCall(context),
+      promise: this._executeAgentCall(context),
     };
     state.promise.then(
       (status) => { state.result = status; },
@@ -326,147 +167,104 @@ export class AgentNode extends BaseNode {
   }
 
   /**
-   * The actual SDK call logic, extracted from execute() so it can run
+   * The actual agent call logic, extracted from execute() so it can run
    * in the background while execute() returns RUNNING immediately.
    */
-  private async _executeSDKCall(context: TreeContext): Promise<NodeStatus> {
-    // Resolve the prompt — it may be a static string or a function that
-    // builds the prompt dynamically from the current context.
+  private async _executeAgentCall(context: TreeContext): Promise<NodeStatus> {
     const prompt = typeof this.config.prompt === 'function'
       ? this.config.prompt(context)
       : this.config.prompt;
 
-    context.events.emit('agent:prompt', {
-      node: this,
-      prompt,
+    context.events.emit('agent:prompt', { node: this, prompt });
+
+    const messages = this.config.agent.send(prompt, {
+      blackboard: context.blackboard,
+      blackboardNamespace: this.config.blackboardNamespace,
+      signal: context.signal,
+      onElicitation: context.onElicitation,
+      onMessage: (msg) => this.emitAgentEvent(msg, context),
     });
 
-    // Build MCP servers — blackboard is always present, user servers merged in.
-    const blackboardServer = createBlackboardMcpServer(
-      context.blackboard,
-      this.config.blackboardNamespace,
-    );
-
-    const userOptions = this.config.options ?? {};
-
-    const mcpServers: Record<string, unknown> = {
-      blackboard: blackboardServer,
-      ...userOptions.mcpServers,
-    };
-
-    const allowedTools = [
-      ...(userOptions.allowedTools ?? []),
-      'mcp__blackboard__*',
-    ];
-
-    // Strip the $schema meta-property from outputFormat.schema if present —
-    // the Claude SDK does not accept it, and Zod's toJSONSchema() adds it.
-    let { outputFormat } = userOptions;
-    if (outputFormat && 'schema' in outputFormat) {
-      const { $schema, ...schema } = outputFormat.schema as Record<string, unknown>;
-      if ($schema) {
-        outputFormat = { ...outputFormat, schema } as typeof outputFormat;
-      }
-    }
-
-    // Create a fresh AbortController for this execution so abort() can
-    // cancel the in-flight SDK request. Bridge the tree's abort signal so
-    // that BehaviorTree.abort() also cancels this SDK call.
-    const abortController = new AbortController();
-    if (context.signal) {
-      if (context.signal.aborted) {
-        abortController.abort();
-      } else {
-        context.signal.addEventListener('abort', () => abortController.abort(), { once: true });
-      }
-    }
-    this.activeAbortController = abortController;
-
-    // Resolve elicitation handler: node-level > context-level > decline with event
-    const userElicitationHandler = userOptions.onElicitation ?? context.onElicitation;
-    const wrappedOnElicitation = wrapElicitation(userElicitationHandler, this, context.events);
-
-    const { onElicitation: _nodeElicitation, ...restUserOptions } = userOptions;
-
-    const options: Record<string, unknown> = {
-      ...restUserOptions,
-      mcpServers,
-      allowedTools,
-      permissionMode: restUserOptions.permissionMode ?? 'default',
-      ...(outputFormat && { outputFormat }),
-      abortController,
-      onElicitation: wrappedOnElicitation,
-    };
-
-    try {
-      for await (const message of query({ prompt, options } as any)) {
-        const msg = message as any;
-
-        emitMessageEvents(msg, this, context.events);
-
-        if (msg.type === 'result') {
-          const cost = msg.total_cost_usd;
-
-          if (msg.subtype === 'success') {
-            // When outputFormat was provided, prefer the SDK's pre-parsed
-            // structured_output; fall back to JSON-parsing the raw result
-            // string, then the string itself.
-            let output: unknown;
-            if (userOptions.outputFormat) {
-              output = msg.structured_output;
-              if (output === undefined && typeof msg.result === 'string') {
-                try {
-                  output = JSON.parse(msg.result);
-                } catch {
-                  output = msg.result;
-                }
-              }
-            } else {
-              output = msg.result;
-            }
-
-            context.events.emit('agent:response', {
-              node: this,
-              result: output,
-              cost,
-              modelUsage: msg.modelUsage,
-            });
-
-            if (output !== undefined) {
-              const ns = this.config.blackboardNamespace;
-              const key = ns ? `${ns}:${this.name}:output` : `${this.name}:output`;
-              context.blackboard.set(key, output);
-            }
-
-            if (this.config.mapResult) {
-              const status = this.config.mapResult(output, context);
-              if (this.config.cache) {
-                this.cachedStatus = status;
-              }
-              return status;
-            }
-
-            if (this.config.cache) {
-              this.cachedStatus = NodeStatus.SUCCESS;
-            }
-            return NodeStatus.SUCCESS;
-          }
-
-          context.events.emit('agent:error', {
-            node: this,
-            subtype: msg.subtype,
-            errors: msg.errors,
-            permissionDenials: msg.permission_denials,
-            cost,
-            modelUsage: msg.modelUsage,
-          });
-          return NodeStatus.FAILURE;
+    for await (const msg of messages) {
+      if (msg.type === 'result') {
+        if (msg.subtype === 'success') {
+          return this.handleSuccess(msg.output, msg.cost, context);
         }
-      }
 
-      return NodeStatus.FAILURE;
-    } finally {
-      this.activeAbortController = null;
+        context.events.emit('agent:error', {
+          node: this,
+          subtype: 'error',
+          errors: (msg.errors ?? []) as string[],
+          cost: msg.cost,
+        });
+        return NodeStatus.FAILURE;
+      }
+    }
+
+    return NodeStatus.FAILURE;
+  }
+
+  /**
+   * Handle a successful agent result: store on blackboard, apply mapResult.
+   */
+  private handleSuccess(output: unknown, cost: number | undefined, context: TreeContext): NodeStatus {
+    context.events.emit('agent:response', {
+      node: this,
+      result: output,
+      cost,
+    });
+
+    if (output !== undefined) {
+      const ns = this.config.blackboardNamespace;
+      const key = ns ? `${ns}:${this.name}:output` : `${this.name}:output`;
+      context.blackboard.set(key, output);
+    }
+
+    if (this.config.mapResult) {
+      const status = this.config.mapResult(output, context);
+      if (this.config.cache) {
+        this.cachedStatus = status;
+      }
+      return status;
+    }
+
+    if (this.config.cache) {
+      this.cachedStatus = NodeStatus.SUCCESS;
+    }
+    return NodeStatus.SUCCESS;
+  }
+
+  /**
+   * Map an AgentMessage to the corresponding BT agent:* event.
+   */
+  private emitAgentEvent(msg: AgentMessage, context: TreeContext): void {
+    switch (msg.type) {
+      case 'thinking':
+        context.events.emit('agent:thinking', { node: this, thinking: msg.content });
+        break;
+      case 'text':
+        context.events.emit('agent:text', { node: this, text: msg.content });
+        break;
+      case 'tool_use':
+        context.events.emit('agent:tool_use', { node: this, tool: msg.name, input: msg.input });
+        break;
+      case 'provider_event': {
+        const d = msg.data as Record<string, unknown>;
+        const eventMap: Record<string, string> = {
+          stream_event: 'agent:stream',
+          tool_progress: 'agent:tool_progress',
+          init: 'agent:init',
+          status: 'agent:status',
+          rate_limit: 'agent:rate_limit',
+          elicitation_declined: 'agent:elicitation_declined',
+        };
+        const eventName = eventMap[msg.subtype];
+        if (eventName) {
+          (context.events.emit as any)(eventName, { node: this, ...d });
+        }
+        break;
+      }
+      // result events are emitted directly in _executeAgentCall
     }
   }
 }
