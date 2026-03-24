@@ -65,7 +65,7 @@ export class ActorServer {
     this.configPort = options.port ?? parseInt(process.env.PORT ?? '3148', 10);
     this.context = options.context ?? {};
     this.topologyPolicy = options.topologyPolicy ?? 'fail';
-    this.maxQueueDepth = options.maxQueueDepth ?? 16;
+    this.maxQueueDepth = options.maxQueueDepth ?? parseInt(process.env.CARTOGRAPHER_MAX_QUEUE_DEPTH ?? '16', 10);
   }
 
   async start(): Promise<{ port: number }> {

@@ -207,7 +207,7 @@ const server = new ActorServer({
   port: 3148, // Optional (default: PORT env var or 3148)
   context: { tenantId: "abc" }, // Optional: written to blackboard as context:*
   topologyPolicy: "fail", // Optional: 'fail' or 'reset' on tree shape change
-  maxQueueDepth: 16, // Optional: max queued messages while processing (default: 16)
+  maxQueueDepth: 16, // Optional: max queued messages (default: CARTOGRAPHER_MAX_QUEUE_DEPTH env or 16)
 });
 
 const { port } = await server.start();
@@ -273,7 +273,7 @@ When a message arrives while the server is processing, it is placed in a bounded
 
 Queued messages are processed in FIFO order. After each message completes, the server drains the next message from the queue automatically. The queue is persisted in the `StateStore`, so messages survive server restarts.
 
-The queue depth is controlled by `maxQueueDepth` (default: 16). When the queue is full, the server returns `429` and the client throws a `QueueFullError`.
+The queue depth is controlled by `maxQueueDepth` (default: `CARTOGRAPHER_MAX_QUEUE_DEPTH` env var, or `16`). When the queue is full, the server returns `429` and the client throws a `QueueFullError`.
 
 The full message lifecycle is observable via SSE events:
 

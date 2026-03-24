@@ -55,7 +55,7 @@ import { ActorServer } from "cartographer";
 | `port`           | `number`                  | `PORT` env or `3148` | Listen port.                                     |
 | `context`        | `Record<string, unknown>` | `{}`                 | Injected into blackboard as `context:*` on init. |
 | `topologyPolicy` | `'fail' \| 'reset'`       | `'fail'`             | Topology mismatch handling.                      |
-| `maxQueueDepth`  | `number`                  | `16`                 | Maximum number of messages that can wait in the queue while the server is processing. Returns `429` when full. |
+| `maxQueueDepth`  | `number`                  | `CARTOGRAPHER_MAX_QUEUE_DEPTH` env or `16` | Maximum number of messages that can wait in the queue while the server is processing. Returns `429` when full. |
 
 ### Methods
 
