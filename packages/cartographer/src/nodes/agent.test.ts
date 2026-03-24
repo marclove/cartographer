@@ -284,22 +284,29 @@ describe('AgentNode - observability events', () => {
     );
   });
 
-  it('emits agent:elicitation_declined via provider_event', async () => {
-    const agent = createAgent([
-      { type: 'provider_event', subtype: 'elicitation_declined', data: { request: { prompt: 'Allow?' } } },
+  it('emits agent:elicitation_declined when no handler is configured', async () => {
+    // Agent that triggers elicitation via the onElicitation callback during send()
+    const elicitAgent = new TestAgent({ name: 'elicit-agent' });
+    const originalSend = elicitAgent.send.bind(elicitAgent);
+    elicitAgent.send = async function* (prompt: string, options?: AgentSendOptions) {
+      if (options?.onElicitation) {
+        await options.onElicitation({ message: 'Allow?' });
+      }
+      yield* originalSend(prompt, options);
+    };
+    elicitAgent.setMessages([
       { type: 'result', subtype: 'success', output: 'done' },
     ]);
 
-    const node = new AgentNode({ name: 'elicit', agent, prompt: 'Work' });
+    const node = new AgentNode({ name: 'elicit', agent: elicitAgent, prompt: 'Work' });
     const ctx = createContext();
+    // No onElicitation on context — wrapElicitation should auto-decline and emit
     const declineSpy = vi.fn();
     ctx.events.on('agent:elicitation_declined', declineSpy);
     await node.tick(ctx);
-    await flush();
-    await node.tick(ctx);
 
     expect(declineSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ request: { prompt: 'Allow?' } }),
+      expect.objectContaining({ request: { message: 'Allow?' } }),
     );
   });
 

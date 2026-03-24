@@ -1,9 +1,7 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import type { Options, SDKMessage, SDKAssistantMessage, SDKResultMessage, SDKSystemMessage, SDKToolProgressMessage, SDKRateLimitEvent } from '@anthropic-ai/claude-agent-sdk';
-import { Agent } from './agent.js';
-import type { AgentConfig, AgentMessage, AgentSendOptions, AgentInfo } from './agent.js';
+import type { Options, SDKMessage, SDKAssistantMessage, SDKResultMessage, SDKSystemMessage, SDKToolProgressMessage, SDKRateLimitEvent, OnElicitation as SDKOnElicitation } from '@anthropic-ai/claude-agent-sdk';
+import type { Agent, AgentConfig, AgentMessage, AgentElicitationRequest, AgentSendOptions, AgentInfo, ThinkingCapable, StreamCapable } from './agent.js';
 import { createBlackboardMcpServer } from './blackboard-mcp.js';
-import type { OnElicitation } from '@anthropic-ai/claude-agent-sdk';
 
 /**
  * Configuration for a ClaudeSDKAgent.
@@ -12,6 +10,8 @@ import type { OnElicitation } from '@anthropic-ai/claude-agent-sdk';
  */
 export type ClaudeSDKAgentConfig = AgentConfig & Partial<Options>;
 
+type ActiveQuery = ReturnType<typeof query> | null
+
 /**
  * Concrete Agent implementation wrapping the Claude Agent SDK V1 stable API.
  *
@@ -19,11 +19,14 @@ export type ClaudeSDKAgentConfig = AgentConfig & Partial<Options>;
  * automatically via the SDK's `resume` option. The agent tracks a private
  * session ID for agents without named sessions.
  */
-export class ClaudeSDKAgent extends Agent {
+export class ClaudeSDKAgent implements Agent, ThinkingCapable, StreamCapable {
+  readonly name: string;
+  readonly supportsThinking = true as const;
+  readonly supportsStreaming = true as const;
   private readonly config: ClaudeSDKAgentConfig;
   private _lastSessionId: string | null = null;
   private _privateSessionId: string | null = null;
-  private _activeQuery: ReturnType<typeof query> | null = null;
+  private _activeQuery: ActiveQuery = null;
   private _closed = false;
 
   /**
@@ -52,7 +55,7 @@ export class ClaudeSDKAgent extends Agent {
    * ```
    */
   constructor(config: ClaudeSDKAgentConfig) {
-    super(config);
+    this.name = config.name;
 
     if (config.mcpServers && 'blackboard' in config.mcpServers) {
       throw new Error(
@@ -146,7 +149,7 @@ export class ClaudeSDKAgent extends Agent {
   async close(): Promise<void> {
     this._closed = true;
     if (this._activeQuery) {
-      (this._activeQuery as any).close?.();
+      (this._activeQuery as ActiveQuery)?.close?.();
       this._activeQuery = null;
     }
   }
@@ -279,22 +282,26 @@ export class ClaudeSDKAgent extends Agent {
     }
 
     // Elicitation: always provide a handler so the SDK never hangs.
-    // Delegates to the user handler if one was provided; otherwise auto-
-    // declines and emits a provider_event so the BT layer can fire
-    // agent:elicitation_declined.
+    // Maps the framework's OnElicitation to the SDK's OnElicitation.
+    // Framework `cancel` maps to SDK `decline`.
     const userElicitation = sendOptions?.onElicitation;
-    const onMessageFn = sendOptions?.onMessage;
-    const onElicitation: OnElicitation = async (request, opts) => {
-      if (userElicitation) return userElicitation(request, opts);
-      if (onMessageFn) {
-        try {
-          onMessageFn({
-            type: 'provider_event',
-            subtype: 'elicitation_declined',
-            data: { request },
-          });
-        } catch { /* swallowed */ }
+    const onElicitation: SDKOnElicitation = async (request, opts) => {
+      const elicitationRequest: AgentElicitationRequest = {
+        message: request.message,
+        ...(request.requestedSchema && { schema: request.requestedSchema as Record<string, unknown> }),
+        ...(request.serverName && { serverName: request.serverName }),
+        ...(request.mode && { mode: request.mode }),
+        ...(request.url && { url: request.url }),
+        ...(request.elicitationId && { elicitationId: request.elicitationId }),
+      };
+      if (userElicitation) {
+        const response = await userElicitation(elicitationRequest, { signal: opts.signal });
+        if (response.action === 'cancel') return { action: 'decline' as const };
+        return response;
       }
+      // No handler — silently decline. Framework-level notification
+      // (agent:elicitation_declined event) is handled by wrapElicitation
+      // in sdk-helpers.ts, not by the adapter.
       return { action: 'decline' as const };
     };
 

@@ -1,5 +1,52 @@
-import type { OnElicitation } from '@anthropic-ai/claude-agent-sdk';
 import type { Blackboard } from '../types.js';
+
+// ──── Framework-owned elicitation types ────
+
+/** Request for interactive input from the user during agent execution. */
+export interface AgentElicitationRequest {
+  /** Human-readable message explaining what input is needed. */
+  message: string;
+  /** JSON Schema describing the expected input shape (form mode). */
+  schema?: Record<string, unknown>;
+  /** Name of the MCP server that triggered the elicitation. */
+  serverName?: string;
+  /** Elicitation mode: 'form' for structured input, 'url' for browser-based auth. */
+  mode?: string;
+  /** URL to open (only for 'url' mode). */
+  url?: string;
+  /** Correlation ID for URL-mode elicitations. */
+  elicitationId?: string;
+}
+
+/**
+ * User response to an elicitation request.
+ *
+ * Three-action model (aligned with ACP's elicitation RFD):
+ * - `accept` — user submitted data
+ * - `decline` — user explicitly rejected
+ * - `cancel` — user dismissed without decision
+ */
+export type AgentElicitationResponse =
+  | { action: 'accept'; data?: unknown }
+  | { action: 'decline' }
+  | { action: 'cancel' };
+
+/** Options passed to elicitation handlers alongside the request. */
+export interface ElicitationOptions {
+  /** Abort signal from the tree context — handlers should observe this for cancellation. */
+  signal?: AbortSignal;
+}
+
+/**
+ * Handler for elicitation requests during agent execution.
+ *
+ * Provider-agnostic — each concrete adapter maps between this
+ * framework type and its provider's elicitation API.
+ */
+export type OnElicitation = (
+  request: AgentElicitationRequest,
+  options?: ElicitationOptions,
+) => Promise<AgentElicitationResponse>;
 
 /**
  * Configuration for constructing an Agent.
@@ -83,52 +130,102 @@ export interface AgentUsage {
   thoughtTokens?: number;
 }
 
-/**
- * Discriminated union of messages yielded by Agent.send().
- * Provider-agnostic — each concrete Agent maps its provider's
- * responses into these types.
- */
-export type AgentMessage =
-  | { type: 'thinking'; content: string }
-  | { type: 'text'; content: string }
-  | { type: 'tool_use'; name: string; input?: unknown }
-  | { type: 'stream'; event: unknown }
-  | { type: 'result'; subtype: 'success'; output: unknown; cost?: number; usage?: AgentUsage }
-  | { type: 'result'; subtype: 'error'; errors?: unknown[]; cost?: number; usage?: AgentUsage }
-  | { type: 'provider_event'; subtype: string; data: unknown }
-  | { type: 'session_start'; sessionId: string };
+// ──── Core message types (every adapter produces these) ────
+
+/** Model text output. */
+export interface AgentTextMessage { type: 'text'; content: string }
+/** Model tool invocation. */
+export interface AgentToolUseMessage { type: 'tool_use'; name: string; input?: unknown }
+/** Successful turn completion. */
+export interface AgentSuccessResult { type: 'result'; subtype: 'success'; output: unknown; cost?: number; usage?: AgentUsage }
+/** Failed turn completion. */
+export interface AgentErrorResult { type: 'result'; subtype: 'error'; errors?: unknown[]; cost?: number; usage?: AgentUsage }
+/** Terminal result — success or error. */
+export type AgentResultMessage = AgentSuccessResult | AgentErrorResult;
+/** Session established or resumed. Yielded first. */
+export interface AgentSessionStartMessage { type: 'session_start'; sessionId: string }
+/** Escape hatch for provider-specific events that don't map to semantic types. */
+export interface AgentProviderEvent { type: 'provider_event'; subtype: string; data: unknown }
+
+// ──── Capability-specific message types ────
+
+/** Extended thinking / reasoning traces. Requires {@link ThinkingCapable}. */
+export interface AgentThinkingMessage { type: 'thinking'; content: string }
+/** Raw streaming events from the provider. Requires {@link StreamCapable}. */
+export interface AgentStreamMessage { type: 'stream'; event: unknown }
+
+// ──── Full message union ────
 
 /**
- * Abstract base class for all agent implementations.
+ * Discriminated union of messages yielded by Agent.send().
+ *
+ * Provider-agnostic — each concrete adapter maps its provider's
+ * responses into these types. Core types are produced by every
+ * adapter; capability-specific types are produced only by adapters
+ * that implement the corresponding capability interface.
+ *
+ * Lifecycle contract: adapters yield `session_start` first
+ * and `result` last.
+ */
+export type AgentMessage =
+  | AgentTextMessage
+  | AgentToolUseMessage
+  | AgentResultMessage
+  | AgentSessionStartMessage
+  | AgentThinkingMessage
+  | AgentStreamMessage
+  | AgentProviderEvent;
+
+// ──── Capability interfaces ────
+
+/** Adapter may yield {@link AgentThinkingMessage} (extended reasoning traces). */
+export interface ThinkingCapable {
+  readonly supportsThinking: true;
+}
+
+/** Adapter may yield {@link AgentStreamMessage} (raw provider streaming events). */
+export interface StreamCapable {
+  readonly supportsStreaming: true;
+}
+
+/** Runtime check for {@link ThinkingCapable}. */
+export function isThinkingCapable(agent: Agent): agent is Agent & ThinkingCapable {
+  return 'supportsThinking' in agent && (agent as Record<string, unknown>).supportsThinking === true;
+}
+
+/** Runtime check for {@link StreamCapable}. */
+export function isStreamCapable(agent: Agent): agent is Agent & StreamCapable {
+  return 'supportsStreaming' in agent && (agent as Record<string, unknown>).supportsStreaming === true;
+}
+
+/**
+ * Port interface for all agent implementations.
  *
  * An Agent represents a configured AI agent that can process prompts
  * and stream responses. Concrete implementations wrap specific providers
- * (e.g., Claude SDK, ACP).
+ * (e.g., Claude SDK, ACP) and implement this interface.
  *
  * The Agent's lifecycle is managed by its creator. Multiple BT nodes
  * and strategies may reference the same Agent instance. Each `send()`
  * call returns a scoped iterable for that turn's responses.
  */
-export abstract class Agent {
+export interface Agent {
+  /** Human-readable name for identification and debugging. */
   readonly name: string;
 
-  constructor(config: AgentConfig) {
-    this.name = config.name;
-  }
-
   /** The active session ID, or null if no session has been created yet. */
-  abstract get sessionId(): string | null;
+  readonly sessionId: string | null;
 
   /**
    * Send a prompt and return an async iterable of response messages
    * scoped to this turn. Each call starts a new turn; conversation
    * history accumulates across turns within the same Agent instance.
    */
-  abstract send(prompt: string, options?: AgentSendOptions): AsyncIterable<AgentMessage>;
+  send(prompt: string, options?: AgentSendOptions): AsyncIterable<AgentMessage>;
 
   /** Return provider-agnostic metadata for dashboard introspection. */
-  abstract getInfo(): AgentInfo;
+  getInfo(): AgentInfo;
 
   /** Clean up resources (e.g., SDK subprocess, ACP session). */
-  abstract close(): Promise<void>;
+  close(): Promise<void>;
 }

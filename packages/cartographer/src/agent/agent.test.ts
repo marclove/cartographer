@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { AgentMessage } from './agent.js';
+import { isThinkingCapable, isStreamCapable } from './agent.js';
 import { TestAgent } from './test-agent.js';
 
 describe('Agent', () => {
@@ -88,5 +89,40 @@ describe('Agent', () => {
 
     await agent.close();
     expect(agent.sessionId).toBeNull();
+  });
+
+  describe('isThinkingCapable', () => {
+    it('returns false for a plain Agent', () => {
+      const agent = new TestAgent({ name: 'plain' });
+      expect(isThinkingCapable(agent)).toBe(false);
+    });
+
+    it('returns true for an agent with supportsThinking: true', () => {
+      const agent = Object.assign(new TestAgent({ name: 'thinker' }), {
+        supportsThinking: true as const,
+      });
+      expect(isThinkingCapable(agent)).toBe(true);
+    });
+
+    it('returns false when supportsThinking is not true', () => {
+      const agent = Object.assign(new TestAgent({ name: 'nope' }), {
+        supportsThinking: false,
+      });
+      expect(isThinkingCapable(agent)).toBe(false);
+    });
+  });
+
+  describe('isStreamCapable', () => {
+    it('returns false for a plain Agent', () => {
+      const agent = new TestAgent({ name: 'plain' });
+      expect(isStreamCapable(agent)).toBe(false);
+    });
+
+    it('returns true for an agent with supportsStreaming: true', () => {
+      const agent = Object.assign(new TestAgent({ name: 'streamer' }), {
+        supportsStreaming: true as const,
+      });
+      expect(isStreamCapable(agent)).toBe(true);
+    });
   });
 });

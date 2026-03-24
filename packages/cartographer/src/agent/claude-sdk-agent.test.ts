@@ -536,7 +536,7 @@ describe('ClaudeSDKAgent', () => {
       expect(callArgs.options.onElicitation).toBeTypeOf('function');
     });
 
-    it('auto-decline calls onMessage with elicitation_declined when no user handler', async () => {
+    it('auto-declines silently when no user handler (framework wrapElicitation handles notification)', async () => {
       mockQuery.mockReturnValue(mockMessages([
         { type: 'result', subtype: 'success', result: 'ok', total_cost_usd: 0 },
       ]) as any);
@@ -553,10 +553,68 @@ describe('ClaudeSDKAgent', () => {
       const result = await handler({ type: 'elicitation', message: 'confirm?' }, {});
 
       expect(result).toEqual({ action: 'decline' });
-      expect(received).toContainEqual(expect.objectContaining({
-        type: 'provider_event',
-        subtype: 'elicitation_declined',
+      // Adapter does NOT emit provider_event — framework-level wrapElicitation
+      // handles the agent:elicitation_declined event instead.
+      const elicitationEvents = received.filter(
+        (m) => m.type === 'provider_event' && (m as any).subtype === 'elicitation_declined',
+      );
+      expect(elicitationEvents).toHaveLength(0);
+    });
+
+    it('maps framework cancel response to SDK decline', async () => {
+      mockQuery.mockReturnValue(mockMessages([
+        { type: 'result', subtype: 'success', result: 'ok', total_cost_usd: 0 },
+      ]) as any);
+
+      const agent = new ClaudeSDKAgent({ name: 'test' });
+      await collectMessages(agent.send('prompt', {
+        onElicitation: async () => ({ action: 'cancel' }),
       }));
+
+      const callArgs = mockQuery.mock.calls[0][0] as any;
+      const sdkHandler = callArgs.options.onElicitation;
+      const result = await sdkHandler({ message: 'confirm?', requestedSchema: { type: 'object' } }, {});
+
+      expect(result).toEqual({ action: 'decline' });
+    });
+
+    it('forwards SDK abort signal to framework elicitation handler', async () => {
+      mockQuery.mockReturnValue(mockMessages([
+        { type: 'result', subtype: 'success', result: 'ok', total_cost_usd: 0 },
+      ]) as any);
+
+      const receivedOptions: any[] = [];
+      const agent = new ClaudeSDKAgent({ name: 'test' });
+      await collectMessages(agent.send('prompt', {
+        onElicitation: async (_req, opts) => {
+          receivedOptions.push(opts);
+          return { action: 'accept' };
+        },
+      }));
+
+      const callArgs = mockQuery.mock.calls[0][0] as any;
+      const sdkHandler = callArgs.options.onElicitation;
+      const signal = AbortSignal.abort();
+      await sdkHandler({ message: 'auth?' }, { signal });
+
+      expect(receivedOptions[0]).toEqual({ signal });
+    });
+
+    it('passes framework accept response through to SDK', async () => {
+      mockQuery.mockReturnValue(mockMessages([
+        { type: 'result', subtype: 'success', result: 'ok', total_cost_usd: 0 },
+      ]) as any);
+
+      const agent = new ClaudeSDKAgent({ name: 'test' });
+      await collectMessages(agent.send('prompt', {
+        onElicitation: async () => ({ action: 'accept', data: { token: 'abc' } }),
+      }));
+
+      const callArgs = mockQuery.mock.calls[0][0] as any;
+      const sdkHandler = callArgs.options.onElicitation;
+      const result = await sdkHandler({ message: 'auth?', requestedSchema: null }, {});
+
+      expect(result).toEqual({ action: 'accept', data: { token: 'abc' } });
     });
   });
 });

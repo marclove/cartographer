@@ -1,12 +1,12 @@
-import type { OnElicitation } from '@anthropic-ai/claude-agent-sdk';
+import type { OnElicitation } from './agent.js';
 import type { BTreeNode, TreeContext, TreeEvents, TypedEventEmitter, AgentStrategyConfig } from '../types.js';
 
 /**
- * Wrap an optional elicitation handler so the SDK always receives a function.
+ * Wrap an optional elicitation handler so callers always receive a function.
  *
- * Used by {@link ClaudeSDKAgent} and the three agent strategies to ensure
- * consistent elicitation behaviour across all agent calls. If a user-provided
- * handler exists it is called directly; otherwise the wrapper emits an
+ * Used by the three agent strategies to ensure consistent elicitation
+ * behaviour across all agent calls. If a user-provided handler exists
+ * it is called directly; otherwise the wrapper emits an
  * `agent:elicitation_declined` event and returns `{ action: 'decline' }`.
  *
  * @param handler - The resolved elicitation handler, or `undefined` if none
@@ -15,16 +15,15 @@ import type { BTreeNode, TreeContext, TreeEvents, TypedEventEmitter, AgentStrate
  *   `agent:elicitation_declined` event payload.
  * @param events - The tree's event emitter, used to emit
  *   `agent:elicitation_declined` when no handler exists.
- * @returns An `OnElicitation` function safe to pass directly to the SDK's
- *   `query()` options.
+ * @returns An {@link OnElicitation} function safe to pass to `Agent.send()`.
  */
 export function wrapElicitation(
   handler: OnElicitation | undefined,
   node: BTreeNode,
   events: TypedEventEmitter<TreeEvents>,
 ): OnElicitation {
-  return async (request, opts) => {
-    if (handler) return handler(request, opts);
+  return async (request, options) => {
+    if (handler) return handler(request, options);
     events.emit('agent:elicitation_declined', { node, request });
     return { action: 'decline' as const };
   };

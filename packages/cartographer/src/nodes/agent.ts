@@ -3,6 +3,7 @@ import { NodeStatus } from '../types.js';
 import type { AgentNodeConfig, BTreeNode, TreeContext, SessionConfig } from '../types.js';
 import type { NodeState } from '../core/serialization.js';
 import type { AgentMessage, AgentInfo, AgentSessionOptions } from '../agent/agent.js';
+import { wrapElicitation } from '../agent/sdk-helpers.js';
 import { computeContentHash } from '../core/content-hash.js';
 
 /**
@@ -252,7 +253,7 @@ export class AgentNode extends BaseNode {
       blackboard: context.blackboard,
       blackboardNamespace: this.config.blackboardNamespace,
       signal: context.signal,
-      onElicitation: context.onElicitation,
+      onElicitation: wrapElicitation(context.onElicitation, this, context.events),
       onMessage: (msg) => this.emitAgentEvent(msg, context),
       session: sessionOpts,
     });
@@ -422,7 +423,6 @@ export class AgentNode extends BaseNode {
           init: 'agent:init',
           status: 'agent:status',
           rate_limit: 'agent:rate_limit',
-          elicitation_declined: 'agent:elicitation_declined',
         };
         const eventName = eventMap[msg.subtype];
         if (eventName) {

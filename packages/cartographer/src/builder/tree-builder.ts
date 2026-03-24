@@ -13,7 +13,7 @@ import { AlwaysFailNode } from '../decorators/always-fail.js';
 import { TimeoutNode } from '../decorators/timeout.js';
 import { GuardNode } from '../decorators/guard.js';
 import { NodeStatus } from '../types.js';
-import type { OnElicitation } from '@anthropic-ai/claude-agent-sdk';
+import type { OnElicitation } from '../agent/agent.js';
 import type {
   BTreeNode, TreeContext, SelectionStrategy, ExecutionStrategy, ParallelStrategy,
   AgentNodeConfig,

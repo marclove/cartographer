@@ -1,6 +1,6 @@
 import type { z } from 'zod';
-import type { OnElicitation, ElicitationRequest, ModelUsage } from '@anthropic-ai/claude-agent-sdk';
-import type { Agent } from './agent/agent.js';
+import type { ModelUsage } from '@anthropic-ai/claude-agent-sdk';
+import type { Agent, OnElicitation, AgentElicitationRequest } from './agent/agent.js';
 import type { NodeState } from './core/serialization.js';
 import type { SessionRegistry } from './core/session-registry.js';
 
@@ -106,18 +106,19 @@ export interface Blackboard {
  * - `node:error` — Fired when a node throws an unhandled error (before returning FAILURE).
  *
  * **Agent events:**
- * - `agent:prompt` — Fired when an AgentNode resolves its prompt and is about to call the SDK.
- * - `agent:thinking` — Fired when the SDK produces a thinking block (chain-of-thought reasoning).
- * - `agent:text` — Fired when the SDK produces a text content block in an assistant message.
+ * - `agent:prompt` — Fired when an AgentNode resolves its prompt and is about to send it to the agent.
+ * - `agent:thinking` — Fired when the agent produces a thinking block (chain-of-thought reasoning).
+ * - `agent:text` — Fired when the agent produces a text content block.
  * - `agent:tool_use` — Fired for each tool call the agent makes.
- * - `agent:response` — Fired when the SDK returns a final successful result.
- * - `agent:error` — Fired when the SDK returns an error result (max turns, budget, execution error, etc.).
- * - `agent:stream` — Fired for each raw streaming delta event (text, thinking, input_json).
- * - `agent:message` — Fired for every raw SDK message, enabling custom processing without framework filtering.
- * - `agent:tool_progress` — Fired when the SDK reports tool execution progress with elapsed time.
- * - `agent:init` — Fired when the SDK emits a session init message with model, tools, and config.
- * - `agent:status` — Fired when the SDK emits a status change during execution.
- * - `agent:rate_limit` — Fired when the SDK reports a rate limit event.
+ * - `agent:response` — Fired when the agent returns a final successful result.
+ * - `agent:error` — Fired when the agent returns an error result (max turns, budget, execution error, etc.).
+ * - `agent:stream` — Fired for each raw streaming delta event from adapters that support streaming.
+ * - `agent:message` — Fired for every raw agent message, enabling custom processing without framework filtering.
+ * - `agent:tool_progress` — Fired when the agent reports tool execution progress with elapsed time.
+ * - `agent:init` — Fired when the agent emits a session init message with model, tools, and config.
+ * - `agent:status` — Fired when the agent emits a status change during execution.
+ * - `agent:rate_limit` — Fired when the agent reports a rate limit event.
+ * - `agent:elicitation_declined` — Fired when an elicitation request is auto-declined because no handler is configured.
  *
  * **Tree lifecycle events:**
  * - `tree:init` — Fired when a `BehaviorTree` is constructed, after ID uniqueness validation passes.
@@ -137,8 +138,8 @@ export interface Blackboard {
  *   console.log(`${node.name} finished with ${status} in ${durationMs}ms`);
  * });
  *
- * tree.events.on('agent:prompt', ({ node, prompt, mode }) => {
- *   console.log(`Agent "${node.name}" sending ${mode} prompt: ${prompt}`);
+ * tree.events.on('agent:prompt', ({ node, prompt }) => {
+ *   console.log(`Agent "${node.name}" sending prompt: ${prompt}`);
  * });
  * ```
  */
@@ -182,7 +183,7 @@ export interface TreeEvents {
   'blackboard:read': { key: string; value: unknown; hit: boolean; source: string };
   'blackboard:write': { key: string; value: unknown; source: string };
   'strategy:decision': { composite: BTreeNode; strategy: string; decision: unknown };
-  'agent:elicitation_declined': { node: BTreeNode; request: ElicitationRequest };
+  'agent:elicitation_declined': { node: BTreeNode; request: AgentElicitationRequest };
   'client:event': { name: string; data: unknown };
   'message:processed': { messageId: string; treeStatus: string };
   'message:interrupted': { messageId: string };

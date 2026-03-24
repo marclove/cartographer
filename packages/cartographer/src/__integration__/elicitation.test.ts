@@ -2,8 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TreeBuilder } from '../builder/tree-builder.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, TypedEventEmitter, TreeEvents } from '../types.js';
-import { Agent } from '../agent/agent.js';
-import type { AgentMessage, AgentSendOptions, AgentInfo } from '../agent/agent.js';
+import type { Agent, AgentMessage, AgentSendOptions, AgentInfo, AgentConfig } from '../agent/agent.js';
 import { wrapElicitation } from '../agent/sdk-helpers.js';
 import { AgentSelectionStrategy } from '../strategies/agent-selection.js';
 
@@ -12,10 +11,15 @@ import { AgentSelectionStrategy } from '../strategies/agent-selection.js';
  * always attempts elicitation during send(), routing through wrapElicitation
  * when events/node context is provided (to test the declined path).
  */
-class ElicitationStubAgent extends Agent {
+class ElicitationStubAgent implements Agent {
+  readonly name: string;
   private resultMessage: AgentMessage = { type: 'result', subtype: 'success', output: 'done', cost: 0.01 };
   private _events?: TypedEventEmitter<TreeEvents>;
   private _nodeProxy?: BTreeNode;
+
+  constructor(config: AgentConfig) {
+    this.name = config.name;
+  }
 
   get sessionId(): string | null { return null; }
 
@@ -35,9 +39,9 @@ class ElicitationStubAgent extends Agent {
     // to handle both the handler-present and handler-absent (declined) paths.
     if (this._events && this._nodeProxy) {
       const wrapped = wrapElicitation(options?.onElicitation, this._nodeProxy, this._events);
-      await wrapped(testRequest, { signal: new AbortController().signal });
+      await wrapped(testRequest);
     } else if (options?.onElicitation) {
-      await options.onElicitation(testRequest, { signal: new AbortController().signal });
+      await options.onElicitation(testRequest);
     }
     if (options?.onMessage) {
       try { options.onMessage(this.resultMessage); } catch { /* swallowed */ }
@@ -50,10 +54,8 @@ class ElicitationStubAgent extends Agent {
 }
 
 const testRequest = {
-  serverName: 'test-mcp-server',
   message: 'Please authenticate',
-  mode: 'form' as const,
-  requestedSchema: { type: 'object', properties: { token: { type: 'string' } } },
+  schema: { type: 'object', properties: { token: { type: 'string' } } },
 };
 
 describe('Strategy elicitation integration', () => {
@@ -86,10 +88,7 @@ describe('Strategy elicitation integration', () => {
 
     await tree.tick();
 
-    expect(handler).toHaveBeenCalledWith(
-      testRequest,
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
+    expect(handler.mock.calls[0][0]).toEqual(testRequest);
   });
 });
 
@@ -110,10 +109,7 @@ describe('Elicitation integration', () => {
 
     await tree.tick();
 
-    expect(handler).toHaveBeenCalledWith(
-      testRequest,
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
+    expect(handler.mock.calls[0][0]).toEqual(testRequest);
   });
 
   it('subtree context override takes precedence over tree-level', async () => {

@@ -1,5 +1,4 @@
-import { Agent } from './agent.js';
-import type { AgentMessage, AgentSendOptions, AgentInfo, AgentConfig } from './agent.js';
+import type { Agent, AgentMessage, AgentSendOptions, AgentInfo, AgentConfig } from './agent.js';
 
 /**
  * A controllable Agent implementation for unit and integration tests.
@@ -27,7 +26,8 @@ import type { AgentMessage, AgentSendOptions, AgentInfo, AgentConfig } from './a
  * }
  * ```
  */
-export class TestAgent extends Agent {
+export class TestAgent implements Agent {
+  readonly name: string;
   private messages: AgentMessage[] = [];
   private _sessionId: string | null = null;
   private _sessionCounter = 0;
@@ -43,7 +43,7 @@ export class TestAgent extends Agent {
    *   {@link getInfo} will return.
    */
   constructor(config: AgentConfig & { info?: Partial<AgentInfo> } = { name: 'test-agent' }) {
-    super(config);
+    this.name = config.name;
     this._info = { name: config.name, ...config.info };
   }
 

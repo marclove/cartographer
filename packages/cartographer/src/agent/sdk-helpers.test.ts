@@ -75,28 +75,38 @@ describe('buildStrategyPrompt', () => {
 
 describe('wrapElicitation', () => {
   it('delegates to the provided handler', async () => {
-    const handler = async () => ({ action: 'accept' as const, content: { token: 'abc' } });
+    const handler = async () => ({ action: 'accept' as const, data: { token: 'abc' } });
     const node = mockNode('test');
     const events = new EventEmitter<TreeEvents>();
     const wrapped = wrapElicitation(handler, node, events);
 
-    const result = await wrapped({} as any, { signal: new AbortController().signal });
-    expect(result).toEqual({ action: 'accept', content: { token: 'abc' } });
+    const result = await wrapped({ message: 'auth needed' });
+    expect(result).toEqual({ action: 'accept', data: { token: 'abc' } });
+  });
+
+  it('forwards options to the provided handler', async () => {
+    const handler = vi.fn().mockResolvedValue({ action: 'accept' as const });
+    const node = mockNode('test');
+    const events = new EventEmitter<TreeEvents>();
+    const wrapped = wrapElicitation(handler, node, events);
+
+    const signal = AbortSignal.abort();
+    await wrapped({ message: 'auth needed' }, { signal });
+    expect(handler).toHaveBeenCalledWith({ message: 'auth needed' }, { signal });
   });
 
   it('declines and emits event when no handler is provided', async () => {
     const node = mockNode('test');
     const events = new EventEmitter<TreeEvents>();
-    const spy = (events as any)._listeners?.['agent:elicitation_declined'] ?? [];
     const declinedSpy = vi.fn();
     events.on('agent:elicitation_declined', declinedSpy);
 
     const wrapped = wrapElicitation(undefined, node, events);
-    const result = await wrapped({ serverName: 'test' } as any, { signal: new AbortController().signal });
+    const result = await wrapped({ message: 'auth needed' });
 
     expect(result).toEqual({ action: 'decline' });
     expect(declinedSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ node, request: { serverName: 'test' } }),
+      expect.objectContaining({ node, request: { message: 'auth needed' } }),
     );
   });
 });

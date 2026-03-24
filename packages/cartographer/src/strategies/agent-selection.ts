@@ -1,6 +1,6 @@
 import { z } from 'zod/v4';
 import type { SelectionStrategy, BTreeNode, TreeContext, AgentStrategyConfig } from '../types.js';
-import { buildStrategyPrompt } from '../agent/sdk-helpers.js';
+import { buildStrategyPrompt, wrapElicitation } from '../agent/sdk-helpers.js';
 import type { AgentMessage } from '../agent/agent.js';
 
 /**
@@ -72,7 +72,7 @@ export class AgentSelectionStrategy implements SelectionStrategy {
         signal: context.signal,
         onMessage: (msg: AgentMessage) => this.emitAgentEvent(msg, nodeProxy, context),
         outputSchema: jsonSchema,
-        onElicitation: context.onElicitation,
+        onElicitation: wrapElicitation(context.onElicitation, nodeProxy, context.events),
       })) {
         if (msg.type === 'result') {
           if (msg.subtype === 'success') {

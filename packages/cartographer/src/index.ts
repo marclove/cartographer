@@ -77,8 +77,34 @@ export { TreeRegistry } from './config/registry.js';
 export { TreeScheduler } from './scheduler/tree-scheduler.js';
 
 // Agent abstraction
-export { Agent } from './agent/agent.js';
-export type { AgentConfig, AgentSendOptions, AgentMessage, AgentInfo, AgentUsage, AgentSessionOptions } from './agent/agent.js';
+export type {
+  Agent,
+  AgentConfig,
+  AgentSendOptions,
+  AgentMessage,
+  AgentInfo,
+  AgentUsage,
+  AgentSessionOptions,
+  // Named message types
+  AgentTextMessage,
+  AgentToolUseMessage,
+  AgentSuccessResult,
+  AgentErrorResult,
+  AgentResultMessage,
+  AgentSessionStartMessage,
+  AgentThinkingMessage,
+  AgentStreamMessage,
+  AgentProviderEvent,
+  // Capability interfaces
+  ThinkingCapable,
+  StreamCapable,
+  // Elicitation types
+  OnElicitation,
+  ElicitationOptions,
+  AgentElicitationRequest,
+  AgentElicitationResponse,
+} from './agent/agent.js';
+export { isThinkingCapable, isStreamCapable } from './agent/agent.js';
 export { ClaudeSDKAgent } from './agent/claude-sdk-agent.js';
 export type { ClaudeSDKAgentConfig } from './agent/claude-sdk-agent.js';
 
@@ -92,9 +118,6 @@ export type { TreeLoggerOptions } from './tree-logger.js';
 
 // CLI types
 export type { RunContext, TreeRunConfig } from './cli/types.js';
-
-// SDK re-exports
-export type { OnElicitation, ElicitationRequest } from '@anthropic-ai/claude-agent-sdk';
 
 // Server
 export { TreeServer } from './server/tree-server.js';
