@@ -74,6 +74,28 @@ export class EventBridge {
     }]);
   }
 
+  /** Emit message:queued event. Does NOT flush tree event buffer (no tree events exist yet). */
+  async emitQueued(position: number): Promise<void> {
+    const event = { type: 'message:queued', data: { messageId: this.messageId, position } };
+    this.onEvent?.(event);
+    await this.stateStore.appendEvents(this.stateKey, [{
+      id: generateEventId(),
+      ...event,
+      timestamp: Date.now(),
+    }]);
+  }
+
+  /** Emit message:dequeued event. Does NOT flush tree event buffer (no tree events exist yet). */
+  async emitDequeued(): Promise<void> {
+    const event = { type: 'message:dequeued', data: { messageId: this.messageId } };
+    this.onEvent?.(event);
+    await this.stateStore.appendEvents(this.stateKey, [{
+      id: generateEventId(),
+      ...event,
+      timestamp: Date.now(),
+    }]);
+  }
+
   /** Convert buffered events to TreeEvents, append to state store, clear buffer. */
   private async flush(): Promise<void> {
     if (this.buffer.length === 0) return;
