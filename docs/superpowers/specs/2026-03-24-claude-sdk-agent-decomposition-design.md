@@ -29,7 +29,7 @@
 ```
 agent/
   agent.ts                  # Agent interface + types (unchanged)
-  claude-sdk-agent.ts       # Thin orchestrator (~120-150 lines)
+  claude-sdk-agent.ts       # Thin orchestrator (~100-120 lines of logic)
   claude-sdk-mapper.ts      # NEW: pure SDK→framework message mapping
   claude-sdk-options.ts     # NEW: option-building helpers
   blackboard-mcp.ts         # Blackboard MCP server (unchanged)
@@ -45,7 +45,7 @@ A single pure function extracted verbatim from `ClaudeSDKAgent.mapSdkMessage`:
 export function mapSdkMessage(msg: SDKMessage): AgentMessage[]
 ```
 
-Handles the switch over `msg.type`: `assistant` (one message per content block — thinking, text, tool_use), `result` (success with structured_output/JSON parse fallback, error), `system` (init/status), `stream_event`, `tool_progress`, `rate_limit_event`, and unknown-type pass-through.
+The function switches on `msg.type` with three named cases (`assistant`, `result`, `system`) and a `default` branch that uses nested conditionals for `stream_event`, `tool_progress`, `rate_limit_event`, and unknown-type pass-through. The `assistant` case produces one message per content block (thinking, text, tool_use). The `result` case handles success (structured_output preferred, JSON parse fallback, raw string) and error. The `system` case maps init/status subtypes.
 
 Zero state, zero dependencies beyond SDK types and `AgentMessage`.
 
@@ -72,7 +72,7 @@ export function buildSdkElicitationHandler(
 ): SDKOnElicitation
 ```
 
-**`buildSdkOutputFormat`** — Resolves the output format from per-call `outputSchema` or config `outputFormat`, stripping `$schema` in both paths.
+**`buildSdkOutputFormat`** — Resolves the output format from per-call `outputSchema` or config `outputFormat`. The two paths handle `$schema` differently: `sendOptions.outputSchema` always destructures `$schema` out (rebuilding the format as `{ type: 'json_schema', schema }`), while config `outputFormat` only strips `$schema` when it's actually present, leaving the format untouched otherwise.
 
 ```typescript
 export function buildSdkOutputFormat(
@@ -98,11 +98,11 @@ After extraction, the class retains only orchestration concerns:
 - **State** — `_lastSessionId`, `_privateSessionId`, `_activeQuery`, `_closed` (unchanged).
 - **`send()`** — closed check, returns async iterable wrapping `_createSendIterator`.
 - **`_createSendIterator()`** — session resolution (private vs. explicit), calls `composeSdkOptions()` (imported), creates SDK `query()`, iterates messages through `mapSdkMessage()` (imported), handles `session_start` init detection, dispatches via `_dispatchMapped`.
-- **`_dispatchMapped()`** — stays in-class (uses `yield*`, must be a generator method).
+- **`_dispatchMapped()`** — stays in-class for co-location with the generator that calls it. It has no `this` access and could technically be a free function, but it's small enough that extracting it adds indirection without meaningful benefit.
 - **`getInfo()`** — unchanged.
 - **`close()`** — unchanged.
 
-Drops from ~250 lines of logic to ~100. The class's only job is orchestration: session state, query lifecycle, and wiring the pure functions together.
+Drops from ~250 lines of logic to ~100-120 lines of logic (~150 lines with JSDoc). The class's only job is orchestration: session state, query lifecycle, and wiring the pure functions together.
 
 ### Exports
 
@@ -119,7 +119,7 @@ Extracted functions are **internal only**. The public API surface exported from 
 - **`claude-sdk-options.test.ts`** — Unit tests for each helper:
   - `injectBlackboardMcp`: server injection, tool pattern added, namespace forwarding.
   - `buildSdkElicitationHandler`: with handler (accept/decline/cancel→decline mapping), without handler (auto-decline).
-  - `buildSdkOutputFormat`: sendOptions schema wins, config format `$schema` stripped, passthrough when neither.
+  - `buildSdkOutputFormat`: sendOptions schema wins (always restructures), config format with `$schema` present (strips it), config format with no `$schema` (passes through untouched), no format at all (returns undefined).
   - `composeSdkOptions`: verifies composition and `permissionMode` default.
 
 ## Future provider pattern
