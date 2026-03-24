@@ -493,13 +493,13 @@ stopLogging(); // remove listeners when done
 
 The logger captures all meaningful events — node lifecycle, agent activity, strategy decisions — while intentionally excluding the two high-frequency events (`agent:stream` and `agent:message`) that would dominate the log. The log directory is created automatically if it does not exist.
 
-Each log line is a JSON object with a `ts` (ISO timestamp) and `event` field, plus event-specific data:
+Each log line is a JSON object with a `ts` (ISO timestamp), a monotonically increasing `seq`, an `event` field, and event-specific data:
 
 ```jsonl
-{"ts":"2026-03-10T07:00:00.000Z","event":"node:enter","node":"classify"}
-{"ts":"2026-03-10T07:00:00.123Z","event":"agent:prompt","node":"classify","prompt":"..."}
-{"ts":"2026-03-10T07:00:01.456Z","event":"agent:response","node":"classify","result":{...},"cost":0.0012}
-{"ts":"2026-03-10T07:00:01.457Z","event":"node:exit","node":"classify","status":"success","durationMs":1457}
+{"ts":"2026-03-10T07:00:00.000Z","seq":1,"event":"node:enter","node":"classify"}
+{"ts":"2026-03-10T07:00:00.123Z","seq":2,"event":"agent:prompt","node":"classify","prompt":"..."}
+{"ts":"2026-03-10T07:00:01.456Z","seq":3,"event":"agent:response","node":"classify","result":{...},"cost":0.0012}
+{"ts":"2026-03-10T07:00:01.457Z","seq":4,"event":"node:exit","node":"classify","status":"success","durationMs":1457}
 ```
 
 You can inspect logs with `jq`:

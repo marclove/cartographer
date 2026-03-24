@@ -62,12 +62,16 @@ export function createTreeLogger(
   options: TreeLoggerOptions,
 ): () => void {
   const { filePath, logBlackboard = false, logStrategy = true } = options;
+  let seq = 0;
 
   // Ensure the destination directory exists before the first write.
   mkdirSync(dirname(filePath), { recursive: true });
 
   function write(entry: Record<string, unknown>): void {
-    appendFileSync(filePath, JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n');
+    appendFileSync(
+      filePath,
+      JSON.stringify({ ts: new Date().toISOString(), seq: ++seq, ...entry }) + '\n',
+    );
   }
 
   // Collect off-functions so the returned cleanup removes every listener.
