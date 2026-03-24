@@ -161,7 +161,9 @@ TreeContext {
 
 - **signal** -- An optional `AbortSignal` that nodes can check for cooperative cancellation. When `BehaviorTree.abort()` is called, the signal fires, and well-behaved nodes can stop their work early.
 
-The context is constructed fresh on each tick by the `BehaviorTree`, but the blackboard and event emitter persist across ticks. This means state accumulates on the blackboard between ticks while the signal is renewed.
+- **sessions** -- The `SessionRegistry` that maps named sessions to provider session IDs. Agent nodes configured with `session: "name"` use this registry to resume conversations across ticks. Cleared on terminal status, `abort()`, and `reset()`; preserved across `RUNNING` ticks and `interrupt()`.
+
+The context is constructed fresh on each tick by the `BehaviorTree`, but the blackboard, event emitter, and session registry persist across ticks. This means state accumulates on the blackboard between ticks while the signal is renewed.
 
 ---
 

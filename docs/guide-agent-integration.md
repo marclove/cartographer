@@ -69,7 +69,7 @@ All AgentNode calls share these behaviors:
 
 ## Basic Usage
 
-At its simplest, an AgentNode sends a prompt to Claude and writes the result to the blackboard:
+At its simplest, an `AgentNode` sends a prompt to an `Agent` and writes the result to the blackboard:
 
 ```typescript
 import { AgentNode, ClaudeSDKAgent } from "cartographer";
@@ -110,7 +110,7 @@ Details:
 
 Configure `outputFormat` on the agent to receive a response validated against a JSON schema. The SDK validates the response and the structured output is available as the first argument to `mapResult` and also stored at `{name}:output`.
 
-If you're using Zod, convert your schema with `z.toJSONSchema()`. The agent automatically strips the `$schema` meta-property that `toJSONSchema()` adds, since the SDK does not accept it.
+If you're using Zod, convert your schema with `z.toJSONSchema()`.
 
 If `mapResult` is not provided, a successful agent call returns `SUCCESS`.
 
@@ -164,7 +164,7 @@ The server exposes three tools:
 
 When `blackboardNamespace` is configured on the AgentNode, the MCP server uses `blackboard.scoped(namespace)` -- the agent only sees and writes keys within its namespace.
 
-This bridges the gap between deterministic BT nodes and AI-powered reasoning, allowing agents to read context from the blackboard and write results back.
+This bridges the gap between deterministic conditions and actions and AI-powered reasoning, allowing agents to read context from the blackboard and write results back.
 
 ---
 
@@ -198,7 +198,7 @@ b.agent("summarize", {
 
 ## Elicitation
 
-MCP servers can request user input during agent execution. By default, `ClaudeSDKAgent` silently declines all elicitation requests, but you can provide handlers at the tree or subtree level via context layering.
+MCP servers can request user input during agent execution. By default, `ClaudeSDKAgent` silently declines all elicitation requests, but you can provide handlers at the tree or subtree level.
 
 See the dedicated [Elicitation guide](guide-elicitation.md) for handler examples, precedence rules, decline events, and request types.
 
@@ -267,9 +267,9 @@ interface SessionConfig {
 }
 ```
 
-| Field  | Type             | Description                                                                                   |
-| ------ | ---------------- | --------------------------------------------------------------------------------------------- |
-| `name` | `string`         | The named session to participate in.                                                          |
+| Field  | Type             | Description                                                                                                                                                    |
+| ------ | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name` | `string`         | The named session to participate in.                                                                                                                           |
 | `fork` | `true \| string` | Optional. `true` creates an anonymous fork. A string creates a named fork registered under that name. When absent, the agent resumes (appends to) the session. |
 
 ### Session Lifecycle
@@ -291,8 +291,8 @@ Fork-mode agents are exempt from this check because each fork creates an indepen
 ```typescript
 // This throws at construction time:
 b.parallel("bad", (b) => {
-  b.agent("a", { agent, prompt: "...", session: "shared" });  // resume
-  b.agent("b", { agent, prompt: "...", session: "shared" });  // resume — conflict!
+  b.agent("a", { agent, prompt: "...", session: "shared" }); // resume
+  b.agent("b", { agent, prompt: "...", session: "shared" }); // resume — conflict!
 });
 
 // This is fine — forks are independent:
@@ -435,17 +435,6 @@ tree.events.on("agent:error", ({ node, subtype, cost }) => {
   console.log(`${node.name} failed (${subtype}): $${cost?.toFixed(4)}`);
 });
 ```
-
----
-
-## With vs Without `outputFormat`
-
-| Criterion     | With `outputFormat`                    | Without `outputFormat`                |
-| ------------- | -------------------------------------- | ------------------------------------- |
-| Output format | JSON schema validated                  | Free text                             |
-| `mapResult`   | Available                              | Available                             |
-| Tools         | All options available                  | All options available                 |
-| Use when      | Classification, extraction, formatting | Research, code gen, complex reasoning |
 
 ---
 
