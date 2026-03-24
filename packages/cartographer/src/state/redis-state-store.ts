@@ -16,6 +16,7 @@
  */
 
 import type { StateStore, TreeSessionState, TreeEvent } from './state-store.js';
+import type { ActorMessage } from '../actor/types.js';
 
 export interface RedisStateStoreOptions {
   /** An existing ioredis instance. */
@@ -40,6 +41,7 @@ export class RedisStateStore implements StateStore {
   private stateKey(key: string): string { return `${this.keyPrefix}state:${key}`; }
   private lockKey(key: string): string { return `${this.keyPrefix}lock:${key}`; }
   private eventsKey(key: string): string { return `${this.keyPrefix}events:${key}`; }
+  private queueKey(key: string): string { return `${this.keyPrefix}queue:${key}`; }
 
   async getState(key: string): Promise<TreeSessionState | null> {
     const raw = await this.redis.get(this.stateKey(key));
@@ -51,7 +53,7 @@ export class RedisStateStore implements StateStore {
   }
 
   async deleteState(key: string): Promise<void> {
-    await this.redis.del(this.stateKey(key), this.eventsKey(key));
+    await this.redis.del(this.stateKey(key), this.eventsKey(key), this.queueKey(key));
   }
 
   async listKeys(): Promise<string[]> {
@@ -139,6 +141,38 @@ export class RedisStateStore implements StateStore {
       data: obj.data ? JSON.parse(obj.data) : null,
       timestamp: parseInt(obj.timestamp ?? '0', 10),
     };
+  }
+
+  // --- Queue ---
+
+  async enqueueMessage(stateKey: string, message: ActorMessage, maxQueueDepth: number): Promise<{ position: number; queueSize: number }> {
+    const script = `
+      local len = redis.call("LLEN", KEYS[1])
+      if len >= tonumber(ARGV[1]) then
+        return -1
+      end
+      redis.call("RPUSH", KEYS[1], ARGV[2])
+      return len + 1
+    `;
+    const result = await this.redis.eval(script, 1, this.queueKey(stateKey), maxQueueDepth, JSON.stringify(message));
+    if (result === -1) {
+      throw new Error('Queue full');
+    }
+    return { position: result as number, queueSize: result as number };
+  }
+
+  async dequeueMessage(stateKey: string): Promise<ActorMessage | null> {
+    const raw = await this.redis.lpop(this.queueKey(stateKey));
+    return raw ? JSON.parse(raw) : null;
+  }
+
+  async getQueueSize(stateKey: string): Promise<number> {
+    return this.redis.llen(this.queueKey(stateKey));
+  }
+
+  async getQueuedMessages(stateKey: string): Promise<ActorMessage[]> {
+    const entries = await this.redis.lrange(this.queueKey(stateKey), 0, -1);
+    return entries.map((e: string) => JSON.parse(e));
   }
 
   async close(): Promise<void> {
