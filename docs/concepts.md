@@ -245,7 +245,7 @@ A node that wraps exactly one child and modifies its behavior or result. Example
 A shared key-value store passed to every node through the tree context. Nodes use the blackboard to share data without direct coupling.
 
 **Context (TreeContext)**
-The execution environment passed to every node on each tick. Contains the blackboard, event emitter, and an optional abort signal.
+The execution environment passed to every node on each tick. Contains the blackboard, event emitter, session registry, an optional abort signal, and an optional elicitation handler.
 
 **Execution Cycle**
 A single run of a composite node from start to terminal result. A cycle begins when the composite starts fresh (no cached results) and ends when it returns SUCCESS or FAILURE. Within a cycle, the child order (or parallel policy) is committed on the first tick and remains stable across subsequent ticks. Non-reactive child results are cached within the cycle to avoid redundant work. Calling `reset()` also ends the current cycle.

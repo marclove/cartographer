@@ -291,7 +291,7 @@ function wrapElicitation(
 ): OnElicitation;
 ```
 
-Wraps an optional elicitation handler so the SDK always receives a function. If `handler` is defined, delegates to it. Otherwise emits `agent:elicitation_declined` and returns `{ action: 'decline' }`. Used internally by `ClaudeSDKAgent` and all three agent strategies; exported for custom strategy or agent implementations.
+Wraps an optional elicitation handler so the SDK always receives a function. If `handler` is defined, delegates to it. Otherwise emits `agent:elicitation_declined` and returns `{ action: 'decline' }`. Exported for custom strategy or agent implementations that need a consistent elicitation fallback.
 
 ### buildStrategyPrompt
 
