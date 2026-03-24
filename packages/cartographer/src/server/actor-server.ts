@@ -27,6 +27,13 @@ export interface ActorServerOptions {
   port?: number;
   context?: Record<string, unknown>;
   topologyPolicy?: 'fail' | 'reset';
+  maxQueueDepth?: number;
+}
+
+export interface QueuedResult {
+  queued: true;
+  messageId: string;
+  position: number;
 }
 
 export class ActorServer {
@@ -35,6 +42,7 @@ export class ActorServer {
   private readonly configPort: number;
   private readonly context: Record<string, unknown>;
   readonly topologyPolicy: 'fail' | 'reset';
+  readonly maxQueueDepth: number = 16;
   private server: Server | null = null;
   private activeActor: TreeActor | null = null;
   private activeMessageId: string | null = null;
@@ -57,6 +65,7 @@ export class ActorServer {
     this.configPort = options.port ?? parseInt(process.env.PORT ?? '3148', 10);
     this.context = options.context ?? {};
     this.topologyPolicy = options.topologyPolicy ?? 'fail';
+    this.maxQueueDepth = options.maxQueueDepth ?? 16;
   }
 
   async start(): Promise<{ port: number }> {
@@ -66,6 +75,9 @@ export class ActorServer {
     if (!existing) {
       await this.initializeDefaultState();
     }
+
+    // Drain any queued messages from a previous process
+    this.drainQueue().catch(() => {});
 
     this.server = createServer((req, res) => {
       this.handleRequest(req, res).catch((err) => {
@@ -231,13 +243,24 @@ export class ActorServer {
 
   /**
    * Process a message programmatically (no HTTP response needed).
-   * Returns null if the lock could not be acquired (another message is processing).
+   * If the lock is held, the message is queued and a {@link QueuedResult} is returned.
+   * Returns null only if the queue is full.
    */
-  async processMessage(msg: ActorMessage): Promise<ProcessResult | null> {
+  async processMessage(msg: ActorMessage): Promise<ProcessResult | QueuedResult | null> {
     const requestId = generateRequestId();
 
     const acquired = await this.stateStore.acquireLock('default', requestId, 30000);
-    if (!acquired) return null;
+    if (!acquired) {
+      const bridge = new EventBridge(this.stateStore, 'default', msg.id, (event) => this.forwardEvent(event));
+      msg.id = bridge.messageId;
+      try {
+        const { position } = await this.stateStore.enqueueMessage('default', msg, this.maxQueueDepth);
+        await bridge.emitQueued(position);
+        return { queued: true, messageId: bridge.messageId, position };
+      } catch {
+        return null;
+      }
+    }
 
     const bridge = new EventBridge(this.stateStore, 'default', msg.id, (event) => this.forwardEvent(event));
     msg.id = bridge.messageId;
@@ -250,7 +273,16 @@ export class ActorServer {
 
     const acquired = await this.stateStore.acquireLock('default', requestId, 30000);
     if (!acquired) {
-      return jsonError(res, 409, 'Processing in progress');
+      // Lock held — try to queue
+      const bridge = new EventBridge(this.stateStore, 'default', clientMessageId, (event) => this.forwardEvent(event));
+      msg.id = bridge.messageId;
+      try {
+        const { position } = await this.stateStore.enqueueMessage('default', msg, this.maxQueueDepth);
+        await bridge.emitQueued(position);
+        return jsonResponse(res, 202, { id: bridge.messageId, status: 'queued', position });
+      } catch {
+        return jsonError(res, 429, 'Queue full');
+      }
     }
 
     const bridge = new EventBridge(this.stateStore, 'default', clientMessageId, (event) => this.forwardEvent(event));
@@ -296,7 +328,26 @@ export class ActorServer {
       this.activeMessageId = null;
       clearInterval(heartbeat);
       await this.stateStore.releaseLock('default', requestId);
+      this.drainQueue().catch(() => {});
     }
+  }
+
+  private async drainQueue(): Promise<void> {
+    const requestId = generateRequestId();
+    const acquired = await this.stateStore.acquireLock('default', requestId, 30000);
+    if (!acquired) return; // Someone else is processing; they'll drain when done
+
+    const msg = await this.stateStore.dequeueMessage('default');
+    if (!msg) {
+      await this.stateStore.releaseLock('default', requestId);
+      return;
+    }
+
+    const bridge = new EventBridge(this.stateStore, 'default', msg.id, (event) => this.forwardEvent(event));
+    if (!msg.id) msg.id = bridge.messageId;
+    await bridge.emitDequeued();
+    // executeMessage will call drainQueue again in its finally block
+    this.executeMessage(msg, requestId, bridge).catch(() => {});
   }
 
   private handleInterrupt(res: ServerResponse): void {
