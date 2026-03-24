@@ -63,7 +63,7 @@ Cartographer provides three leaf node types:
 
 - **ActionNode** -- Executes arbitrary logic. Your function receives the tree context and returns a `NodeStatus`.
 - **ConditionNode** -- Evaluates a boolean check. Returns `SUCCESS` if the condition is true, `FAILURE` if false.
-- **AgentNode** -- Delegates work to an AI agent via the Claude SDK. Use `options.outputFormat` to get structured, schema-validated output.
+- **AgentNode** -- Delegates work to a configured AI agent. Configure structured output, tools, and other provider options on the Agent instance.
 
 ### Composite Nodes
 
@@ -151,6 +151,7 @@ TreeContext {
   blackboard: Blackboard     -- shared key-value state
   events: TypedEventEmitter   -- event bus for lifecycle hooks
   signal?: AbortSignal        -- cooperative cancellation
+  sessions: SessionRegistry   -- named agent conversations
 }
 ```
 
@@ -160,7 +161,9 @@ TreeContext {
 
 - **signal** -- An optional `AbortSignal` that nodes can check for cooperative cancellation. When `BehaviorTree.abort()` is called, the signal fires, and well-behaved nodes can stop their work early.
 
-The context is constructed fresh on each tick by the `BehaviorTree`, but the blackboard and event emitter persist across ticks. This means state accumulates on the blackboard between ticks while the signal is renewed.
+- **sessions** -- The `SessionRegistry` that maps named sessions to provider session IDs. Agent nodes configured with `session: "name"` use this registry to resume conversations across ticks. Cleared on terminal status, `abort()`, and `reset()`; preserved across `RUNNING` ticks and `interrupt()`.
+
+The context is constructed fresh on each tick by the `BehaviorTree`, but the blackboard, event emitter, and session registry persist across ticks. This means state accumulates on the blackboard between ticks while the signal is renewed.
 
 ---
 
@@ -207,9 +210,9 @@ Traditional behavior trees are static: the tree structure and execution order ar
 
 ### Agent Nodes
 
-An `AgentNode` is a leaf node that delegates its work to an AI agent powered by the Claude SDK. Instead of running a hand-coded function, it sends a prompt to Claude and interprets the response.
+An `AgentNode` is a leaf node that delegates its work to a configured AI agent. Instead of running a hand-coded function, it sends a prompt to an Agent instance and interprets the response.
 
-Every AgentNode call is an agentic SDK invocation. SDK options are passed directly via the `options` field, giving you access to the full range of Agent SDK capabilities -- models, tools, MCP servers, structured output via `outputFormat`, turn limits, budget caps, and more.
+Agent instances (such as `ClaudeSDKAgent`) are configured separately with provider-specific options — model, tools, MCP servers, structured output, turn limits, budget caps, and more. The same agent can be shared across multiple nodes and strategies.
 
 The agent node writes its results to the blackboard, making them available to downstream nodes just like any other data.
 
@@ -219,7 +222,7 @@ An agent strategy replaces a composite's default strategy with one backed by Cla
 
 For example, an agent selection strategy might present a selector's children to Claude along with the current blackboard state and ask: "Given the current context, which of these approaches should we try first?" Claude responds with an ordering, and the selector follows it.
 
-This means the same tree structure can produce different execution paths depending on the runtime context, without any changes to the tree itself. Agent strategies accept configuration including a prompt, model selection, effort level, and descriptions of each child node.
+This means the same tree structure can produce different execution paths depending on the runtime context, without any changes to the tree itself. Agent strategies accept configuration including a prompt, an Agent instance (which carries model and effort settings), and descriptions of each child node.
 
 ---
 
@@ -244,7 +247,7 @@ A node that wraps exactly one child and modifies its behavior or result. Example
 A shared key-value store passed to every node through the tree context. Nodes use the blackboard to share data without direct coupling.
 
 **Context (TreeContext)**
-The execution environment passed to every node on each tick. Contains the blackboard, event emitter, and an optional abort signal.
+The execution environment passed to every node on each tick. Contains the blackboard, event emitter, session registry, an optional abort signal, and an optional elicitation handler.
 
 **Execution Cycle**
 A single run of a composite node from start to terminal result. A cycle begins when the composite starts fresh (no cached results) and ends when it returns SUCCESS or FAILURE. Within a cycle, the child order (or parallel policy) is committed on the first tick and remains stable across subsequent ticks. Non-reactive child results are cached within the cycle to avoid redundant work. Calling `reset()` also ends the current cycle.
@@ -261,11 +264,17 @@ A soft cancellation that cancels in-flight work (like abort) but preserves compo
 **Held State**
 A flag on `TreeSessionState` set after an interrupt in the application server. While held, tick messages are no-ops (preventing the scheduler from immediately restarting interrupted work). Cleared by action messages, write messages, or `signal: resume`.
 
+**Session (Named Session)**
+A named conversation that persists in the tree's `SessionRegistry`. Agents configured with `session: "name"` resume the same conversation across ticks. Agents with `session: { name: "...", fork: true }` branch from an existing session without modifying the original. See the [Sessions guide](guide-agent-integration.md#sessions).
+
+**Session Registry**
+A map from session names to provider session IDs, owned by `BehaviorTree`. Cleared on terminal status (SUCCESS/FAILURE), `abort()`, and `reset()`. Preserved across RUNNING ticks and `interrupt()`. Serialized by `TreeActor` for persistence across server restarts.
+
 **Strategy**
 A pluggable component that controls how a composite node orders its children or evaluates its policy. Strategies can be static (fixed rules) or agent-backed (AI-driven decisions).
 
 **Agent Node**
-A leaf node that delegates execution to an AI agent via the Claude SDK. Use `options.outputFormat` for structured output, or omit it for free-form interaction.
+A leaf node that delegates execution to a configured Agent instance. The Agent handles provider-specific concerns; the node handles BT integration. Configure structured output on the Agent for schema-validated responses, or omit it for free-form interaction.
 
 **Status (NodeStatus)**
 The result of ticking a node. One of three values: `SUCCESS`, `FAILURE`, or `RUNNING`.

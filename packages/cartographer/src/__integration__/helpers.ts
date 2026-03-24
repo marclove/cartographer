@@ -2,6 +2,7 @@ import { InMemoryBlackboard } from '../core/blackboard.js';
 import { EventEmitter } from '../core/event-emitter.js';
 import { NodeStatus } from '../types.js';
 import type { TreeContext, TreeEvents } from '../types.js';
+import { SessionRegistry } from '../core/session-registry.js';
 import { BaseNode } from '../nodes/base.js';
 import { ActorServer } from '../server/actor-server.js';
 import type { ActorServerOptions } from '../server/actor-server.js';
@@ -12,6 +13,7 @@ export function createContext(initial?: Record<string, unknown>): TreeContext {
   return {
     blackboard: new InMemoryBlackboard(initial),
     events: new EventEmitter<TreeEvents>(),
+    sessions: new SessionRegistry(),
   };
 }
 

@@ -3,9 +3,11 @@ import { TreeActor } from './tree-actor.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { ActionNode } from '../nodes/action.js';
 import { InMemoryStateStore } from '../state/in-memory-state-store.js';
+import type { TreeSessionState } from '../state/state-store.js';
 import { NodeStatus } from '../types.js';
 import { untilSuccess } from '../decorators/until-success.js';
 import { receive } from '../nodes/receive.js';
+import { SessionRegistry } from '../core/session-registry.js';
 
 describe('TreeActor', () => {
   it('processes a tick message and saves state', async () => {
@@ -234,5 +236,165 @@ describe('TreeActor', () => {
     });
 
     await expect(actor2.process({ type: 'tick' })).rejects.toThrow(/topology changed/i);
+  });
+});
+
+describe('TreeActor - sessions', () => {
+  it('serializes session registry in saved state', async () => {
+    const store = new InMemoryStateStore();
+    // Use a tick counter in a closure so it persists across process() calls
+    let tickCount = 0;
+    const actor = new TreeActor({
+      createTree: () => new BehaviorTree({
+        name: 'test',
+        root: new ActionNode({
+          name: 'writer',
+          action: async (ctx) => {
+            tickCount++;
+            // First tick: write a session and return a delayed RUNNING (inflight work).
+            // After the inflight settles, runToCompletion ticks again. Subsequent ticks
+            // return synchronous RUNNING (no inflight), which triggers suspension detection
+            // after two consecutive no-inflight RUNNING results.
+            if (tickCount === 1) {
+              ctx.sessions.set('triage', 'session-abc');
+              return new Promise<NodeStatus>((resolve) => setTimeout(() => resolve(NodeStatus.RUNNING), 5));
+            }
+            // Ticks 2+ return synchronous RUNNING (no inflight) → suspension detected
+            return NodeStatus.RUNNING;
+          },
+        }),
+      }),
+      stateStore: store,
+      stateKey: 'default',
+    });
+
+    const result = await actor.process({ type: 'tick' });
+    expect(result.treeStatus).toBe(NodeStatus.RUNNING);
+
+    const saved = await store.getState('default');
+    expect(saved).not.toBeNull();
+    expect(saved!.sessions).toEqual({ triage: 'session-abc' });
+  });
+
+  it('restores session registry from loaded state', async () => {
+    const store = new InMemoryStateStore();
+    let seenSessionId: string | undefined;
+
+    // Use the same node name in both seed and reader to avoid topology mismatch.
+    // First pass seeds state and returns RUNNING (with sessions saved after implementation).
+    // We'll inject sessions manually into the store after the first tick.
+    let tickCount = 0;
+    const createTree = () => new BehaviorTree({
+      name: 'test',
+      root: new ActionNode({
+        name: 'action',
+        action: async (ctx) => {
+          tickCount++;
+          if (tickCount === 1) {
+            // First process: suspend with RUNNING so state is saved
+            return new Promise<NodeStatus>((resolve) => setTimeout(() => resolve(NodeStatus.RUNNING), 5));
+          }
+          // Second process: read the session and return SUCCESS
+          seenSessionId = ctx.sessions.get('triage');
+          return NodeStatus.SUCCESS;
+        },
+      }),
+    });
+
+    // First tick — suspends with RUNNING
+    const actor1 = new TreeActor({ createTree, stateStore: store, stateKey: 'default' });
+    await actor1.process({ type: 'tick' });
+
+    // Inject sessions into saved state
+    const existing = await store.getState('default');
+    await store.saveState('default', { ...existing!, sessions: { triage: 'restored-id' } });
+
+    // Second tick — reads sessions from restored state
+    const actor2 = new TreeActor({ createTree, stateStore: store, stateKey: 'default' });
+    await actor2.process({ type: 'tick' });
+    expect(seenSessionId).toBe('restored-id');
+  });
+
+  it('handles missing sessions field (backward compatibility)', async () => {
+    const store = new InMemoryStateStore();
+    let seenSessionId: string | undefined;
+    let tickCount = 0;
+
+    const createTree = () => new BehaviorTree({
+      name: 'test',
+      root: new ActionNode({
+        name: 'action',
+        action: async (ctx) => {
+          tickCount++;
+          if (tickCount === 1) {
+            // First process: suspend with RUNNING so state is saved
+            return new Promise<NodeStatus>((resolve) => setTimeout(() => resolve(NodeStatus.RUNNING), 5));
+          }
+          seenSessionId = ctx.sessions.get('triage');
+          return NodeStatus.SUCCESS;
+        },
+      }),
+    });
+
+    // First tick — suspends with RUNNING
+    const actor1 = new TreeActor({ createTree, stateStore: store, stateKey: 'default' });
+    await actor1.process({ type: 'tick' });
+
+    // Remove sessions field to simulate old serialized state without sessions
+    const existing = (await store.getState('default'))!;
+    const { sessions: _sessions, ...withoutSessions } = existing;
+    await store.saveState('default', withoutSessions as TreeSessionState);
+
+    // Second tick — should work fine with empty sessions (backward compat)
+    const actor2 = new TreeActor({ createTree, stateStore: store, stateKey: 'default' });
+    const result = await actor2.process({ type: 'tick' });
+    expect(result.treeStatus).toBe(NodeStatus.SUCCESS);
+    expect(seenSessionId).toBeUndefined();
+  });
+
+  it('clears sessions when tree reaches terminal status', async () => {
+    const store = new InMemoryStateStore();
+
+    // First, seed state with sessions via a suspending tick
+    let tickCount = 0;
+    const createTree = () => new BehaviorTree({
+      name: 'test',
+      root: new ActionNode({
+        name: 'action',
+        action: async (ctx) => {
+          tickCount++;
+          if (tickCount === 1) {
+            ctx.sessions.set('triage', 'session-xyz');
+            return new Promise<NodeStatus>((resolve) => setTimeout(() => resolve(NodeStatus.RUNNING), 5));
+          }
+          return NodeStatus.RUNNING;
+        },
+      }),
+    });
+
+    const actor1 = new TreeActor({ createTree, stateStore: store, stateKey: 'default' });
+    const result1 = await actor1.process({ type: 'tick' });
+    expect(result1.treeStatus).toBe(NodeStatus.RUNNING);
+    const saved1 = await store.getState('default');
+    expect(saved1!.sessions).toEqual({ triage: 'session-xyz' });
+
+    // Second process: replace state with a SUCCESS-returning tree
+    // using the same node name so rootHash matches, but inject sessions
+    // from the saved state. The tree returns SUCCESS, which clears sessions.
+    await store.saveState('default', { ...saved1!, sessions: { triage: 'session-xyz' } });
+
+    const actorSuccess = new TreeActor({
+      createTree: () => new BehaviorTree({
+        name: 'test',
+        root: new ActionNode({ name: 'action', action: async () => NodeStatus.SUCCESS }),
+      }),
+      stateStore: store,
+      stateKey: 'default',
+    });
+
+    const result2 = await actorSuccess.process({ type: 'tick' });
+    expect(result2.treeStatus).toBe(NodeStatus.SUCCESS);
+    const saved2 = await store.getState('default');
+    expect(saved2!.sessions).toEqual({});
   });
 });

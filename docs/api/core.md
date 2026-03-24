@@ -35,7 +35,8 @@ import { BehaviorTree } from "cartographer";
 | `name`          | `string`        | Yes      | Tree name                                                                                                                                                                                                                        |
 | `root`          | `BTreeNode`     | Yes      | Root node                                                                                                                                                                                                                        |
 | `blackboard`    | `Blackboard`    | No       | Defaults to `new InMemoryBlackboard()`                                                                                                                                                                                           |
-| `onElicitation` | `OnElicitation` | No       | Default elicitation handler for all `AgentNode` descendants. When set, the root node's context overrides are updated so the handler is inherited throughout the tree. See [Elicitation](guide-agent-integration.md#elicitation). |
+| `onElicitation` | `OnElicitation` | No       | Default elicitation handler for all `AgentNode` descendants. When set, the root node's context overrides are updated so the handler is inherited throughout the tree. See [Elicitation](../guide-agent-integration.md#elicitation). |
+| `sessionRegistry` | `SessionRegistry` | No    | Pre-built session registry. When omitted, an empty one is created. Used by `TreeActor` to restore sessions from persisted state. |
 
 ### Properties
 
@@ -46,16 +47,17 @@ import { BehaviorTree } from "cartographer";
 | `events`     | `EventEmitter<TreeEvents>` (readonly) | Event system for tree-level events                           |
 | `root`       | `BTreeNode` (readonly)                | The root node of the tree                                    |
 | `rootHash`   | `string` (getter)                     | Content hash of the root node — fingerprints the entire tree |
+| `sessionRegistry` | `SessionRegistry`                | Named session registry for agent conversation sharing. See [Sessions](../guide-agent-integration.md#sessions). |
 
 ### Methods
 
 | Method            | Signature                                                                  | Description                                                                                             |
 | ----------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `tick`            | `(): Promise<NodeStatus>`                                                  | Tick the tree once. Creates a `TreeContext` from the blackboard, events, and an internal `AbortSignal`. |
+| `tick`            | `(): Promise<NodeStatus>`                                                  | Tick the tree once. Creates a `TreeContext` from the blackboard, events, session registry, and an internal `AbortSignal`. |
 | `run`             | `(): Promise<{ status: NodeStatus; blackboard: Record<string, unknown> }>` | Tick the tree and return the status together with a blackboard snapshot.                                |
-| `reset`           | `(): void`                                                                 | Reset the root node and create a new `AbortController`.                                                 |
-| `abort`           | `(): void`                                                                 | Abort the root node and signal abort via the internal controller.                                       |
-| `interrupt`       | `(): void`                                                                 | Cancel in-flight work without destroying cycle state. No `reset()` needed. Emits `tree:interrupt`.      |
+| `reset`           | `(): void`                                                                 | Reset the root node, create a new `AbortController`, and clear the session registry.                    |
+| `abort`           | `(): void`                                                                 | Abort the root node, signal abort via the internal controller, and clear the session registry.          |
+| `interrupt`       | `(): void`                                                                 | Cancel in-flight work without destroying cycle state or session registry. No `reset()` needed. Emits `tree:interrupt`. |
 | `hasInflightWork` | `(): boolean`                                                              | Returns `true` if any node in the tree has unsettled async work.                                        |
 | `settled`         | `(): Promise<void>`                                                        | Resolves when all in-flight work across the tree has settled.                                           |
 | `start`           | `(options: { intervalMs: number; signal?: AbortSignal }): TickLoopHandle`  | Start a reactive tick loop. Returns a handle to stop it.                                                |
@@ -184,7 +186,8 @@ Propagated to every node on each tick. Nodes with context overrides shallow-merg
 | `blackboard`    | `Blackboard`                    | Shared state accessible to all nodes                                                                                                                                        |
 | `events`        | `TypedEventEmitter<TreeEvents>` | Event system for emitting tree-level events                                                                                                                                 |
 | `signal`        | `AbortSignal \| undefined`      | Abort signal propagated from `BehaviorTree`                                                                                                                                 |
-| `onElicitation` | `OnElicitation \| undefined`    | Elicitation handler inherited through context layering. `AgentNode` uses this when no node-level handler is set. See [Elicitation](guide-agent-integration.md#elicitation). |
+| `onElicitation` | `OnElicitation \| undefined`    | Elicitation handler inherited through context layering. `AgentNode` uses this when no node-level handler is set. See [Elicitation](../guide-agent-integration.md#elicitation). |
+| `sessions`      | `SessionRegistry`               | Named session registry for agent conversation sharing. See [Sessions](../guide-agent-integration.md#sessions). |
 
 ---
 
@@ -247,7 +250,7 @@ Event map defining every event a tree can emit.
 | `blackboard:keys`            | `{ keys: string[]; source: string }`                                                                  |
 | `blackboard:read`            | `{ key: string; value: unknown; hit: boolean; source: string }`                                       |
 | `blackboard:write`           | `{ key: string; value: unknown; source: string }`                                                     |
-| `agent:elicitation_declined` | `{ node: BTreeNode; request: ElicitationRequest }`                                                    |
+| `agent:elicitation_declined` | `{ node: BTreeNode; request: AgentElicitationRequest }`                                               |
 | `strategy:decision`          | `{ composite: BTreeNode; strategy: string; decision: unknown }`                                       |
 | `client:event`               | `{ name: string; data: unknown }`                                                                     |
 | `message:processed`          | `{ messageId: string; treeStatus: string }`                                                           |

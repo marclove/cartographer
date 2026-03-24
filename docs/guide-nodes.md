@@ -83,7 +83,7 @@ Typical uses: checking blackboard state, evaluating environment conditions, gati
 
 ## AgentNode
 
-`AgentNode` integrates Claude via the Anthropic Agent SDK. Every call is an agentic SDK invocation. SDK options are passed directly via the `options` field, giving you access to the full range of Agent SDK capabilities -- models, tools, MCP servers, structured output, budget caps, and more.
+`AgentNode` integrates AI agents into the behavior tree. Each AgentNode references an `Agent` instance that handles provider-specific concerns (model selection, tools, MCP servers, structured output, budget caps). The node focuses on BT integration: prompt resolution, event emission, blackboard I/O, `mapResult`, caching, and [named session participation](guide-agent-integration.md#sessions).
 
 ### Behavior
 
@@ -91,20 +91,23 @@ Every AgentNode automatically:
 
 - Attaches a blackboard MCP server so the agent can read and write shared state.
 - Writes the agent's result to `{name}:output` on the blackboard.
-- Uses the **inflight pattern**: the SDK call launches on the first tick, the node returns `RUNNING`, and subsequent ticks poll for completion without re-invoking the SDK. When `cache: true`, the cached result is returned immediately without any inflight overhead.
+- Uses the **inflight pattern**: the agent call launches on the first tick, the node returns `RUNNING`, and subsequent ticks poll for completion without re-invoking the agent. When `cache: true`, the cached result is returned immediately without any inflight overhead.
 
 ### Example
 
 ```typescript
-import { AgentNode } from "cartographer";
+import { AgentNode, ClaudeSDKAgent } from "cartographer";
+
+const classifyAgent = new ClaudeSDKAgent({
+  name: "classify-intent",
+  model: "claude-haiku-4-5",
+  effort: "low",
+});
 
 const classifier = new AgentNode({
   name: "classify-intent",
+  agent: classifyAgent,
   prompt: (ctx) => `Classify this text: ${ctx.blackboard.get<string>("input")}`,
-  options: {
-    model: "claude-haiku-4-5-20251001",
-    effort: "low",
-  },
 });
 ```
 

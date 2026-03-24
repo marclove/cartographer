@@ -4,6 +4,7 @@ import { NodeStatus } from '../types.js';
 import type { BTreeNode, TreeContext, ExecutionStrategy } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
+import { SessionRegistry } from '../core/session-registry.js';
 import type { TreeEvents } from '../types.js';
 import { ActionNode } from '../nodes/action.js';
 import { ConditionNode } from '../nodes/condition.js';
@@ -12,6 +13,7 @@ function createContext(): TreeContext {
   return {
     blackboard: new InMemoryBlackboard(),
     events: new EventEmitter<TreeEvents>(),
+    sessions: new SessionRegistry(),
   };
 }
 

@@ -127,7 +127,7 @@ Fired when a node's `execute()` throws. The node still emits `node:exit` with `F
 
 ### `agent:prompt`
 
-Fired before an `AgentNode` calls the Claude SDK.
+Fired before an `AgentNode` sends a prompt to the agent.
 
 ```typescript
 {
@@ -138,7 +138,7 @@ Fired before an `AgentNode` calls the Claude SDK.
 
 ### `agent:thinking`
 
-Fired when the SDK produces a thinking block (chain-of-thought reasoning). Only emitted when extended thinking is enabled for the model.
+Fired when the agent produces a thinking block (chain-of-thought reasoning). Only emitted by agents that implement `ThinkingCapable`.
 
 ```typescript
 {
@@ -149,7 +149,7 @@ Fired when the SDK produces a thinking block (chain-of-thought reasoning). Only 
 
 ### `agent:text`
 
-Fired when the SDK produces a text content block in an assistant message.
+Fired when the agent produces a text content block.
 
 ```typescript
 {
@@ -172,7 +172,7 @@ Fired for each tool call made by the agent.
 
 ### `agent:response`
 
-Fired when an `AgentNode` receives a successful result from Claude.
+Fired when an `AgentNode` receives a successful result from the agent.
 
 ```typescript
 { node: BTreeNode; result: unknown; cost?: number; modelUsage?: Record<string, ModelUsage> }
@@ -180,7 +180,7 @@ Fired when an `AgentNode` receives a successful result from Claude.
 
 ### `agent:error`
 
-Fired when the SDK returns an error result (e.g., max turns exceeded, budget exhausted, execution error).
+Fired when the agent returns an error result (e.g., max turns exceeded, budget exhausted, execution error).
 
 ```typescript
 { node: BTreeNode; subtype: string; errors?: string[]; permissionDenials?: unknown; cost?: number; modelUsage?: Record<string, ModelUsage> }
@@ -188,7 +188,7 @@ Fired when the SDK returns an error result (e.g., max turns exceeded, budget exh
 
 ### `agent:stream`
 
-Fired for each raw streaming delta event (text, thinking, input_json). High-frequency — useful for real-time token-by-token UI updates.
+Fired for each raw streaming event from agents that implement `StreamCapable`. High-frequency — useful for real-time token-by-token UI updates.
 
 ```typescript
 {
@@ -199,7 +199,7 @@ Fired for each raw streaming delta event (text, thinking, input_json). High-freq
 
 ### `agent:message`
 
-Fired for every raw SDK message. A catch-all that enables custom processing without framework filtering. Also high-frequency.
+Fired for every raw agent message. A catch-all that enables custom processing without framework filtering. Also high-frequency.
 
 ```typescript
 {
@@ -210,7 +210,7 @@ Fired for every raw SDK message. A catch-all that enables custom processing with
 
 ### `agent:tool_progress`
 
-Fired when the SDK reports tool execution progress with elapsed time.
+Fired when the agent reports tool execution progress with elapsed time.
 
 ```typescript
 {
@@ -223,7 +223,7 @@ Fired when the SDK reports tool execution progress with elapsed time.
 
 ### `agent:init`
 
-Fired when the SDK emits a session init message with model, tools, and config details.
+Fired when the agent emits a session init message with model, tools, and config details.
 
 ```typescript
 { node: BTreeNode; sessionId: string; model?: string; tools?: unknown; mcpServers?: unknown }
@@ -231,7 +231,7 @@ Fired when the SDK emits a session init message with model, tools, and config de
 
 ### `agent:status`
 
-Fired when the SDK emits a status change during execution.
+Fired when the agent emits a status change during execution.
 
 ```typescript
 {
@@ -242,7 +242,7 @@ Fired when the SDK emits a status change during execution.
 
 ### `agent:rate_limit`
 
-Fired when the SDK reports a rate limit event.
+Fired when the agent reports a rate limit event.
 
 ```typescript
 {
@@ -258,7 +258,7 @@ Fired when an `AgentNode` receives an elicitation request but no handler is conf
 ```typescript
 {
   node: BTreeNode;
-  request: ElicitationRequest;
+  request: AgentElicitationRequest;
 }
 ```
 
@@ -493,13 +493,13 @@ stopLogging(); // remove listeners when done
 
 The logger captures all meaningful events — node lifecycle, agent activity, strategy decisions — while intentionally excluding the two high-frequency events (`agent:stream` and `agent:message`) that would dominate the log. The log directory is created automatically if it does not exist.
 
-Each log line is a JSON object with a `ts` (ISO timestamp) and `event` field, plus event-specific data:
+Each log line is a JSON object with a `ts` (ISO timestamp), a monotonically increasing `seq`, an `event` field, and event-specific data:
 
 ```jsonl
-{"ts":"2026-03-10T07:00:00.000Z","event":"node:enter","node":"classify"}
-{"ts":"2026-03-10T07:00:00.123Z","event":"agent:prompt","node":"classify","prompt":"..."}
-{"ts":"2026-03-10T07:00:01.456Z","event":"agent:response","node":"classify","result":{...},"cost":0.0012}
-{"ts":"2026-03-10T07:00:01.457Z","event":"node:exit","node":"classify","status":"success","durationMs":1457}
+{"ts":"2026-03-10T07:00:00.000Z","seq":1,"event":"node:enter","node":"classify"}
+{"ts":"2026-03-10T07:00:00.123Z","seq":2,"event":"agent:prompt","node":"classify","prompt":"..."}
+{"ts":"2026-03-10T07:00:01.456Z","seq":3,"event":"agent:response","node":"classify","result":{...},"cost":0.0012}
+{"ts":"2026-03-10T07:00:01.457Z","seq":4,"event":"node:exit","node":"classify","status":"success","durationMs":1457}
 ```
 
 You can inspect logs with `jq`:

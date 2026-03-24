@@ -99,12 +99,14 @@ await client.command("approve", { comment: "Ship it" });
 For each message, `TreeActor.process()` runs this pipeline:
 
 1. **Create tree** from the factory function.
-2. **Load state** from the `StateStore` (blackboard values and serialized tree execution state).
-3. **Restore** the tree's execution state using content-hash-based serialization.
+2. **Load state** from the `StateStore` (blackboard values, serialized tree execution state, and named session registry).
+3. **Restore** the tree's execution state and session registry using content-hash-based serialization.
 4. **Apply the message** — write command payloads or blackboard values.
 5. **Run to completion** — tick the tree repeatedly until it reaches a terminal status (`SUCCESS`/`FAILURE`) or suspends (`RUNNING` with no in-flight work).
-6. **Serialize** tree state and blackboard.
+6. **Serialize** tree state, blackboard, and session registry.
 7. **Save** back to the `StateStore`.
+
+Session registry persistence means agents configured with [named sessions](guide-agent-integration.md#sessions) can resume conversations across server restarts — the session IDs are serialized in `TreeSessionState.sessions` and restored into the tree's `SessionRegistry` on the next message.
 
 ### Run to Completion
 

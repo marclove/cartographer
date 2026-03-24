@@ -1,7 +1,8 @@
 import type { z } from 'zod';
-import type { OnElicitation, ElicitationRequest, ModelUsage } from '@anthropic-ai/claude-agent-sdk';
-import type { Agent } from './agent/agent.js';
+import type { ModelUsage } from '@anthropic-ai/claude-agent-sdk';
+import type { Agent, OnElicitation, AgentElicitationRequest } from './agent/agent.js';
 import type { NodeState } from './core/serialization.js';
+import type { SessionRegistry } from './core/session-registry.js';
 
 // --- Node Status ---
 
@@ -105,18 +106,19 @@ export interface Blackboard {
  * - `node:error` — Fired when a node throws an unhandled error (before returning FAILURE).
  *
  * **Agent events:**
- * - `agent:prompt` — Fired when an AgentNode resolves its prompt and is about to call the SDK.
- * - `agent:thinking` — Fired when the SDK produces a thinking block (chain-of-thought reasoning).
- * - `agent:text` — Fired when the SDK produces a text content block in an assistant message.
+ * - `agent:prompt` — Fired when an AgentNode resolves its prompt and is about to send it to the agent.
+ * - `agent:thinking` — Fired when the agent produces a thinking block (chain-of-thought reasoning).
+ * - `agent:text` — Fired when the agent produces a text content block.
  * - `agent:tool_use` — Fired for each tool call the agent makes.
- * - `agent:response` — Fired when the SDK returns a final successful result.
- * - `agent:error` — Fired when the SDK returns an error result (max turns, budget, execution error, etc.).
- * - `agent:stream` — Fired for each raw streaming delta event (text, thinking, input_json).
- * - `agent:message` — Fired for every raw SDK message, enabling custom processing without framework filtering.
- * - `agent:tool_progress` — Fired when the SDK reports tool execution progress with elapsed time.
- * - `agent:init` — Fired when the SDK emits a session init message with model, tools, and config.
- * - `agent:status` — Fired when the SDK emits a status change during execution.
- * - `agent:rate_limit` — Fired when the SDK reports a rate limit event.
+ * - `agent:response` — Fired when the agent returns a final successful result.
+ * - `agent:error` — Fired when the agent returns an error result (max turns, budget, execution error, etc.).
+ * - `agent:stream` — Fired for each raw streaming delta event from adapters that support streaming.
+ * - `agent:message` — Fired for every raw agent message, enabling custom processing without framework filtering.
+ * - `agent:tool_progress` — Fired when the agent reports tool execution progress with elapsed time.
+ * - `agent:init` — Fired when the agent emits a session init message with model, tools, and config.
+ * - `agent:status` — Fired when the agent emits a status change during execution.
+ * - `agent:rate_limit` — Fired when the agent reports a rate limit event.
+ * - `agent:elicitation_declined` — Fired when an elicitation request is auto-declined because no handler is configured.
  *
  * **Tree lifecycle events:**
  * - `tree:init` — Fired when a `BehaviorTree` is constructed, after ID uniqueness validation passes.
@@ -136,8 +138,8 @@ export interface Blackboard {
  *   console.log(`${node.name} finished with ${status} in ${durationMs}ms`);
  * });
  *
- * tree.events.on('agent:prompt', ({ node, prompt, mode }) => {
- *   console.log(`Agent "${node.name}" sending ${mode} prompt: ${prompt}`);
+ * tree.events.on('agent:prompt', ({ node, prompt }) => {
+ *   console.log(`Agent "${node.name}" sending prompt: ${prompt}`);
  * });
  * ```
  */
@@ -181,7 +183,7 @@ export interface TreeEvents {
   'blackboard:read': { key: string; value: unknown; hit: boolean; source: string };
   'blackboard:write': { key: string; value: unknown; source: string };
   'strategy:decision': { composite: BTreeNode; strategy: string; decision: unknown };
-  'agent:elicitation_declined': { node: BTreeNode; request: ElicitationRequest };
+  'agent:elicitation_declined': { node: BTreeNode; request: AgentElicitationRequest };
   'client:event': { name: string; data: unknown };
   'message:processed': { messageId: string; treeStatus: string };
   'message:interrupted': { messageId: string };
@@ -270,6 +272,9 @@ export interface TreeContext {
    * AgentNode descendants will use it unless a closer ancestor overrides it.
    */
   onElicitation?: OnElicitation;
+
+  /** Named session registry for agent conversation sharing. */
+  sessions: SessionRegistry;
 }
 
 // --- Node Interface ---
@@ -500,7 +505,7 @@ export interface ParallelStrategy {
  *     'use-cache': 'Returns cached results if available',
  *   },
  *   cache: true, // Reuse the first decision until reset()
- *   agent: new ClaudeSDKAgent({ name: 'strategy', model: 'claude-haiku-4-5-20251001', effort: 'low' }),
+ *   agent: new ClaudeSDKAgent({ name: 'strategy', model: 'claude-haiku-4-5', effort: 'low' }),
  * };
  * ```
  */
@@ -613,33 +618,35 @@ export interface ConditionNodeConfig {
 }
 
 /**
- * Configuration for an `AgentNode` — a leaf node that calls the Claude SDK.
+ * Configuration for an `AgentNode` — a leaf node that delegates to an Agent.
  *
- * Every agent call is an agentic SDK invocation. The blackboard is always
- * exposed via a built-in MCP server. Configure additional tools, MCP
- * servers, system prompts, turn limits, budget caps, and any other SDK
- * option via the `options` field, which is passed directly to the SDK's
- * `query()` function.
+ * The `agent` field carries a configured Agent instance that handles all
+ * provider-specific concerns (model, tools, MCP servers, structured output,
+ * budget caps). The blackboard is always exposed via a built-in MCP server
+ * injected by the Agent.
  *
- * To request **structured output**, set `options.outputFormat` with a
- * JSON schema. The SDK validates the response and the parsed result is
- * stored on the blackboard at `{name}:output`. You can combine structured
- * output with tools, multi-turn interaction, and all other options.
+ * To request **structured output**, configure `outputFormat` on the Agent.
+ * The provider validates the response and the parsed result is stored on
+ * the blackboard at `{name}:output`. You can combine structured output
+ * with tools, multi-turn interaction, and all other agent options.
  *
  * Without `outputFormat`, the raw text response is stored on the blackboard.
  *
  * @example
  * ```ts
  * // Structured output — classify user intent
+ * const classifyAgent = new ClaudeSDKAgent({
+ *   name: 'classify-intent',
+ *   model: 'claude-haiku-4-5',
+ *   outputFormat: {
+ *     type: 'json_schema',
+ *     schema: { type: 'object', properties: { intent: { type: 'string' }, confidence: { type: 'number' } } },
+ *   },
+ * });
  * const classifier = new AgentNode({
  *   name: 'classify-intent',
+ *   agent: classifyAgent,
  *   prompt: (ctx) => `Classify: ${ctx.blackboard.get('userMessage')}`,
- *   options: {
- *     outputFormat: {
- *       type: 'json_schema',
- *       schema: { type: 'object', properties: { intent: { type: 'string' }, confidence: { type: 'number' } } },
- *     },
- *   },
  *   mapResult: (output) =>
  *     (output as { confidence: number }).confidence > 0.8
  *       ? NodeStatus.SUCCESS
@@ -647,19 +654,35 @@ export interface ConditionNodeConfig {
  * });
  *
  * // Multi-turn with tools — research and write a report
+ * const researchAgent = new ClaudeSDKAgent({
+ *   name: 'research-agent',
+ *   systemPrompt: 'You are a research assistant.',
+ *   allowedTools: ['Read', 'Edit', 'WebSearch'],
+ *   maxTurns: 10,
+ *   maxBudgetUsd: 0.50,
+ * });
  * const researcher = new AgentNode({
  *   name: 'research-agent',
+ *   agent: researchAgent,
  *   prompt: 'Research the topic and write a summary',
- *   options: {
- *     systemPrompt: 'You are a research assistant.',
- *     allowedTools: ['web-search', 'read-url'],
- *     maxTurns: 10,
- *     maxBudgetUsd: 0.50,
- *   },
  *   blackboardNamespace: 'research',
  * });
  * ```
  */
+/**
+ * Configuration for how an AgentNode participates in a named session.
+ */
+export interface SessionConfig {
+  /** The named session to participate in. */
+  name: string;
+  /**
+   * Fork behavior. When `true`, creates an anonymous fork (ephemeral).
+   * When a string, creates a named fork registered under that name.
+   * When absent, the agent resumes (appends to) the session.
+   */
+  fork?: true | string;
+}
+
 export interface AgentNodeConfig {
   /** Optional stable identifier. Auto-generated UUID when omitted. */
   id?: string;
@@ -695,6 +718,12 @@ export interface AgentNodeConfig {
    * again. The cache is cleared when `reset()` is called.
    */
   cache?: boolean;
+
+  /**
+   * Named session participation.
+   * Shorthand: `session: "triage"` is equivalent to `session: { name: "triage" }`.
+   */
+  session?: string | SessionConfig;
 }
 
 // --- Composite Configs ---
@@ -953,6 +982,9 @@ export interface BehaviorTreeConfig {
    * in the tree inherit it unless a closer ancestor overrides it.
    */
   onElicitation?: OnElicitation;
+
+  /** Pre-built session registry. When omitted, an empty one is created. */
+  sessionRegistry?: SessionRegistry;
 }
 
 // --- Scheduler ---

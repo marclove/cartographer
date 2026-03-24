@@ -153,6 +153,7 @@ export class TreeActor {
         tree.blackboard.set(key, value);
       }
       restoreTree(tree.root, tree.rootHash, stored.treeState, this.topologyPolicy);
+      tree.restoreSessionRegistry(stored.sessions ?? {});
     }
 
     // Handle held state: tick messages are no-ops, command/write clear held,
@@ -211,6 +212,7 @@ export class TreeActor {
     await this.stateStore.saveState(this.stateKey, {
       blackboard: blackboardSnapshot,
       treeState,
+      sessions: tree.sessionRegistry.toRecord(),
       createdAt: stored?.createdAt ?? Date.now(),
       lastMessageAt: Date.now(),
       ...(interrupted && { held: true }),
@@ -355,6 +357,7 @@ export class TreeActor {
     await this.stateStore.saveState(this.stateKey, {
       blackboard,
       treeState,
+      sessions: tree.sessionRegistry.toRecord(),
       createdAt: stored?.createdAt ?? Date.now(),
       lastMessageAt: Date.now(),
     });

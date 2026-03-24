@@ -159,7 +159,7 @@ import { GuardNode } from "cartographer";
 | `child`     | `BTreeNode`                                             | Yes      |
 | `condition` | `(context: TreeContext) => Promise<boolean> \| boolean` | Yes      |
 
-**Behavior:** Evaluates the condition before ticking the child. If the condition returns false or throws, calls `child.abort()` (to clear any in-flight state) and returns FAILURE. If the condition returns true, ticks the child and returns its status. Async conditions use the inflight pattern (return RUNNING on first tick, poll on subsequent ticks).
+**Behavior:** Evaluates the condition before ticking the child. If the condition returns false or throws, calls `child.abort()` (to clear any in-flight state) and returns FAILURE. If the condition returns true, ticks the child and returns its status. Once the child returns a terminal status (SUCCESS or FAILURE), that result is cached — subsequent ticks where the guard condition passes return the cached status without re-ticking the child. The cache is cleared on `reset()`, `abort()`, `interrupt()`, and when the guard condition evaluates to false. Async conditions use the inflight pattern (return RUNNING on first tick, poll on subsequent ticks).
 
 ---
 

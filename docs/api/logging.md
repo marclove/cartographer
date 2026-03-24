@@ -10,7 +10,7 @@ Structured logging for behavior tree runs.
 import { createTreeLogger } from "cartographer";
 ```
 
-Attaches to a tree's event emitter and appends structured NDJSON log entries to a file. Each line is a self-contained JSON object with a `ts` (ISO timestamp), the event `type`, and the event payload. See [Structured Logging](../guide-blackboard-and-events.md#structured-logging-with-createtreelogger) for a walkthrough.
+Attaches to a tree's event emitter and appends structured NDJSON log entries to a file. Each line is a self-contained JSON object with a `ts` (ISO timestamp), a monotonically increasing `seq`, the event `type`, and the event payload. See [Structured Logging](../guide-blackboard-and-events.md#structured-logging-with-createtreelogger) for a walkthrough.
 
 ### Signature
 

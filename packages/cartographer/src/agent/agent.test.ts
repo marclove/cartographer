@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { AgentMessage } from './agent.js';
+import { isThinkingCapable, isStreamCapable } from './agent.js';
 import { TestAgent } from './test-agent.js';
 
 describe('Agent', () => {
@@ -25,9 +26,10 @@ describe('Agent', () => {
       messages.push(msg);
     }
 
-    expect(messages).toHaveLength(2);
-    expect(messages[0]).toEqual({ type: 'text', content: 'hello' });
-    expect(messages[1]).toEqual({ type: 'result', subtype: 'success', output: 'done' });
+    expect(messages).toHaveLength(3);
+    expect(messages[0]).toEqual(expect.objectContaining({ type: 'session_start' }));
+    expect(messages[1]).toEqual({ type: 'text', content: 'hello' });
+    expect(messages[2]).toEqual({ type: 'result', subtype: 'success', output: 'done' });
   });
 
   it('sessionId is set after send', async () => {
@@ -36,7 +38,7 @@ describe('Agent', () => {
 
     for await (const _ of agent.send('prompt')) { /* consume */ }
 
-    expect(agent.sessionId).toBe('test-session');
+    expect(agent.sessionId).toEqual(expect.any(String));
   });
 
   it('onMessage callback is invoked for each message', async () => {
@@ -69,7 +71,7 @@ describe('Agent', () => {
       messages.push(msg);
     }
 
-    expect(messages).toHaveLength(2);
+    expect(messages).toHaveLength(3); // session_start + 2 configured messages
   });
 
   it('getInfo() returns agent metadata', () => {
@@ -87,5 +89,40 @@ describe('Agent', () => {
 
     await agent.close();
     expect(agent.sessionId).toBeNull();
+  });
+
+  describe('isThinkingCapable', () => {
+    it('returns false for a plain Agent', () => {
+      const agent = new TestAgent({ name: 'plain' });
+      expect(isThinkingCapable(agent)).toBe(false);
+    });
+
+    it('returns true for an agent with supportsThinking: true', () => {
+      const agent = Object.assign(new TestAgent({ name: 'thinker' }), {
+        supportsThinking: true as const,
+      });
+      expect(isThinkingCapable(agent)).toBe(true);
+    });
+
+    it('returns false when supportsThinking is not true', () => {
+      const agent = Object.assign(new TestAgent({ name: 'nope' }), {
+        supportsThinking: false,
+      });
+      expect(isThinkingCapable(agent)).toBe(false);
+    });
+  });
+
+  describe('isStreamCapable', () => {
+    it('returns false for a plain Agent', () => {
+      const agent = new TestAgent({ name: 'plain' });
+      expect(isStreamCapable(agent)).toBe(false);
+    });
+
+    it('returns true for an agent with supportsStreaming: true', () => {
+      const agent = Object.assign(new TestAgent({ name: 'streamer' }), {
+        supportsStreaming: true as const,
+      });
+      expect(isStreamCapable(agent)).toBe(true);
+    });
   });
 });

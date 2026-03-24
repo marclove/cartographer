@@ -40,7 +40,7 @@ describe('agent structured pipeline (live)', () => {
                 name: 'classify',
                 agent: new ClaudeSDKAgent({
                   name: 'classify',
-                  model: 'claude-haiku-4-5-20251001',
+                  model: 'claude-haiku-4-5',
                   effort: 'low',
                   outputFormat: {
                     type: 'json_schema',

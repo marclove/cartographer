@@ -21,6 +21,9 @@ interface TreeContext {
 
   /** Handler for MCP elicitation requests. */
   onElicitation?: OnElicitation;
+
+  /** Named session registry for agent conversation sharing. */
+  sessions: SessionRegistry;
 }
 ```
 
@@ -30,18 +33,20 @@ interface TreeContext {
 | `events`        | Event emitter for observability. All `node:*` and `agent:*` events flow through this emitter.                                       |
 | `signal`        | Set automatically by `BehaviorTree` when `abort()` is called. Nodes check `signal?.aborted` to bail out of long-running work.       |
 | `onElicitation` | Handler for MCP server elicitation requests. Consumed by `AgentNode` and agent strategies. See [Elicitation](guide-elicitation.md). |
+| `sessions`      | Named session registry mapping session names to provider session IDs. Consumed by `AgentNode` for conversation sharing. See [Sessions](guide-agent-integration.md#sessions). |
 
 ### Creating a Context
 
 `BehaviorTree` creates the context internally. In tests, construct one manually:
 
 ```typescript
-import { InMemoryBlackboard, EventEmitter } from "cartographer";
+import { InMemoryBlackboard, EventEmitter, SessionRegistry } from "cartographer";
 import type { TreeContext, TreeEvents } from "cartographer";
 
 const context: TreeContext = {
   blackboard: new InMemoryBlackboard(),
   events: new EventEmitter<TreeEvents>(),
+  sessions: new SessionRegistry(),
 };
 
 const status = await myNode.tick(context);
@@ -55,7 +60,7 @@ The context flows top-down through the tree. Composite nodes pass it to each chi
 
 ## Context Layering
 
-Context layering lets any `BaseNode` override `TreeContext` fields for itself and all its descendants. This is how per-subtree elicitation handlers are implemented — both `AgentNode` and agent strategies (`AgentSelectionStrategy`, `AgentExecutionStrategy`, `AgentParallelStrategy`) read `context.onElicitation` during their SDK calls.
+Context layering lets any `BaseNode` override `TreeContext` fields for itself and all its descendants. This is how per-subtree elicitation handlers are implemented — both `AgentNode` and agent strategies (`AgentSelectionStrategy`, `AgentExecutionStrategy`, `AgentParallelStrategy`) read `context.onElicitation` during their agent calls.
 
 ### How It Works
 
@@ -93,15 +98,17 @@ root (onElicitation: handlerA)
 The `context` option on composite and decorator builder methods calls `setContextOverrides()` on the constructed node:
 
 ```typescript
-import { TreeBuilder } from "cartographer";
+import { TreeBuilder, ClaudeSDKAgent } from "cartographer";
+
+const agent = new ClaudeSDKAgent({ name: "worker", model: "claude-sonnet-4-6" });
 
 const tree = new TreeBuilder("example")
   .sequence("outer", { context: { onElicitation: outerHandler } }, (b) => {
     // inner override takes precedence for its descendants
     b.sequence("inner", { context: { onElicitation: innerHandler } }, (b) => {
-      b.agent("worker", { prompt: "work" }); // sees innerHandler
+      b.agent("worker", { agent, prompt: "work" }); // sees innerHandler
     });
-    b.agent("sibling", { prompt: "other" }); // sees outerHandler
+    b.agent("sibling", { agent, prompt: "other" }); // sees outerHandler
   })
   .build();
 ```
@@ -115,11 +122,13 @@ The `context` option is available on all composite methods (`sequence`, `selecto
 When constructing nodes directly (without the builder), call `setContextOverrides()` or `mergeContextOverrides()` on any `BaseNode` subclass:
 
 ```typescript
-import { SequenceNode, AgentNode } from "cartographer";
+import { SequenceNode, AgentNode, ClaudeSDKAgent } from "cartographer";
+
+const agent = new ClaudeSDKAgent({ name: "agent", model: "claude-sonnet-4-6" });
 
 const seq = new SequenceNode({
   name: "scoped",
-  children: [new AgentNode({ name: "agent", prompt: "work" })],
+  children: [new AgentNode({ name: "agent", agent, prompt: "work" })],
 });
 
 // Replace all overrides

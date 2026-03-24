@@ -9,6 +9,7 @@ import { NodeStatus } from '../types.js';
 import type { BTreeNode, TreeContext } from '../types.js';
 import { EventEmitter } from './event-emitter.js';
 import { InMemoryBlackboard } from './blackboard.js';
+import { SessionRegistry } from './session-registry.js';
 import type { TreeEvents } from '../types.js';
 import { buildHashIndex, serializeTree, restoreTree } from './serialization.js';
 import type { SerializedTreeState } from './serialization.js';
@@ -17,6 +18,7 @@ function createContext(): TreeContext {
   return {
     blackboard: new InMemoryBlackboard(),
     events: new EventEmitter<TreeEvents>(),
+    sessions: new SessionRegistry(),
   };
 }
 

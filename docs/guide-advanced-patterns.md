@@ -193,21 +193,23 @@ const selector = new SelectorNode({
 - `order()` / `policy()` is called once per execution cycle (committed and reused across ticks within the cycle).
 - `reset()` is called when the tree is reset. Use it to clear cached decisions.
 - Agent strategies (`AgentSelectionStrategy`, `AgentExecutionStrategy`, `AgentParallelStrategy`) support `cache: true` to call Claude once and reuse the result until `reset()`.
-- Agent strategies emit `agent:*` observability events (including `agent:prompt`, `agent:response`, `agent:error`) during SDK calls, so `createTreeLogger` and custom event listeners automatically capture strategy interactions.
+- Agent strategies emit `agent:*` observability events (including `agent:prompt`, `agent:response`, `agent:error`) during agent calls, so `createTreeLogger` and custom event listeners automatically capture strategy interactions.
 
 ### Dynamic Prompt Functions
 
 Agent strategy configs accept a `prompt` that can be either a string or a function. Use a function to include dynamic blackboard state in the prompt:
 
 ```typescript
-import { AgentExecutionStrategy } from "cartographer";
+import { AgentExecutionStrategy, ClaudeSDKAgent } from "cartographer";
+
+const strategyAgent = new ClaudeSDKAgent({ name: "strategy", model: "claude-haiku-4-5" });
 
 const strategy = new AgentExecutionStrategy({
-  prompt: (ctx) => {
+  prompt: (children, ctx) => {
     const urgency = ctx.blackboard.get("urgency");
     return `Order steps for ${urgency} priority processing`;
   },
-  options: { model: "claude-haiku-4-5-20251001" },
+  agent: strategyAgent,
   cache: true,
 });
 ```

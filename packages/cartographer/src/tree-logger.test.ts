@@ -43,6 +43,7 @@ describe('createTreeLogger', () => {
     events.emit('node:enter', { node: makeNode('root'), context: makeContext() });
 
     const [entry] = writtenEntries();
+    expect(entry.seq).toBe(1);
     expect(entry.event).toBe('node:enter');
     expect(entry.node).toBe('root');
     expect(typeof entry.ts).toBe('string');
@@ -79,6 +80,7 @@ describe('createTreeLogger', () => {
     events.emit('agent:prompt', { node: makeNode('ai'), prompt: 'Do something' });
 
     const [entry] = writtenEntries();
+    expect(entry.seq).toBe(1);
     expect(entry.event).toBe('agent:prompt');
     expect(entry.prompt).toBe('Do something');
   });
@@ -167,6 +169,7 @@ describe('createTreeLogger', () => {
     });
 
     const [entry] = writtenEntries();
+    expect(entry.seq).toBe(1);
     expect(entry.event).toBe('agent:init');
     expect(entry.sessionId).toBe('sess-1');
     expect(entry.model).toBe('claude-opus-4-6');
@@ -214,9 +217,20 @@ describe('createTreeLogger', () => {
     events.emit('blackboard:write', { key: 'foo', value: 42, source: 'action' });
 
     const [entry] = writtenEntries();
+    expect(entry.seq).toBe(1);
     expect(entry.event).toBe('blackboard:write');
     expect(entry.key).toBe('foo');
     expect(entry.value).toBe(42);
+  });
+
+  it('increments seq across writes', () => {
+    createTreeLogger(events, { filePath: 'out.log' });
+    events.emit('node:enter', { node: makeNode('one'), context: makeContext() });
+    events.emit('node:exit', { node: makeNode('one'), status: NodeStatus.SUCCESS, durationMs: 5, context: makeContext() });
+
+    const [first, second] = writtenEntries();
+    expect(first.seq).toBe(1);
+    expect(second.seq).toBe(2);
   });
 
   it('logs strategy:decision by default', () => {

@@ -26,7 +26,7 @@ describe('Agent Unstructured Mode Integration', { timeout: 90_000 }, () => {
       name: 'mcp-agent',
       agent: new ClaudeSDKAgent({
         name: 'mcp-agent',
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-haiku-4-5',
         effort: 'low',
         maxTurns: 5,
       }),
@@ -65,7 +65,7 @@ describe('Agent Unstructured Mode Integration', { timeout: 90_000 }, () => {
         b.agent('transformer', {
           agent: new ClaudeSDKAgent({
             name: 'transformer',
-            model: 'claude-haiku-4-5-20251001',
+            model: 'claude-haiku-4-5',
             effort: 'low',
             maxTurns: 5,
           }),
@@ -104,7 +104,7 @@ describe('Agent Unstructured Mode Integration', { timeout: 90_000 }, () => {
       name: 'safety-check',
       agent: new ClaudeSDKAgent({
         name: 'safety-check',
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-haiku-4-5',
         effort: 'low',
         outputFormat: {
           type: 'json_schema',
@@ -150,7 +150,7 @@ describe('Agent Unstructured Mode Integration', { timeout: 90_000 }, () => {
       name: 'cached-agent',
       agent: new ClaudeSDKAgent({
         name: 'cached-agent',
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-haiku-4-5',
         effort: 'low',
         outputFormat: {
           type: 'json_schema',

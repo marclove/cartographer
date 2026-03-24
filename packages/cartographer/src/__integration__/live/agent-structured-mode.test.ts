@@ -23,7 +23,7 @@ describe('Agent Structured Mode Integration', { timeout: 90_000 }, () => {
       name: 'sentiment-classifier',
       agent: new ClaudeSDKAgent({
         name: 'sentiment-classifier',
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-haiku-4-5',
         effort: 'low',
         outputFormat: {
           type: 'json_schema',
@@ -72,7 +72,7 @@ describe('Agent Structured Mode Integration', { timeout: 90_000 }, () => {
         b.agent('summarizer', {
           agent: new ClaudeSDKAgent({
             name: 'summarizer',
-            model: 'claude-haiku-4-5-20251001',
+            model: 'claude-haiku-4-5',
             effort: 'low',
             outputFormat: {
               type: 'json_schema',
