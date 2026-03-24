@@ -43,6 +43,15 @@ export interface MessageInterruptedEvent {
   messageId: string;
 }
 
+export interface MessageQueuedEvent {
+  messageId: string;
+  position: number;
+}
+
+export interface MessageDequeuedEvent {
+  messageId: string;
+}
+
 /** Generate a unique message ID. */
 export function generateMessageId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

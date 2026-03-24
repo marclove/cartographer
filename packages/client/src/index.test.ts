@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { createCartographerClient } from './index.js';
+import { createCartographerClient, QueueFullError } from './index.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -66,7 +66,8 @@ describe('SSE event forwarding', () => {
   const ALL_EVENT_TYPES = [
     'snapshot',
     'blackboard:write', 'client:event', 'message:processed',
-    'message:interrupted', 'message:failed', 'node:enter', 'node:exit', 'tree:tick',
+    'message:interrupted', 'message:failed', 'message:queued',
+    'message:dequeued', 'node:enter', 'node:exit', 'tree:tick',
     'node:error', 'tree:init', 'tree:reset', 'tree:abort', 'tree:tick:skipped',
     'agent:prompt', 'agent:thinking', 'agent:text', 'agent:tool_use', 'agent:response',
     'agent:error', 'agent:message', 'agent:tool_progress', 'agent:init', 'agent:status',
@@ -147,7 +148,7 @@ describe('requireConnection guard', () => {
     );
   });
 
-  it('interruptAndCommand does NOT throw when interrupt() returns interrupted: false', async () => {
+  it('interruptAndCommand does NOT throw when interrupt() returns interrupted: false (no queue full)', async () => {
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce({
         // interrupt() response
@@ -166,5 +167,24 @@ describe('requireConnection guard', () => {
     // Should not throw — falls through to this.command() which calls fetch
     const result = await client.interruptAndCommand('doSomething');
     expect(result).toEqual({ id: 'msg-1' });
+  });
+});
+
+describe('QueueFullError', () => {
+  it('has correct name and message', () => {
+    const err = new QueueFullError();
+    expect(err.name).toBe('QueueFullError');
+    expect(err.message).toBe('Server message queue is full');
+    expect(err).toBeInstanceOf(Error);
+  });
+
+  it('post() throws QueueFullError on 429', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      status: 429,
+      json: () => Promise.resolve({}),
+    }));
+
+    const client = createCartographerClient('http://localhost:3000');
+    await expect(client.command('test')).rejects.toThrow(QueueFullError);
   });
 });

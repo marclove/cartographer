@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { InMemoryStateStore } from './in-memory-state-store.js';
 import type { TreeEvent } from './state-store.js';
+import type { ActorMessage } from '../actor/types.js';
 
 describe('InMemoryStateStore', () => {
   describe('state', () => {
@@ -113,6 +114,87 @@ describe('InMemoryStateStore', () => {
       events.push((await iter.next()).value);
       events.push((await iter.next()).value);
       expect(events.map(e => e.id)).toEqual(['2', '3', '4']);
+    });
+  });
+
+  describe('queue', () => {
+    it('enqueueMessage stores and returns position', async () => {
+      const store = new InMemoryStateStore();
+      const msg1: ActorMessage = { type: 'command', name: 'a' };
+      const msg2: ActorMessage = { type: 'command', name: 'b' };
+      const msg3: ActorMessage = { type: 'command', name: 'c' };
+
+      const r1 = await store.enqueueMessage('default', msg1, 10);
+      const r2 = await store.enqueueMessage('default', msg2, 10);
+      const r3 = await store.enqueueMessage('default', msg3, 10);
+
+      expect(r1.position).toBe(1);
+      expect(r2.position).toBe(2);
+      expect(r3.position).toBe(3);
+    });
+
+    it('dequeueMessage returns messages in FIFO order', async () => {
+      const store = new InMemoryStateStore();
+      const msg1: ActorMessage = { type: 'command', name: 'first' };
+      const msg2: ActorMessage = { type: 'command', name: 'second' };
+      await store.enqueueMessage('default', msg1, 10);
+      await store.enqueueMessage('default', msg2, 10);
+
+      const d1 = await store.dequeueMessage('default');
+      const d2 = await store.dequeueMessage('default');
+
+      expect(d1).toEqual(msg1);
+      expect(d2).toEqual(msg2);
+    });
+
+    it('dequeueMessage returns null for empty queue', async () => {
+      const store = new InMemoryStateStore();
+      expect(await store.dequeueMessage('default')).toBeNull();
+    });
+
+    it('enqueueMessage throws when queue is full', async () => {
+      const store = new InMemoryStateStore();
+      await store.enqueueMessage('default', { type: 'tick' }, 2);
+      await store.enqueueMessage('default', { type: 'tick' }, 2);
+
+      await expect(store.enqueueMessage('default', { type: 'tick' }, 2))
+        .rejects.toThrow('Queue full');
+    });
+
+    it('getQueueSize returns correct count', async () => {
+      const store = new InMemoryStateStore();
+      expect(await store.getQueueSize('default')).toBe(0);
+      await store.enqueueMessage('default', { type: 'tick' }, 10);
+      expect(await store.getQueueSize('default')).toBe(1);
+      await store.enqueueMessage('default', { type: 'tick' }, 10);
+      expect(await store.getQueueSize('default')).toBe(2);
+      await store.dequeueMessage('default');
+      expect(await store.getQueueSize('default')).toBe(1);
+    });
+
+    it('getQueuedMessages returns all queued messages', async () => {
+      const store = new InMemoryStateStore();
+      const msgs: ActorMessage[] = [
+        { type: 'command', name: 'a' },
+        { type: 'command', name: 'b' },
+        { type: 'command', name: 'c' },
+      ];
+      for (const msg of msgs) await store.enqueueMessage('default', msg, 10);
+
+      expect(await store.getQueuedMessages('default')).toEqual(msgs);
+    });
+
+    it('getQueuedMessages returns empty array for missing key', async () => {
+      const store = new InMemoryStateStore();
+      expect(await store.getQueuedMessages('nonexistent')).toEqual([]);
+    });
+
+    it('deleteState also clears the queue', async () => {
+      const store = new InMemoryStateStore();
+      await store.enqueueMessage('default', { type: 'tick' }, 10);
+      await store.deleteState('default');
+      expect(await store.getQueueSize('default')).toBe(0);
+      expect(await store.dequeueMessage('default')).toBeNull();
     });
   });
 });

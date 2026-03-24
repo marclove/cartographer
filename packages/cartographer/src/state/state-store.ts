@@ -1,4 +1,5 @@
 import type { SerializedTreeState } from '../core/serialization.js';
+import type { ActorMessage } from '../actor/types.js';
 
 export interface TreeSessionState {
   blackboard: Record<string, unknown>;
@@ -31,4 +32,10 @@ export interface StateStore {
 
   appendEvents(key: string, events: TreeEvent[]): Promise<void>;
   readEvents(key: string, lastEventId?: string, options?: { signal?: AbortSignal }): AsyncIterable<TreeEvent>;
+
+  // Queue
+  enqueueMessage(stateKey: string, message: ActorMessage, maxQueueDepth: number): Promise<{ position: number; queueSize: number }>;
+  dequeueMessage(stateKey: string): Promise<ActorMessage | null>;
+  getQueueSize(stateKey: string): Promise<number>;
+  getQueuedMessages(stateKey: string): Promise<ActorMessage[]>;
 }

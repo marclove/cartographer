@@ -362,7 +362,7 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
     await server?.stop();
   });
 
-  it('returns 409 when a second request hits while processing is locked', async () => {
+  it('returns 202 queued when a second request hits while processing is locked', async () => {
     server = new ActorServer({ createTree: makeSlowTree, port: 0 });
     port = (await server.start()).port;
 
@@ -376,17 +376,49 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
     // Wait for the first request to acquire the lock
     await new Promise(r => setTimeout(r, 50));
 
-    // Second request should get 409
+    // Second request should be queued
     const second = await fetch(`http://localhost:${port}/api/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'tick' }),
     });
-    expect(second.status).toBe(409);
+    expect(second.status).toBe(202);
     const body = await second.json();
-    expect(body.error).toContain('Processing in progress');
+    expect(body.status).toBe('queued');
+    expect(body.position).toBe(1);
 
     await first;
+  });
+
+  it('returns 429 when queue is full', async () => {
+    server = new ActorServer({ createTree: makeSlowTree, port: 0, maxQueueDepth: 1 });
+    port = (await server.start()).port;
+
+    // Start a slow request that will hold the lock
+    fetch(`http://localhost:${port}/api/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'tick' }),
+    });
+    await new Promise(r => setTimeout(r, 50));
+
+    // Second request fills the queue
+    const second = await fetch(`http://localhost:${port}/api/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'tick' }),
+    });
+    expect(second.status).toBe(202);
+
+    // Third request overflows the queue
+    const third = await fetch(`http://localhost:${port}/api/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'tick' }),
+    });
+    expect(third.status).toBe(429);
+    const body = await third.json();
+    expect(body.error).toContain('Queue full');
   });
 
   it('POST /api/blackboard/:key updates the blackboard with the written value', async () => {
@@ -428,7 +460,7 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
     expect(done).toBe(true);
   });
 
-  it('processMessage returns null when lock cannot be acquired', async () => {
+  it('processMessage returns queued result when lock is held', async () => {
     const store = new InMemoryStateStore();
     server = new ActorServer({ createTree: makeSlowTree, stateStore: store, port: 0 });
     port = (await server.start()).port;
@@ -443,9 +475,39 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
     // Wait for the lock to be acquired
     await new Promise(r => setTimeout(r, 50));
 
-    // processMessage should return null (lock contention)
+    // processMessage should return queued result
     const result = await server.processMessage({ type: 'tick' });
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result).toHaveProperty('queued', true);
+    expect(result).toHaveProperty('messageId');
+    expect(result).toHaveProperty('position', 1);
+  });
+
+  it('processMessage returns null when queue is full', async () => {
+    const store = new InMemoryStateStore();
+    server = new ActorServer({ createTree: makeSlowTree, stateStore: store, port: 0, maxQueueDepth: 1 });
+    port = (await server.start()).port;
+
+    // Start a slow request via HTTP to hold the lock
+    fetch(`http://localhost:${port}/api/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'tick' }),
+    });
+    await new Promise(r => setTimeout(r, 50));
+
+    // First processMessage fills the queue
+    const first = await server.processMessage({ type: 'tick' });
+    expect(first).toHaveProperty('queued', true);
+
+    // Second processMessage should return null (queue full)
+    const second = await server.processMessage({ type: 'tick' });
+    expect(second).toBeNull();
+  });
+
+  it('maxQueueDepth defaults to 16', () => {
+    const s = new ActorServer({ createTree: makeTree, port: 0 });
+    expect(s.maxQueueDepth).toBe(16);
   });
 
   it('defaults topologyPolicy to fail', () => {

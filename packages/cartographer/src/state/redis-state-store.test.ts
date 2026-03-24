@@ -22,6 +22,9 @@ function createMockRedis() {
       xread: vi.fn().mockResolvedValue(null),
       disconnect: vi.fn(),
     }),
+    lpop: vi.fn(),
+    llen: vi.fn().mockResolvedValue(0),
+    lrange: vi.fn().mockResolvedValue([]),
     quit: vi.fn().mockResolvedValue('OK'),
     _pipeline: pipelineMethods,
   };
@@ -30,10 +33,12 @@ function createMockRedis() {
 describe('RedisStateStore', () => {
   let redis: ReturnType<typeof createMockRedis>;
   let store: RedisStateStore;
+  let prefixStore: RedisStateStore;
 
   beforeEach(() => {
     redis = createMockRedis();
     store = new RedisStateStore({ redis });
+    prefixStore = new RedisStateStore({ redis, keyPrefix: 'myapp:' });
   });
 
   describe('state', () => {
@@ -68,11 +73,12 @@ describe('RedisStateStore', () => {
       );
     });
 
-    it('deletes both state and events keys', async () => {
+    it('deletes state, events, and queue keys', async () => {
       await store.deleteState('sess1');
       expect(redis.del).toHaveBeenCalledWith(
         'cartographer:state:sess1',
         'cartographer:events:sess1',
+        'cartographer:queue:sess1',
       );
     });
 
@@ -190,6 +196,84 @@ describe('RedisStateStore', () => {
     });
   });
 
+  describe('queue', () => {
+    it('enqueueMessage calls eval with Lua script and correct args', async () => {
+      redis.eval.mockResolvedValue(1);
+      const msg = { type: 'command', name: 'test' };
+      const result = await store.enqueueMessage('default', msg as any, 16);
+
+      expect(redis.eval).toHaveBeenCalledWith(
+        expect.stringContaining('LLEN'),
+        1,
+        'cartographer:queue:default',
+        16,
+        JSON.stringify(msg),
+      );
+      expect(result).toEqual({ position: 1, queueSize: 1 });
+    });
+
+    it('enqueueMessage throws when Lua returns -1 (queue full)', async () => {
+      redis.eval.mockResolvedValue(-1);
+      await expect(store.enqueueMessage('default', { type: 'tick' } as any, 16))
+        .rejects.toThrow('Queue full');
+    });
+
+    it('dequeueMessage calls lpop and parses result', async () => {
+      const msg = { type: 'command', name: 'test' };
+      redis.lpop.mockResolvedValue(JSON.stringify(msg));
+      const result = await store.dequeueMessage('default');
+
+      expect(redis.lpop).toHaveBeenCalledWith('cartographer:queue:default');
+      expect(result).toEqual(msg);
+    });
+
+    it('dequeueMessage returns null when lpop returns null', async () => {
+      redis.lpop.mockResolvedValue(null);
+      expect(await store.dequeueMessage('default')).toBeNull();
+    });
+
+    it('getQueueSize calls llen with correct key', async () => {
+      redis.llen.mockResolvedValue(3);
+      const size = await store.getQueueSize('default');
+
+      expect(redis.llen).toHaveBeenCalledWith('cartographer:queue:default');
+      expect(size).toBe(3);
+    });
+
+    it('getQueuedMessages calls lrange and parses all entries', async () => {
+      const msgs = [{ type: 'tick' }, { type: 'command', name: 'a' }];
+      redis.lrange.mockResolvedValue(msgs.map(m => JSON.stringify(m)));
+      const result = await store.getQueuedMessages('default');
+
+      expect(redis.lrange).toHaveBeenCalledWith('cartographer:queue:default', 0, -1);
+      expect(result).toEqual(msgs);
+    });
+
+    it('deleteState also deletes queue key', async () => {
+      redis.del.mockResolvedValue(1);
+      await store.deleteState('default');
+
+      expect(redis.del).toHaveBeenCalledWith(
+        'cartographer:state:default',
+        'cartographer:events:default',
+        'cartographer:queue:default',
+      );
+    });
+
+    it('custom prefix applies to queue key', async () => {
+      redis.eval.mockResolvedValue(1);
+      await prefixStore.enqueueMessage('default', { type: 'tick' } as any, 10);
+
+      expect(redis.eval).toHaveBeenCalledWith(
+        expect.any(String),
+        1,
+        'myapp:queue:default',
+        10,
+        expect.any(String),
+      );
+    });
+  });
+
   describe('custom prefix', () => {
     it('applies custom prefix to all keys', async () => {
       const customStore = new RedisStateStore({ redis, keyPrefix: 'myapp:' });
@@ -207,7 +291,7 @@ describe('RedisStateStore', () => {
       expect(redis.set).toHaveBeenCalledWith('myapp:state:k', expect.any(String));
 
       await customStore.deleteState('k');
-      expect(redis.del).toHaveBeenCalledWith('myapp:state:k', 'myapp:events:k');
+      expect(redis.del).toHaveBeenCalledWith('myapp:state:k', 'myapp:events:k', 'myapp:queue:k');
 
       redis.keys.mockResolvedValue(['myapp:state:k']);
       const keys = await customStore.listKeys();

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { createCartographerClient, ConflictError } from '@cartographer/client';
+import { createCartographerClient, QueueFullError } from '@cartographer/client';
 import { ActorServer } from '../server/actor-server.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { ActionNode } from '../nodes/action.js';
@@ -60,10 +60,10 @@ describe('CartographerClient', () => {
     expect(status).toBeDefined();
   });
 
-  it('ConflictError has correct name and message', () => {
-    const err = new ConflictError();
-    expect(err.name).toBe('ConflictError');
-    expect(err.message).toBe('Session is currently processing a message');
+  it('QueueFullError has correct name and message', () => {
+    const err = new QueueFullError();
+    expect(err.name).toBe('QueueFullError');
+    expect(err.message).toBe('Server message queue is full');
     expect(err).toBeInstanceOf(Error);
   });
 
@@ -111,8 +111,8 @@ describe('CartographerClient', () => {
     await expect(client.send({} as any)).rejects.toThrow();
   });
 
-  it('command() throws ConflictError on 409 when server is busy', async () => {
-    server = new ActorServer({ createTree: makeSlowTree, port: 0 });
+  it('command() throws QueueFullError when server queue is full', async () => {
+    server = new ActorServer({ createTree: makeSlowTree, port: 0, maxQueueDepth: 0 });
     port = (await server.start()).port;
     const client = createCartographerClient(`http://localhost:${port}`);
 
@@ -121,8 +121,8 @@ describe('CartographerClient', () => {
     // Give the server a moment to start processing
     await new Promise((r) => setTimeout(r, 50));
 
-    // Second command should hit 409
-    await expect(client.command('second')).rejects.toThrow(ConflictError);
+    // Second command should hit 429 (queue full with maxQueueDepth: 0)
+    await expect(client.command('second')).rejects.toThrow(QueueFullError);
   });
 });
 
@@ -366,6 +366,114 @@ describe('CartographerClient commandAndWait', () => {
     expect(result.treeStatus).toBe('success');
 
     client.disconnect();
+  });
+});
+
+describe('message queue', () => {
+  let server: ActorServer;
+
+  afterEach(async () => {
+    await server?.stop();
+  });
+
+  function makeDelayTree(ms = 200) {
+    return new BehaviorTree({
+      name: 'delay-test',
+      root: new ActionNode({
+        name: 'delay',
+        action: () => new Promise<NodeStatus>((resolve) => {
+          setTimeout(() => resolve(NodeStatus.SUCCESS), ms);
+        }),
+      }),
+    });
+  }
+
+  it('messages are queued when server is busy and processed in FIFO order', async () => {
+    server = new ActorServer({ createTree: () => makeDelayTree(200), port: 0 });
+    const { port } = await server.start();
+    const client = createCartographerClient(`http://localhost:${port}`);
+
+    // Connect SSE and wait for the connection to establish
+    client.connect();
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Track message:processed events to verify FIFO order
+    const processedIds: string[] = [];
+    client.on('message:processed', (data: unknown) => {
+      const d = data as { messageId: string };
+      processedIds.push(d.messageId);
+    });
+
+    // Send first command — acquires the lock, returns 202 processing
+    const first = await client.command('first');
+    expect(first.status).toBe('processing');
+
+    // Give the server a moment to start processing
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Send second and third commands while first is processing — both should be queued
+    const second = await client.command('second');
+    expect(second.status).toBe('queued');
+    expect(second.position).toBe(1);
+
+    const third = await client.command('third');
+    expect(third.status).toBe('queued');
+    expect(third.position).toBe(2);
+
+    // Wait for all three messages to be processed
+    // First takes ~200ms, second and third each take ~200ms after drain
+    await vi.waitUntil(() => processedIds.length >= 3, { timeout: 3000 });
+
+    // Verify all three were processed
+    expect(processedIds).toHaveLength(3);
+
+    // Verify FIFO order: first processed, then second (queued at pos 1), then third (queued at pos 2)
+    expect(processedIds[0]).toBe(first.id);
+    expect(processedIds[1]).toBe(second.id);
+    expect(processedIds[2]).toBe(third.id);
+
+    client.disconnect();
+  });
+
+  it('commandAndWait works correctly with queued messages', async () => {
+    server = new ActorServer({ createTree: () => makeDelayTree(200), port: 0 });
+    const { port } = await server.start();
+    const client = createCartographerClient(`http://localhost:${port}`);
+
+    // Connect SSE
+    client.connect();
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Fire a command that holds the lock (fire-and-forget)
+    await client.command('hold-lock');
+    await new Promise((r) => setTimeout(r, 50));
+
+    // commandAndWait should queue, then resolve when eventually processed
+    const result = await client.commandAndWait('queued-cmd');
+    expect(result.messageId).toBeDefined();
+    expect(typeof result.messageId).toBe('string');
+    expect(result.treeStatus).toBe('success');
+
+    client.disconnect();
+  });
+
+  it('queue full returns QueueFullError from client', async () => {
+    // Use the never-resolving tree so the lock is held permanently,
+    // and maxQueueDepth: 1 so only one message can queue
+    server = new ActorServer({ createTree: makeSlowTree, port: 0, maxQueueDepth: 1 });
+    const { port } = await server.start();
+    const client = createCartographerClient(`http://localhost:${port}`);
+
+    // First command acquires the lock (processing)
+    await client.command('holds-lock');
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Second command fills the queue (position 1)
+    const queued = await client.command('fills-queue');
+    expect(queued.status).toBe('queued');
+
+    // Third command should overflow — QueueFullError
+    await expect(client.command('overflow')).rejects.toThrow(QueueFullError);
   });
 });
 
