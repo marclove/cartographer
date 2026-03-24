@@ -1,10 +1,12 @@
 import type { StateStore, TreeSessionState, TreeEvent } from './state-store.js';
+import type { ActorMessage } from '../actor/types.js';
 
 export class InMemoryStateStore implements StateStore {
   private store = new Map<string, TreeSessionState>();
   private locks = new Map<string, string>();
   private eventBuffers = new Map<string, TreeEvent[]>();
   private eventWaiters = new Map<string, Array<() => void>>();
+  private queues = new Map<string, ActorMessage[]>();
   private maxEvents: number;
 
   constructor(options?: { maxEvents?: number }) {
@@ -24,6 +26,7 @@ export class InMemoryStateStore implements StateStore {
   async deleteState(key: string): Promise<void> {
     this.store.delete(key);
     this.eventBuffers.delete(key);
+    this.queues.delete(key);
   }
 
   async listKeys(): Promise<string[]> {
@@ -98,5 +101,34 @@ export class InMemoryStateStore implements StateStore {
         yield allEvents[i];
       }
     }
+  }
+
+  // --- Queue ---
+
+  async enqueueMessage(stateKey: string, message: ActorMessage, maxQueueDepth: number): Promise<{ position: number; queueSize: number }> {
+    let queue = this.queues.get(stateKey);
+    if (!queue) {
+      queue = [];
+      this.queues.set(stateKey, queue);
+    }
+    if (queue.length >= maxQueueDepth) {
+      throw new Error('Queue full');
+    }
+    queue.push(message);
+    return { position: queue.length, queueSize: queue.length };
+  }
+
+  async dequeueMessage(stateKey: string): Promise<ActorMessage | null> {
+    const queue = this.queues.get(stateKey);
+    if (!queue || queue.length === 0) return null;
+    return queue.shift()!;
+  }
+
+  async getQueueSize(stateKey: string): Promise<number> {
+    return this.queues.get(stateKey)?.length ?? 0;
+  }
+
+  async getQueuedMessages(stateKey: string): Promise<ActorMessage[]> {
+    return [...(this.queues.get(stateKey) ?? [])];
   }
 }
