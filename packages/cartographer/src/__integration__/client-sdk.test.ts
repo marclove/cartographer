@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { createCartographerClient, ConflictError } from '@cartographer/client';
+import { createCartographerClient, QueueFullError } from '@cartographer/client';
 import { ActorServer } from '../server/actor-server.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { ActionNode } from '../nodes/action.js';
@@ -60,10 +60,10 @@ describe('CartographerClient', () => {
     expect(status).toBeDefined();
   });
 
-  it('ConflictError has correct name and message', () => {
-    const err = new ConflictError();
-    expect(err.name).toBe('ConflictError');
-    expect(err.message).toBe('Session is currently processing a message');
+  it('QueueFullError has correct name and message', () => {
+    const err = new QueueFullError();
+    expect(err.name).toBe('QueueFullError');
+    expect(err.message).toBe('Server message queue is full');
     expect(err).toBeInstanceOf(Error);
   });
 
@@ -111,8 +111,8 @@ describe('CartographerClient', () => {
     await expect(client.send({} as any)).rejects.toThrow();
   });
 
-  it('command() throws ConflictError on 409 when server is busy', async () => {
-    server = new ActorServer({ createTree: makeSlowTree, port: 0 });
+  it('command() throws QueueFullError when server queue is full', async () => {
+    server = new ActorServer({ createTree: makeSlowTree, port: 0, maxQueueDepth: 0 });
     port = (await server.start()).port;
     const client = createCartographerClient(`http://localhost:${port}`);
 
@@ -121,8 +121,8 @@ describe('CartographerClient', () => {
     // Give the server a moment to start processing
     await new Promise((r) => setTimeout(r, 50));
 
-    // Second command should hit 409
-    await expect(client.command('second')).rejects.toThrow(ConflictError);
+    // Second command should hit 429 (queue full with maxQueueDepth: 0)
+    await expect(client.command('second')).rejects.toThrow(QueueFullError);
   });
 });
 

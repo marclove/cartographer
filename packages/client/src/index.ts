@@ -1,6 +1,6 @@
-import { ConflictError, type CartographerClient } from './types.js';
+import { QueueFullError, type CartographerClient, type SendResponse } from './types.js';
 
-export { ConflictError, type CartographerClient } from './types.js';
+export { QueueFullError, type CartographerClient, type SendResponse } from './types.js';
 
 /**
  * Creates a client connected to an ActorServer at the given URL.
@@ -41,32 +41,32 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
    * Sends a POST request with a JSON body to the server and returns the
    * server-assigned message ID.
    *
-   * The ActorServer processes messages sequentially — only one message can be
-   * processed at a time. If a message is already being processed, the server
-   * responds with 409 Conflict, which this method surfaces as a {@link ConflictError}.
+   * The ActorServer queues messages when the tree is already processing.
+   * If the queue is full, the server responds with 429 Too Many Requests,
+   * which this method surfaces as a {@link QueueFullError}.
    *
    * This is the shared HTTP transport for `command`, `write`, and `send`.
    *
-   * @throws {ConflictError} 409 — Another message is already being processed.
-   *   The caller should either wait for the current message to finish, or use
+   * @throws {QueueFullError} 429 — The server's message queue is full.
+   *   The caller should wait for the current message to finish, or use
    *   `interruptAndCommand` to preempt it.
    * @throws {Error} 400 — The request payload failed server-side validation.
    *   The error message from the server is included.
    * @throws {Error} 503 — The server is shutting down and no longer accepting messages.
    */
-  async function post(path: string, body: unknown): Promise<{ id: string }> {
+  async function post(path: string, body: unknown): Promise<SendResponse> {
     const res = await fetch(`${baseUrl}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (res.status === 409) throw new ConflictError();
+    if (res.status === 429) throw new QueueFullError();
     if (res.status === 400) {
       const err = await res.json() as { error?: string };
       throw new Error(err.error ?? 'Bad request');
     }
     if (res.status === 503) throw new Error('Server is shutting down');
-    return res.json() as Promise<{ id: string }>;
+    return res.json() as Promise<SendResponse>;
   }
 
   /**
@@ -270,7 +270,7 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
      *
      * This is the safe way to preempt a running command with a new one. The
      * ActorServer only processes one message at a time (enforced via a lock),
-     * so sending a command while another is processing would result in a 409.
+     * so sending a command while the queue is full would result in a 429.
      * This method handles that coordination:
      *
      * 1. **Interrupt** — Signal the server to abort the current tick.
@@ -297,7 +297,7 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
 
       // Slow path: a message was processing and has been told to abort.
       // We must wait for the server to fully release the processing lock before
-      // sending the new command — otherwise we'd hit a 409 Conflict.
+      // sending the new command — otherwise we'd hit a 429 if the queue is full.
       requireConnection();
       await new Promise<void>((resolve) => {
         // The interrupted message can complete in one of three ways:
@@ -450,7 +450,8 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
       //   - strategy:*    — Strategy decision events
       for (const type of [
         'blackboard:write', 'client:event', 'message:processed',
-        'message:interrupted', 'message:failed', 'node:enter', 'node:exit', 'tree:tick',
+        'message:interrupted', 'message:failed', 'message:queued',
+        'message:dequeued', 'node:enter', 'node:exit', 'tree:tick',
         'node:error', 'tree:init', 'tree:reset', 'tree:abort', 'tree:tick:skipped',
         'agent:prompt', 'agent:thinking', 'agent:text', 'agent:tool_use', 'agent:response',
         'agent:error', 'agent:message', 'agent:tool_progress', 'agent:init', 'agent:status',

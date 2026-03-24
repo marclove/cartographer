@@ -1,9 +1,16 @@
-/** Thrown when the server returns 409 Conflict (another message is being processed). */
-export class ConflictError extends Error {
+/** Thrown when the server returns 429 (message queue is full). */
+export class QueueFullError extends Error {
   constructor() {
-    super('Session is currently processing a message');
-    this.name = 'ConflictError';
+    super('Server message queue is full');
+    this.name = 'QueueFullError';
   }
+}
+
+/** Response returned by command(), write(), and send(). */
+export interface SendResponse {
+  id: string;
+  status?: 'processing' | 'queued';
+  position?: number;
 }
 
 /**
@@ -16,11 +23,11 @@ export class ConflictError extends Error {
  */
 export interface CartographerClient {
   /** Send a command message. Returns immediately with the message ID. */
-  command(name: string, payload?: unknown): Promise<{ id: string }>;
+  command(name: string, payload?: unknown): Promise<SendResponse>;
   /** Write a value to the blackboard. Returns immediately with the message ID. */
-  write(key: string, value: unknown): Promise<{ id: string }>;
+  write(key: string, value: unknown): Promise<SendResponse>;
   /** Send any message type. Returns immediately with the message ID. */
-  send(msg: { type: string; name?: string; payload?: unknown; key?: string; value?: unknown }): Promise<{ id: string }>;
+  send(msg: { type: string; name?: string; payload?: unknown; key?: string; value?: unknown }): Promise<SendResponse>;
   /**
    * Send a command and wait for processing to complete via SSE.
    * Resolves with the tree status on success, rejects on failure.
@@ -40,7 +47,7 @@ export interface CartographerClient {
    * `message:failed`, or `message:interrupted` SSE event before sending. Requires {@link connect} when
    * processing is active.
    */
-  interruptAndCommand(name: string, payload?: unknown): Promise<{ id: string }>;
+  interruptAndCommand(name: string, payload?: unknown): Promise<SendResponse>;
   /** Returns the current blackboard state. */
   blackboard(): Promise<Record<string, unknown>>;
   /** Returns tree structure metadata. */
