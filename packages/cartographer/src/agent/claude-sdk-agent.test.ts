@@ -461,7 +461,7 @@ describe('ClaudeSDKAgent', () => {
 
       await collectMessages(agent.send('prompt', { signal: ac.signal }));
 
-      // In query-per-send model, the signal is passed through buildQueryOptions
+      // In query-per-send model, the signal is passed through composeSdkOptions
       // so the SDK can handle abort natively
       const callArgs = mockQuery.mock.calls[0][0] as any;
       expect(callArgs.options.signal).toBe(ac.signal);

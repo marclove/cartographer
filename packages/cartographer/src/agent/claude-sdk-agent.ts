@@ -1,15 +1,11 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import type { Options, SDKMessage, SDKSystemMessage, OnElicitation as SDKOnElicitation } from '@anthropic-ai/claude-agent-sdk';
-import type { Agent, AgentConfig, AgentMessage, AgentElicitationRequest, AgentSendOptions, AgentInfo, ThinkingCapable, StreamCapable } from './agent.js';
-import { createBlackboardMcpServer } from './blackboard-mcp.js';
+import type { SDKSystemMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { Agent, AgentMessage, AgentSendOptions, AgentInfo, ThinkingCapable, StreamCapable } from './agent.js';
 import { mapSdkMessage } from './claude-sdk-mapper.js';
+import { composeSdkOptions } from './claude-sdk-options.js';
+import type { ClaudeSDKAgentConfig } from './claude-sdk-options.js';
 
-/**
- * Configuration for a ClaudeSDKAgent.
- * Flat intersection of AgentConfig and SDK Options — all SDK options
- * sit at the top level alongside `name`.
- */
-export type ClaudeSDKAgentConfig = AgentConfig & Partial<Options>;
+export type { ClaudeSDKAgentConfig } from './claude-sdk-options.js';
 
 type ActiveQuery = ReturnType<typeof query> | null
 
@@ -186,7 +182,7 @@ export class ClaudeSDKAgent implements Agent, ThinkingCapable, StreamCapable {
     // "session options with no id" (create new named session)
     const resumeId = sessionOpts ? sessionOpts.id : this._privateSessionId;
 
-    const queryOpts = this.buildQueryOptions(options);
+    const queryOpts = composeSdkOptions(this.config, options);
     const queryInstance = query({
       prompt,
       options: {
@@ -242,93 +238,6 @@ export class ClaudeSDKAgent implements Agent, ThinkingCapable, StreamCapable {
       }
       yield m;
     }
-  }
-
-  /**
-   * Build the SDK `Options` object from the agent config and per-call send options.
-   *
-   * Merges the agent's static configuration with per-invocation overrides:
-   *
-   * 1. **MCP servers** — copies user-configured servers and injects the built-in
-   *    blackboard MCP server when a blackboard is provided, adding
-   *    `mcp__blackboard__*` to allowed tools.
-   *
-   * 2. **Elicitation** — always installs a handler so the SDK never hangs waiting
-   *    for interactive input. Delegates to the user's handler if provided;
-   *    otherwise auto-declines and emits an `elicitation_declined` provider event.
-   *
-   * 3. **Output format** — converts `sendOptions.outputSchema` (JSON Schema) into
-   *    the SDK's `outputFormat` shape, or strips the `$schema` property from an
-   *    existing `outputFormat.schema` to satisfy SDK validation.
-   *
-   * 4. **Signal** — forwards the abort signal for cancellation support.
-   *
-   * @param sendOptions - Per-invocation options from the `send()` caller.
-   * @returns A plain object suitable for spreading into the SDK `query()` call.
-   */
-  private buildQueryOptions(sendOptions?: AgentSendOptions): Record<string, unknown> {
-    const { name: _name, ...sdkConfig } = this.config;
-    const userOptions = sdkConfig as Partial<Options>;
-
-    // Build MCP servers — blackboard is injected if available
-    const mcpServers: Record<string, unknown> = { ...userOptions.mcpServers };
-    const allowedTools = [...(userOptions.allowedTools ?? [])];
-
-    if (sendOptions?.blackboard) {
-      mcpServers.blackboard = createBlackboardMcpServer(
-        sendOptions.blackboard,
-        sendOptions.blackboardNamespace,
-      );
-      allowedTools.push('mcp__blackboard__*');
-    }
-
-    // Elicitation: always provide a handler so the SDK never hangs.
-    // Maps the framework's OnElicitation to the SDK's OnElicitation.
-    // Framework `cancel` maps to SDK `decline`.
-    const userElicitation = sendOptions?.onElicitation;
-    const onElicitation: SDKOnElicitation = async (request, opts) => {
-      const elicitationRequest: AgentElicitationRequest = {
-        message: request.message,
-        ...(request.requestedSchema && { schema: request.requestedSchema as Record<string, unknown> }),
-        ...(request.serverName && { serverName: request.serverName }),
-        ...(request.mode && { mode: request.mode }),
-        ...(request.url && { url: request.url }),
-        ...(request.elicitationId && { elicitationId: request.elicitationId }),
-      };
-      if (userElicitation) {
-        const response = await userElicitation(elicitationRequest, { signal: opts.signal });
-        if (response.action === 'cancel') return { action: 'decline' as const };
-        return response;
-      }
-      // No handler — silently decline. Framework-level notification
-      // (agent:elicitation_declined event) is handled by wrapElicitation
-      // in sdk-helpers.ts, not by the adapter.
-      return { action: 'decline' as const };
-    };
-
-    // Handle outputSchema → outputFormat conversion, strip $schema in both paths
-    let outputFormat = userOptions.outputFormat;
-    if (sendOptions?.outputSchema) {
-      const { $schema, ...schema } = sendOptions.outputSchema;
-      outputFormat = { type: 'json_schema', schema } as any;
-    } else if (outputFormat && 'schema' in outputFormat) {
-      const { $schema, ...schema } = (outputFormat as any).schema as Record<string, unknown>;
-      if ($schema) {
-        outputFormat = { ...outputFormat, schema } as typeof outputFormat;
-      }
-    }
-
-    const { onElicitation: _e, mcpServers: _m, allowedTools: _a, outputFormat: _o, ...restOptions } = userOptions;
-
-    return {
-      ...restOptions,
-      mcpServers,
-      allowedTools,
-      permissionMode: restOptions.permissionMode ?? 'default',
-      ...(outputFormat && { outputFormat }),
-      onElicitation,
-      ...(sendOptions?.signal && { signal: sendOptions.signal }),
-    };
   }
 
 }
