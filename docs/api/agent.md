@@ -96,7 +96,7 @@ const researcher = new ClaudeSDKAgent({
 - **Blackboard MCP**: When `send()` receives a `blackboard` in its options, a blackboard MCP server is automatically injected under the reserved name `"blackboard"`. The constructor throws if your `mcpServers` config already uses this name.
 - **Structured output**: When `outputFormat` is set on the config, the SDK validates responses against the schema. When `AgentSendOptions.outputSchema` is provided per-send, it takes precedence. In both cases, `$schema` meta-properties (as produced by `z.toJSONSchema()`) are automatically stripped.
 - **Elicitation**: The agent always provides an `onElicitation` callback to the SDK so it never hangs. If `AgentSendOptions.onElicitation` is provided, it delegates to that handler. Otherwise, the request is auto-declined and a `provider_event` message with subtype `'elicitation_declined'` is emitted so the BT layer can fire `agent:elicitation_declined`.
-- **Abort**: When `AgentSendOptions.signal` fires, the agent calls `queryInstance.interrupt()` to cancel the in-flight SDK request.
+- **Abort**: `AgentSendOptions.signal` is forwarded to the SDK's `query()` options, which handles cancellation natively.
 - **Error isolation**: `onMessage` callback errors are caught and emitted as `provider_event` messages with subtype `'onMessage_error'` — a failing handler never crashes the agent loop.
 
 ### Reserved MCP server name
