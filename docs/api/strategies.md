@@ -167,15 +167,15 @@ Emits `strategy:decision` with `strategy: 'agent-parallel'`, plus the full suite
 
 All three agent strategies emit the same `agent:*` events as `AgentNode` during their agent calls. The event sequence for each strategy invocation is:
 
-1. `agent:prompt` — emitted before calling the SDK
-2. Intermediate events as the SDK streams — `agent:thinking`, `agent:text`, `agent:tool_use`, `agent:stream`, `agent:message`, `agent:init`, `agent:status`, `agent:rate_limit`, `agent:tool_progress`
+1. `agent:prompt` — emitted before calling the agent
+2. Intermediate events as the agent streams — `agent:thinking`, `agent:text`, `agent:tool_use`, `agent:stream`, `agent:message`, `agent:init`, `agent:status`, `agent:rate_limit`, `agent:tool_progress`
 3. `agent:elicitation_declined` — emitted if an MCP server requests elicitation and no handler is configured
-4. `agent:response` (on success) or `agent:error` (on failure) — emitted when the SDK returns a result
+4. `agent:response` (on success) or `agent:error` (on failure) — emitted when the agent returns a result
 5. `strategy:decision` — emitted after a successful call with the parsed decision payload
 
 Since strategies don't own a node, all event payloads use `children[0]` as the `node` reference — the same proxy pattern used by `strategy:decision`.
 
-If the SDK throws an exception (as opposed to returning an error result), no `agent:response` or `agent:error` is emitted — the strategy silently falls back to default behavior.
+If the agent throws an exception (as opposed to returning an error result), no `agent:response` or `agent:error` is emitted — the strategy silently falls back to default behavior.
 
 ### Example
 
@@ -210,7 +210,7 @@ function wrapElicitation(
 ): OnElicitation;
 ```
 
-Wraps an optional elicitation handler so the SDK always receives a function. If `handler` is defined, delegates to it. Otherwise emits `agent:elicitation_declined` and returns `{ action: 'decline' }`. Used internally by `ClaudeSDKAgent` and all three agent strategies; exported for custom agent and strategy implementations.
+Wraps an optional elicitation handler so callers always receive a function. If `handler` is defined, delegates to it. Otherwise emits `agent:elicitation_declined` and returns `{ action: 'decline' }`. Used internally by `AgentNode` and all three agent strategies; exported for custom agent and strategy implementations.
 
 ### buildStrategyPrompt
 

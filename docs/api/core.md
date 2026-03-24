@@ -250,7 +250,7 @@ Event map defining every event a tree can emit.
 | `blackboard:keys`            | `{ keys: string[]; source: string }`                                                                  |
 | `blackboard:read`            | `{ key: string; value: unknown; hit: boolean; source: string }`                                       |
 | `blackboard:write`           | `{ key: string; value: unknown; source: string }`                                                     |
-| `agent:elicitation_declined` | `{ node: BTreeNode; request: ElicitationRequest }`                                                    |
+| `agent:elicitation_declined` | `{ node: BTreeNode; request: AgentElicitationRequest }`                                               |
 | `strategy:decision`          | `{ composite: BTreeNode; strategy: string; decision: unknown }`                                       |
 | `client:event`               | `{ name: string; data: unknown }`                                                                     |
 | `message:processed`          | `{ messageId: string; treeStatus: string }`                                                           |

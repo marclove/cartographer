@@ -4,13 +4,13 @@ The agent layer provides a provider-agnostic abstraction for AI agents and helpe
 
 ---
 
-## Agent (Abstract Class)
+## Agent (Interface)
 
 ```typescript
-import { Agent } from "cartographer";
+import type { Agent } from "cartographer";
 ```
 
-Abstract base class for all agent implementations. An Agent represents a configured AI agent that can process prompts and stream responses. Concrete implementations wrap specific providers (e.g., Claude SDK).
+Interface for all agent implementations. An Agent represents a configured AI agent that can process prompts and stream responses. Concrete implementations wrap specific providers (e.g., Claude SDK).
 
 Multiple BT nodes and strategies may reference the same Agent instance. Each `send()` call returns a scoped iterable for that turn's responses, while conversation history accumulates across turns within the same instance.
 
@@ -95,7 +95,7 @@ const researcher = new ClaudeSDKAgent({
 - **Query per send**: Each `send()` call creates a fresh SDK `query()`. When no explicit session options are provided, the agent automatically resumes its private session so conversation history accumulates across turns. When `options.session` is provided, the caller controls which session to resume or fork.
 - **Blackboard MCP**: When `send()` receives a `blackboard` in its options, a blackboard MCP server is automatically injected under the reserved name `"blackboard"`. The constructor throws if your `mcpServers` config already uses this name.
 - **Structured output**: When `outputFormat` is set on the config, the SDK validates responses against the schema. When `AgentSendOptions.outputSchema` is provided per-send, it takes precedence. In both cases, `$schema` meta-properties (as produced by `z.toJSONSchema()`) are automatically stripped.
-- **Elicitation**: The agent always provides an `onElicitation` callback to the SDK so it never hangs. If `AgentSendOptions.onElicitation` is provided, it delegates to that handler. Otherwise, the request is auto-declined and a `provider_event` message with subtype `'elicitation_declined'` is emitted so the BT layer can fire `agent:elicitation_declined`.
+- **Elicitation**: The agent always provides an `onElicitation` callback to the SDK so it never hangs. If `AgentSendOptions.onElicitation` is provided, it delegates to that handler. Otherwise, the request is silently auto-declined. The framework-level `wrapElicitation` helper (used by `AgentNode` and agent strategies) handles emitting the `agent:elicitation_declined` event.
 - **Abort**: `AgentSendOptions.signal` is forwarded to the SDK's `query()` options, which handles cancellation natively.
 - **Error isolation**: `onMessage` callback errors are caught and emitted as `provider_event` messages with subtype `'onMessage_error'` — a failing handler never crashes the agent loop.
 
@@ -182,6 +182,7 @@ Discriminated union of messages yielded by `Agent.send()`. Provider-agnostic —
 | `{ type: 'tool_use' }`  | `name: string; input?: unknown`                        | Tool call made by the agent.              |
 | `{ type: 'result', subtype: 'success' }` | `output: unknown; cost?: number; usage?: AgentUsage` | Successful final result.    |
 | `{ type: 'result', subtype: 'error' }`   | `errors?: unknown[]; cost?: number; usage?: AgentUsage` | Error result.            |
+| `{ type: 'stream' }`    | `event: unknown`                                       | Raw streaming event from adapters that support streaming (`StreamCapable`). |
 | `{ type: 'provider_event' }` | `subtype: string; data: unknown`                  | Provider-specific event (init, status, rate_limit, tool_progress, etc.). |
 | `{ type: 'session_start' }` | `sessionId: string`                               | Emitted when the provider creates or resumes a session. Used by AgentNode to register the session in the tree's registry. |
 
@@ -291,7 +292,7 @@ function wrapElicitation(
 ): OnElicitation;
 ```
 
-Wraps an optional elicitation handler so the SDK always receives a function. If `handler` is defined, delegates to it. Otherwise emits `agent:elicitation_declined` and returns `{ action: 'decline' }`. Exported for custom strategy or agent implementations that need a consistent elicitation fallback.
+Wraps an optional elicitation handler so callers always receive a function. If `handler` is defined, delegates to it. Otherwise emits `agent:elicitation_declined` and returns `{ action: 'decline' }`. Used internally by `AgentNode` and all three agent strategies; exported for custom strategy or agent implementations that need a consistent elicitation fallback.
 
 ### buildStrategyPrompt
 

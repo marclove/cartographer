@@ -6,7 +6,7 @@ Cartographer integrates AI agents into behavior trees through a two-layer archit
 
 ## Agents
 
-An `Agent` is a configured AI agent that processes prompts and streams responses. The abstract `Agent` class defines the provider-agnostic interface; `ClaudeSDKAgent` is the concrete implementation for Claude.
+An `Agent` is a configured AI agent that processes prompts and streams responses. The `Agent` interface defines the provider-agnostic contract; `ClaudeSDKAgent` is the concrete implementation for Claude.
 
 ### Defining an Agent
 

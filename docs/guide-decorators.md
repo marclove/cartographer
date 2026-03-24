@@ -192,7 +192,8 @@ interface GuardConfig extends DecoratorConfig {
 
 - Evaluates the condition first.
 - If the condition returns `false` (or throws), calls `child.abort()` (to clear any in-flight state) and returns `FAILURE` without ticking the child.
-- If the condition returns `true`, ticks the child and returns its status.
+- If the condition returns `true`, ticks the child and returns its status. Once the child returns a terminal status (`SUCCESS` or `FAILURE`), that result is cached — subsequent ticks where the guard condition passes return the cached status without re-ticking the child.
+- The cache is cleared on `reset()`, `abort()`, `interrupt()`, and when the guard condition evaluates to `false`.
 - Async conditions use the inflight pattern: the promise starts on the first tick and `RUNNING` is returned immediately. Subsequent ticks poll for the result.
 
 **Builder:**

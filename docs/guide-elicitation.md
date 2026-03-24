@@ -9,29 +9,29 @@ MCP servers can request user input during agent execution — for example, an OA
 When Claude is invoked via the Agent SDK — whether through an `AgentNode` or an agent strategy (`AgentSelectionStrategy`, `AgentExecutionStrategy`, `AgentParallelStrategy`) — the MCP servers attached to that call may need information from the user. The SDK models this as an *elicitation request*: the server sends a message describing what it needs, and the handler responds with a result.
 
 ```typescript
-import type { OnElicitation, ElicitationRequest } from 'cartographer';
+import type { OnElicitation, AgentElicitationRequest } from 'cartographer';
 ```
 
-Both types are re-exported from `@anthropic-ai/claude-agent-sdk` for convenience.
+These are framework-owned types — you do not need to depend on `@anthropic-ai/claude-agent-sdk` directly.
 
-An `ElicitationRequest` contains:
+An `AgentElicitationRequest` contains:
 
 | Field              | Type                       | Description                                                       |
 | ------------------ | -------------------------- | ----------------------------------------------------------------- |
-| `serverName`       | `string`                   | Name of the MCP server requesting input.                          |
 | `message`          | `string`                   | Human-readable description of what the server needs.              |
-| `mode`             | `'form' \| 'url'`         | Optional. `'form'` for structured input, `'url'` for browser-based auth (e.g. OAuth). |
-| `requestedSchema`  | `Record<string, unknown>`  | Optional. JSON schema describing expected input fields (only for `'form'` mode). |
+| `schema`           | `Record<string, unknown>`  | Optional. JSON schema describing expected input fields (only for `'form'` mode). |
+| `serverName`       | `string`                   | Optional. Name of the MCP server requesting input.                |
+| `mode`             | `string`                   | Optional. `'form'` for structured input, `'url'` for browser-based auth (e.g. OAuth). |
 | `url`              | `string`                   | Optional. URL to open (only for `'url'` mode).                    |
 | `elicitationId`    | `string`                   | Optional. Correlation ID for URL elicitations.                    |
 
-A handler returns `{ action, content? }` where `action` is one of:
+A handler returns an `AgentElicitationResponse` where `action` is one of:
 
-- `'accept'` — Provide the requested values in `content`.
+- `'accept'` — Provide the requested values in `data`.
 - `'decline'` — Refuse the request (the MCP server must handle the refusal).
-- `'cancel'` — Cancel the entire operation.
+- `'cancel'` — Cancel the entire operation (mapped to `'decline'` at the provider level).
 
-> **Note:** The `action` field here is part of the Agent SDK's elicitation protocol and refers to the *response disposition* (accept, decline, or cancel). It is unrelated to Cartographer's action nodes.
+> **Note:** The `action` field here is part of the elicitation protocol and refers to the *response disposition* (accept, decline, or cancel). It is unrelated to Cartographer's action nodes.
 
 ---
 
@@ -49,10 +49,10 @@ import type { OnElicitation } from 'cartographer';
 
 const workerAgent = new ClaudeSDKAgent({ name: 'worker', model: 'claude-sonnet-4-6' });
 
-const handler: OnElicitation = async (request, { signal }) => {
+const handler: OnElicitation = async (request) => {
   // Only respond to requests from the expected MCP server
   if (request.serverName === 'auth-server' && request.mode === 'form') {
-    return { action: 'accept', content: { token: 'my-api-key' } };
+    return { action: 'accept', data: { token: 'my-api-key' } };
   }
   return { action: 'decline' };
 };
@@ -97,7 +97,7 @@ Both `AgentNode` and agent strategies resolve the elicitation handler the same w
 1. **`context.onElicitation`** (inherited through context layering) — highest priority
 2. **Auto-decline** with `agent:elicitation_declined` event — fallback
 
-`AgentNode` passes `context.onElicitation` to the agent's `send()` method. Agent strategies do the same. If no handler exists at any level, the agent auto-declines the request and emits a `provider_event` that the BT layer translates into `agent:elicitation_declined`.
+`AgentNode` passes `context.onElicitation` (wrapped via `wrapElicitation`) to the agent's `send()` method. Agent strategies do the same. If no handler exists at any level, the request is auto-declined and an `agent:elicitation_declined` event is emitted.
 
 The resolution logic is shared via the `wrapElicitation` helper:
 
@@ -130,7 +130,7 @@ The event payload contains:
 | Field     | Type                 | Description                     |
 | --------- | -------------------- | ------------------------------- |
 | `node`    | `BTreeNode`          | The node that declined. For `AgentNode`, this is the agent itself. For strategies, this is `children[0]` (the proxy node). |
-| `request` | `ElicitationRequest` | The original elicitation request. |
+| `request` | `AgentElicitationRequest` | The original elicitation request. |
 
 ---
 
@@ -151,7 +151,7 @@ const tree = new TreeBuilder('with-strategy-elicitation')
     // This handler is called for both the strategy's agent call
     // and the AgentNode's agent call — only accept known servers
     if (request.serverName === 'auth-server' && request.mode === 'form') {
-      return { action: 'accept', content: { token: process.env.API_KEY } };
+      return { action: 'accept', data: { token: process.env.API_KEY } };
     }
     return { action: 'decline' };
   })
@@ -177,7 +177,7 @@ const formHandler: OnElicitation = async (request) => {
   if (request.serverName === 'db-server' && request.mode === 'form') {
     return {
       action: 'accept',
-      content: { username: 'admin', password: process.env.DB_PASS },
+      data: { username: 'admin', password: process.env.DB_PASS },
     };
   }
   return { action: 'decline' };
@@ -194,7 +194,7 @@ const urlHandler: OnElicitation = async (request) => {
     // request.message contains the URL or instructions
     console.log(`Please visit: ${request.message}`);
     // After user completes the flow, accept with any tokens received
-    return { action: 'accept', content: { authCode: '...' } };
+    return { action: 'accept', data: { authCode: '...' } };
   }
   return { action: 'decline' };
 };
@@ -202,15 +202,15 @@ const urlHandler: OnElicitation = async (request) => {
 
 ---
 
-## Re-Exported Types
+## Elicitation Types
 
-Both `OnElicitation` and `ElicitationRequest` are re-exported from the `cartographer` package:
+The elicitation types are framework-owned and exported from the `cartographer` package:
 
 ```typescript
-import type { OnElicitation, ElicitationRequest } from 'cartographer';
+import type { OnElicitation, AgentElicitationRequest, AgentElicitationResponse, ElicitationOptions } from 'cartographer';
 ```
 
-These originate from `@anthropic-ai/claude-agent-sdk`. You do not need to depend on the SDK package directly to use them.
+You do not need to depend on `@anthropic-ai/claude-agent-sdk` directly. Each concrete agent adapter (such as `ClaudeSDKAgent`) maps between these framework types and the provider's elicitation API internally.
 
 ---
 
