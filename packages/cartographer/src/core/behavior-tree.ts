@@ -65,13 +65,23 @@ export class BehaviorTree {
 
   readonly root: BTreeNode;
 
-  /** Named session registry for agent conversation sharing. */
-  sessionRegistry: SessionRegistry;
+  private _sessionRegistry: SessionRegistry;
 
   /** Content hash of the root node — fingerprint of the entire tree topology. */
   get rootHash(): string {
     return this.root.contentHash();
   }
+
+  /** Named session registry for agent conversation sharing. */
+  get sessionRegistry(): SessionRegistry {
+    return this._sessionRegistry;
+  }
+
+  /** Replace the session registry with one restored from serialized data. */
+  restoreSessionRegistry(data: Record<string, string>): void {
+    this._sessionRegistry = SessionRegistry.fromRecord(data);
+  }
+
   private abortController: AbortController;
   private _scheduler: TreeScheduler | null = null;
 
@@ -81,7 +91,7 @@ export class BehaviorTree {
     this.blackboard = config.blackboard ?? new InMemoryBlackboard();
     this.events = new EventEmitter<TreeEvents>();
     this.abortController = new AbortController();
-    this.sessionRegistry = config.sessionRegistry ?? new SessionRegistry();
+    this._sessionRegistry = config.sessionRegistry ?? new SessionRegistry();
     BehaviorTree.validateUniqueIds(this.root);
     validateSessionConcurrency(this.root);
     if (config.onElicitation && this.root instanceof BaseNode) {
@@ -144,7 +154,7 @@ export class BehaviorTree {
       blackboard: new ObservableBlackboard(this.blackboard, this.events),
       events: this.events,
       signal: this.abortController.signal,
-      sessions: this.sessionRegistry,
+      sessions: this._sessionRegistry,
     };
 
     const start = performance.now();
@@ -152,7 +162,7 @@ export class BehaviorTree {
     const durationMs = performance.now() - start;
     this.events.emit('tree:tick', { tree: this.name, status, durationMs });
     if (status !== NodeStatus.RUNNING) {
-      this.sessionRegistry.reset();
+      this._sessionRegistry.reset();
     }
     return status;
   }
@@ -213,7 +223,7 @@ export class BehaviorTree {
   reset(): void {
     this.root.reset();
     this.abortController = new AbortController();
-    this.sessionRegistry.reset();
+    this._sessionRegistry.reset();
     this.events.emit('tree:reset', { tree: this.name });
   }
 
@@ -240,7 +250,7 @@ export class BehaviorTree {
   abort(): void {
     this.root.abort();
     this.abortController.abort();
-    this.sessionRegistry.reset();
+    this._sessionRegistry.reset();
     this.events.emit('tree:abort', { tree: this.name });
   }
 

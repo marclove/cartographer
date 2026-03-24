@@ -83,23 +83,20 @@ function checkParallelBranches(parallel: BTreeNode): void {
  * branches and are safe to run concurrently.
  *
  * @param node - The root of the subtree to scan.
+ * @param into - Accumulator set; avoids per-node allocations during recursion.
  * @returns A set of session names used in resume mode within this subtree.
  */
-function collectResumeSessions(node: BTreeNode): Set<string> {
-  const sessions = new Set<string>();
-
+function collectResumeSessions(node: BTreeNode, into: Set<string> = new Set()): Set<string> {
   const config = getSessionConfig(node);
   if (config && !config.fork) {
-    sessions.add(config.name);
+    into.add(config.name);
   }
 
   for (const child of node.children) {
-    for (const s of collectResumeSessions(child)) {
-      sessions.add(s);
-    }
+    collectResumeSessions(child, into);
   }
 
-  return sessions;
+  return into;
 }
 
 /**

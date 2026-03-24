@@ -5,7 +5,6 @@ import type { StateStore } from '../state/state-store.js';
 import type { ActorMessage } from './types.js';
 import type { EventBridge } from '../server/event-bridge.js';
 import { blackboardToRecord } from '../server/sse-handler.js';
-import { SessionRegistry } from '../core/session-registry.js';
 
 /**
  * Configuration for creating a {@link TreeActor}.
@@ -154,7 +153,7 @@ export class TreeActor {
         tree.blackboard.set(key, value);
       }
       restoreTree(tree.root, tree.rootHash, stored.treeState, this.topologyPolicy);
-      tree.sessionRegistry = SessionRegistry.fromRecord(stored.sessions ?? {});
+      tree.restoreSessionRegistry(stored.sessions ?? {});
     }
 
     // Handle held state: tick messages are no-ops, command/write clear held,

@@ -43,6 +43,7 @@ import { computeContentHash } from '../core/content-hash.js';
  */
 export class AgentNode extends BaseNode {
   private config: AgentNodeConfig;
+  private readonly _sessionConfig: SessionConfig | null;
 
   /**
    * Stores the cached `NodeStatus` when `config.cache` is `true`.
@@ -63,6 +64,9 @@ export class AgentNode extends BaseNode {
   constructor(config: AgentNodeConfig) {
     super(config.name, config.id);
     this.config = config;
+    this._sessionConfig = !config.session ? null
+      : typeof config.session === 'string' ? { name: config.session }
+      : config.session;
   }
 
   /** Read-only access to agent metadata for introspection (e.g. dashboard API). */
@@ -73,16 +77,13 @@ export class AgentNode extends BaseNode {
   /**
    * Normalized session configuration, or `null` if no session is configured.
    *
-   * Converts the shorthand string form (`session: "triage"`) into the full
-   * {@link SessionConfig} object (`{ name: "triage" }`). Used internally by
-   * {@link resolveSessionOptions} and by the session concurrency validator
-   * at tree construction time.
+   * The shorthand string form (`session: "triage"`) is normalized to a full
+   * {@link SessionConfig} object (`{ name: "triage" }`) once at construction.
+   * Used internally by {@link resolveSessionOptions} and by the session
+   * concurrency validator at tree construction time.
    */
   get sessionConfig(): SessionConfig | null {
-    if (!this.config.session) return null;
-    return typeof this.config.session === 'string'
-      ? { name: this.config.session }
-      : this.config.session;
+    return this._sessionConfig;
   }
 
   /**

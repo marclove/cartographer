@@ -21,7 +21,7 @@ export type ClaudeSDKAgentConfig = AgentConfig & Partial<Options>;
  */
 export class ClaudeSDKAgent extends Agent {
   private readonly config: ClaudeSDKAgentConfig;
-  private _sessionId: string | null = null;
+  private _lastSessionId: string | null = null;
   private _privateSessionId: string | null = null;
   private _activeQuery: ReturnType<typeof query> | null = null;
   private _closed = false;
@@ -66,14 +66,13 @@ export class ClaudeSDKAgent extends Agent {
   }
 
   /**
-   * The current session ID, or `null` if no SDK call has completed yet.
-   *
-   * Updated after each `send()` call when the SDK returns its `init` message.
-   * For agents without explicit session options, this reflects the private
-   * session that is automatically resumed across successive `send()` calls.
+   * The session ID from the most recent `send()` call, or `null` if no
+   * SDK call has completed yet. May reflect a named session, not just
+   * the agent's private session — use `_privateSessionId` internally
+   * when the private session is specifically needed.
    */
   get sessionId(): string | null {
-    return this._sessionId;
+    return this._lastSessionId;
   }
 
   /**
@@ -200,52 +199,44 @@ export class ClaudeSDKAgent extends Agent {
         if (msg.type === 'system' && msg.subtype === 'init') {
           const sys = msg as SDKSystemMessage;
           const sessionId = sys.session_id;
-          this._sessionId = sessionId;
+          this._lastSessionId = sessionId;
 
           if (!sessionOpts) {
             this._privateSessionId = sessionId;
           }
 
-          // Yield session_start for AgentNode registry integration
           yield { type: 'session_start', sessionId };
 
-          // Also yield mapped provider_event so agent:init events still fire
           const mapped = this.mapSdkMessage(msg);
-          for (const m of mapped) {
-            if (options?.onMessage) {
-              try {
-                options.onMessage(m);
-              } catch (err) {
-                yield {
-                  type: 'provider_event',
-                  subtype: 'onMessage_error',
-                  data: err instanceof Error ? err.message : String(err),
-                };
-              }
-            }
-            yield m;
-          }
+          yield* this._dispatchMapped(mapped, options?.onMessage);
           continue;
         }
 
         const mapped = this.mapSdkMessage(msg);
-        for (const m of mapped) {
-          if (options?.onMessage) {
-            try {
-              options.onMessage(m);
-            } catch (err) {
-              yield {
-                type: 'provider_event',
-                subtype: 'onMessage_error',
-                data: err instanceof Error ? err.message : String(err),
-              };
-            }
-          }
-          yield m;
-        }
+        yield* this._dispatchMapped(mapped, options?.onMessage);
       }
     } finally {
       this._activeQuery = null;
+    }
+  }
+
+  private async *_dispatchMapped(
+    mapped: AgentMessage[],
+    onMessage?: (msg: AgentMessage) => void,
+  ): AsyncGenerator<AgentMessage> {
+    for (const m of mapped) {
+      if (onMessage) {
+        try {
+          onMessage(m);
+        } catch (err) {
+          yield {
+            type: 'provider_event',
+            subtype: 'onMessage_error',
+            data: err instanceof Error ? err.message : String(err),
+          };
+        }
+      }
+      yield m;
     }
   }
 
