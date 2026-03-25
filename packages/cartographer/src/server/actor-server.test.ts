@@ -510,6 +510,18 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
     expect(s.maxQueueDepth).toBe(16);
   });
 
+  it('start() rejects when the port is unavailable', async () => {
+    // Start a server on a specific port to occupy it
+    const first = new ActorServer({ createTree: makeTree, port: 0 });
+    const { port: occupiedPort } = await first.start();
+
+    // Starting a second server on the same port should reject
+    const second = new ActorServer({ createTree: makeTree, port: occupiedPort });
+    await expect(second.start()).rejects.toThrow();
+
+    await first.stop();
+  });
+
   it('defaults topologyPolicy to fail', () => {
     const s = new ActorServer({ createTree: makeTree, port: 0 });
     expect(s.topologyPolicy).toBe('fail');

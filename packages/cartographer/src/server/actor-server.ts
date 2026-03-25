@@ -92,8 +92,10 @@ export class ActorServer {
       });
     });
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      this.server!.once('error', reject);
       this.server!.listen(this.configPort, () => {
+        this.server!.removeListener('error', reject);
         const addr = this.server!.address();
         const actualPort = typeof addr === 'object' && addr ? addr.port : this.configPort;
         resolve({ port: actualPort });
