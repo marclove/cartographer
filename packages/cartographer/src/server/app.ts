@@ -51,6 +51,9 @@ export interface QueuedResult {
 
 export interface CartographerHandle {
   app: Hono;
+  stateStore: StateStore;
+  topologyPolicy: 'fail' | 'reset';
+  maxQueueDepth: number;
   processMessage: (msg: ActorMessage) => Promise<ProcessResult | QueuedResult | null>;
   bridgeTree: (tree: BehaviorTree) => void;
   initializeState: () => Promise<void>;
@@ -401,5 +404,5 @@ export function createCartographerApp(options: CartographerAppOptions): Cartogra
     sseClients.clear();
   }
 
-  return { app, processMessage, bridgeTree, initializeState, drainQueue, closeSseClients };
+  return { app, stateStore, topologyPolicy, maxQueueDepth, processMessage, bridgeTree, initializeState, drainQueue, closeSseClients };
 }
