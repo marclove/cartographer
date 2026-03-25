@@ -11,8 +11,14 @@ import { TestAgent } from './test-agent.js';
 function mockNode(name: string): BTreeNode {
   return {
     id: name, name,
+    children: [],
     tick: async () => NodeStatus.SUCCESS,
-    reset: () => {}, abort: () => {},
+    reset: () => {}, abort: () => {}, interrupt: () => {},
+    hasInflightWork: () => false,
+    inflightPromise: () => null,
+    contentHash: () => name,
+    serialize: () => ({}),
+    restore: () => {},
   };
 }
 
