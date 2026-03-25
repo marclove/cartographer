@@ -84,6 +84,29 @@ export class InMemoryBlackboard implements Blackboard {
     return Array.from(this.data.keys());
   }
 
+  /** Retrieve values for multiple keys in a single call. Missing keys map to `undefined`. */
+  getMany(keys: string[]): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    for (const key of keys) {
+      result[key] = this.data.get(key);
+    }
+    return result;
+  }
+
+  /** Write multiple key-value pairs in a single call, overwriting existing values. */
+  setMany(entries: Record<string, unknown>): void {
+    for (const [key, value] of Object.entries(entries)) {
+      this.data.set(key, value);
+    }
+  }
+
+  /** Remove multiple keys in a single call. Missing keys are silently ignored. */
+  deleteMany(keys: string[]): void {
+    for (const key of keys) {
+      this.data.delete(key);
+    }
+  }
+
   /**
    * Create a namespace-isolated view of this blackboard.
    *
@@ -165,6 +188,29 @@ class ScopedBlackboard implements Blackboard {
   /** Remove the unprefixed key and its value from this namespace. */
   delete(key: string): void {
     this.data.delete(this.prefixed(key));
+  }
+
+  /** Retrieve values for multiple unprefixed keys within this namespace. Missing keys map to `undefined`. */
+  getMany(keys: string[]): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    for (const key of keys) {
+      result[key] = this.data.get(this.prefixed(key));
+    }
+    return result;
+  }
+
+  /** Write multiple key-value pairs within this namespace in a single call. */
+  setMany(entries: Record<string, unknown>): void {
+    for (const [key, value] of Object.entries(entries)) {
+      this.data.set(this.prefixed(key), value);
+    }
+  }
+
+  /** Remove multiple unprefixed keys within this namespace. Missing keys are silently ignored. */
+  deleteMany(keys: string[]): void {
+    for (const key of keys) {
+      this.data.delete(this.prefixed(key));
+    }
   }
 
   /**
