@@ -12,10 +12,9 @@ import { EventBridge } from './event-bridge.js';
 import { InProcessEventStream, type EventStream } from './event-stream.js';
 import { sendSseEvent, blackboardToRecord } from './sse-handler.js';
 import type { SseClient } from './sse-handler.js';
-import { serializeTree as serializeTreeForApi, serializeNodeRef, serializeEvent } from './serializers.js';
-import { findNodeById } from './api-handlers.js';
+import { serializeTree as serializeTreeForApi, serializeEvent } from './serializers.js';
+import { handleApiNode } from './api-handlers.js';
 import type { StatusState } from './api-handlers.js';
-import { AgentNode } from '../nodes/agent.js';
 
 function generateRequestId(): string {
   return `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -170,23 +169,7 @@ export class ActorServer {
 
     const nodeMatch = url.pathname.match(/^\/api\/nodes\/(.+)$/);
     if (method === 'GET' && nodeMatch) {
-      const tree = this.readTree;
-      const nodeId = decodeURIComponent(nodeMatch[1]);
-      const node = findNodeById(tree.root, nodeId);
-      if (!node) {
-        return jsonError(res, 404, 'Not found');
-      }
-      const detail: Record<string, unknown> = { ...serializeNodeRef(node) };
-      if (node instanceof AgentNode) {
-        const opts = node.agentOptions;
-        if (opts.model) detail.model = opts.model;
-        detail.tools = opts.allowedTools ?? [];
-        detail.mcpServers = opts.mcpServers ? Object.keys(opts.mcpServers) : [];
-      }
-      if (node.children.length > 0) {
-        detail.children = node.children.map(serializeNodeRef);
-      }
-      return jsonResponse(res, 200, detail);
+      return handleApiNode(res, this.readTree, decodeURIComponent(nodeMatch[1]));
     }
 
     if (method === 'GET' && url.pathname === '/events') {
