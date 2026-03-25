@@ -220,6 +220,27 @@ export class ClaudeSDKAgent implements Agent, ThinkingCapable, StreamCapable {
     }
   }
 
+  /**
+   * Yield each mapped message, invoking the optional `onMessage` callback
+   * before yielding.
+   *
+   * A single SDK event can map to multiple {@link AgentMessage} values (for
+   * example, a `result` SDK message produces both a `text` and a `result`
+   * message). This helper iterates through those mapped messages, calls the
+   * `onMessage` callback if one was provided via {@link AgentSendOptions},
+   * and then yields each message to the consumer.
+   *
+   * **Error isolation** — if the `onMessage` callback throws, the error is
+   * caught and surfaced as a `provider_event` message with subtype
+   * `onMessage_error`. This ensures that a faulty callback never interrupts
+   * the SDK message stream or causes the iterator to terminate prematurely.
+   *
+   * @param mapped - One or more {@link AgentMessage} values produced by
+   *   {@link mapSdkMessage} for a single SDK event.
+   * @param onMessage - Optional per-invocation callback supplied by the
+   *   caller of {@link send}. Invoked synchronously before each message is
+   *   yielded.
+   */
   private async *_dispatchMapped(
     mapped: AgentMessage[],
     onMessage?: (msg: AgentMessage) => void,
