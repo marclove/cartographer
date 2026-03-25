@@ -18,25 +18,34 @@ A support ticket pipeline that classifies incoming tickets, routes them to speci
 
 ```typescript
 import { z } from "zod/v4";
-import { TreeBuilder, NodeStatus } from "cartographer";
+import { TreeBuilder, ClaudeSDKAgent, NodeStatus } from "cartographer";
+
+// Define agents — each wraps a specific model and configuration
+const classifyAgent = new ClaudeSDKAgent({
+  name: "classify",
+  model: "claude-haiku-4-5",
+  outputFormat: {
+    type: "json_schema",
+    schema: z.toJSONSchema(
+      z.object({
+        category: z.enum(["billing", "technical", "general"]),
+        urgency: z.enum(["low", "medium", "high"]),
+      }),
+    ) as any,
+  },
+});
+
+const billingAgent = new ClaudeSDKAgent({ name: "billing", model: "claude-sonnet-4-6" });
+const diagnoseAgent = new ClaudeSDKAgent({ name: "diagnose", model: "claude-sonnet-4-6", maxTurns: 10 });
+const generalAgent = new ClaudeSDKAgent({ name: "general", model: "claude-haiku-4-5" });
+const escalateAgent = new ClaudeSDKAgent({ name: "escalate", model: "claude-haiku-4-5" });
 
 const tree = new TreeBuilder("support-pipeline")
   .sequence("triage", (b) => {
     // Step 1: AI classifies the ticket
     b.agent("classify", {
+      agent: classifyAgent,
       prompt: (ctx) => `Classify this support ticket:\n${ctx.blackboard.get("ticket")}`,
-      options: {
-        model: "claude-haiku-4-5",
-        outputFormat: {
-          type: "json_schema",
-          schema: z.toJSONSchema(
-            z.object({
-              category: z.enum(["billing", "technical", "general"]),
-              urgency: z.enum(["low", "medium", "high"]),
-            }),
-          ) as any,
-        },
-      },
     });
 
     // Step 2: Route to the right handler — first match wins
@@ -48,8 +57,8 @@ const tree = new TreeBuilder("support-pipeline")
         });
         b.retry("billing-retry", { maxAttempts: 2 }, (b) => {
           b.agent("handle-billing", {
+            agent: billingAgent,
             prompt: (ctx) => `Draft a billing resolution for:\n${ctx.blackboard.get("ticket")}`,
-            options: { model: "claude-sonnet-4-6" },
           });
         });
       });
@@ -60,15 +69,15 @@ const tree = new TreeBuilder("support-pipeline")
           return c?.category === "technical";
         });
         b.agent("diagnose", {
+          agent: diagnoseAgent,
           prompt: (ctx) => `Diagnose this technical issue:\n${ctx.blackboard.get("ticket")}`,
-          options: { model: "claude-sonnet-4-6", maxTurns: 10 },
         });
       });
 
       // Default path — always succeeds as the final branch
       b.agent("handle-general", {
+        agent: generalAgent,
         prompt: (ctx) => `Draft a helpful response to:\n${ctx.blackboard.get("ticket")}`,
-        options: { model: "claude-haiku-4-5" },
       });
     });
 
@@ -85,8 +94,8 @@ const tree = new TreeBuilder("support-pipeline")
         },
         (b) => {
           b.agent("escalate", {
+            agent: escalateAgent,
             prompt: "Summarize the ticket and recommended actions for the on-call team.",
-            options: { model: "claude-haiku-4-5" },
           });
         },
       );
@@ -254,7 +263,9 @@ npm install cartographer
 Requires Node.js 22+. An Anthropic API key is required for agent features (set `ANTHROPIC_API_KEY`).
 
 ```typescript
-import { TreeBuilder, NodeStatus } from "cartographer";
+import { TreeBuilder, ClaudeSDKAgent, NodeStatus } from "cartographer";
+
+const agent = new ClaudeSDKAgent({ name: "expand", model: "claude-haiku-4-5" });
 
 const tree = new TreeBuilder("hello")
   .sequence("main", (b) => {
@@ -263,8 +274,8 @@ const tree = new TreeBuilder("hello")
       return NodeStatus.SUCCESS;
     });
     b.agent("expand", {
+      agent,
       prompt: (ctx) => `Elaborate on: ${ctx.blackboard.get("message")}`,
-      options: { model: "claude-haiku-4-5" },
     });
   })
   .build();
