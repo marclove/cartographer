@@ -144,6 +144,17 @@ describe('serializeEvent', () => {
     });
   });
 
+  it('serializes blackboard:delete — passes through directly', () => {
+    const result = serializeEvent('blackboard:delete', {
+      key: 'foo',
+      source: 'blackboard',
+    });
+    expect(result).toEqual({
+      key: 'foo',
+      source: 'blackboard',
+    });
+  });
+
   it('serializes node:error — extracts error message', () => {
     const result = serializeEvent('node:error', {
       node: dummyAction,
