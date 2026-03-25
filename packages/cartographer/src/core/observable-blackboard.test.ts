@@ -105,6 +105,31 @@ describe('ObservableBlackboard', () => {
     expect(bb.has('key')).toBe(false);
   });
 
+  it('emits blackboard:delete on delete()', () => {
+    const { events, bb } = setup();
+    const handler = vi.fn();
+    events.on('blackboard:delete', handler);
+
+    bb.set('foo', 42);
+    bb.delete('foo');
+
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler).toHaveBeenCalledWith({ key: 'foo', source: 'blackboard' });
+  });
+
+  it('scoped() emits blackboard:delete with prefixed key', () => {
+    const { events, bb } = setup();
+    const handler = vi.fn();
+    events.on('blackboard:delete', handler);
+
+    const scoped = bb.scoped('ns');
+    scoped.set('key', 1);
+    scoped.delete('key');
+
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler).toHaveBeenCalledWith({ key: 'ns:key', source: 'blackboard' });
+  });
+
   it('delegates keys() to inner blackboard', () => {
     const { bb } = setup();
     bb.set('a', 1);
@@ -143,5 +168,99 @@ describe('ObservableBlackboard', () => {
 
     expect(inner.get('top')).toBe(1);
     expect(inner.get('ns:local')).toBe(2);
+  });
+
+  it('emits blackboard:read per key on getMany()', () => {
+    const { events, bb } = setup();
+    const handler = vi.fn();
+    events.on('blackboard:read', handler);
+
+    bb.set('a', 1);
+    bb.set('b', 2);
+    const result = bb.getMany(['a', 'b', 'missing']);
+
+    expect(result).toEqual({ a: 1, b: 2, missing: undefined });
+    expect(handler).toHaveBeenCalledTimes(3);
+    expect(handler).toHaveBeenCalledWith({ key: 'a', value: 1, hit: true, source: 'blackboard' });
+    expect(handler).toHaveBeenCalledWith({ key: 'b', value: 2, hit: true, source: 'blackboard' });
+    expect(handler).toHaveBeenCalledWith({ key: 'missing', value: undefined, hit: false, source: 'blackboard' });
+  });
+
+  it('emits blackboard:write per entry on setMany()', () => {
+    const { events, bb } = setup();
+    const handler = vi.fn();
+    events.on('blackboard:write', handler);
+
+    bb.setMany({ x: 10, y: 20 });
+
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(handler).toHaveBeenCalledWith({ key: 'x', value: 10, source: 'blackboard' });
+    expect(handler).toHaveBeenCalledWith({ key: 'y', value: 20, source: 'blackboard' });
+  });
+
+  it('setMany delegates before emitting (write-before-emit)', () => {
+    const { events, bb } = setup();
+    events.on('blackboard:write', ({ key }) => {
+      // By the time the event fires, the value should already be in the blackboard
+      expect(bb.has(key)).toBe(true);
+    });
+
+    bb.setMany({ a: 1, b: 2 });
+  });
+
+  it('emits blackboard:delete per key on deleteMany()', () => {
+    const { events, bb } = setup();
+    const handler = vi.fn();
+    events.on('blackboard:delete', handler);
+
+    bb.set('a', 1);
+    bb.set('b', 2);
+    bb.deleteMany(['a', 'b']);
+
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(handler).toHaveBeenCalledWith({ key: 'a', source: 'blackboard' });
+    expect(handler).toHaveBeenCalledWith({ key: 'b', source: 'blackboard' });
+  });
+
+  it('scoped() emits bulk events with prefixed keys', () => {
+    const { events, bb } = setup();
+    const readHandler = vi.fn();
+    const writeHandler = vi.fn();
+    const deleteHandler = vi.fn();
+    events.on('blackboard:read', readHandler);
+    events.on('blackboard:write', writeHandler);
+    events.on('blackboard:delete', deleteHandler);
+
+    const scoped = bb.scoped('ns');
+    scoped.setMany({ a: 1, b: 2 });
+    scoped.getMany(['a', 'b']);
+    scoped.deleteMany(['a']);
+
+    expect(writeHandler).toHaveBeenCalledWith({ key: 'ns:a', value: 1, source: 'blackboard' });
+    expect(writeHandler).toHaveBeenCalledWith({ key: 'ns:b', value: 2, source: 'blackboard' });
+    expect(readHandler).toHaveBeenCalledWith({ key: 'ns:a', value: 1, hit: true, source: 'blackboard' });
+    expect(readHandler).toHaveBeenCalledWith({ key: 'ns:b', value: 2, hit: true, source: 'blackboard' });
+    expect(deleteHandler).toHaveBeenCalledWith({ key: 'ns:a', source: 'blackboard' });
+  });
+
+  it('nested scoped() emits bulk events with fully qualified keys', () => {
+    const { events, bb } = setup();
+    const handler = vi.fn();
+    events.on('blackboard:write', handler);
+
+    const nested = bb.scoped('a').scoped('b');
+    nested.setMany({ x: 99 });
+
+    expect(handler).toHaveBeenCalledWith({ key: 'a:b:x', value: 99, source: 'blackboard' });
+  });
+
+  it('getMany with empty array emits no events', () => {
+    const { events, bb } = setup();
+    const handler = vi.fn();
+    events.on('blackboard:read', handler);
+
+    bb.getMany([]);
+
+    expect(handler).not.toHaveBeenCalled();
   });
 });
