@@ -89,6 +89,15 @@ export interface Blackboard {
    * (with the full prefixed key) and vice versa.
    */
   scoped(namespace: string): Blackboard;
+
+  /** Retrieve multiple values by key. Returns a record with all requested keys; missing keys have value `undefined`. */
+  getMany(keys: string[]): Record<string, unknown>;
+
+  /** Store multiple key-value pairs, overwriting any previous values. */
+  setMany(entries: Record<string, unknown>): void;
+
+  /** Remove multiple keys and their values from the blackboard. */
+  deleteMany(keys: string[]): void;
 }
 
 // --- Event Emitter ---
@@ -182,6 +191,7 @@ export interface TreeEvents {
   'blackboard:keys': { keys: string[]; source: string };
   'blackboard:read': { key: string; value: unknown; hit: boolean; source: string };
   'blackboard:write': { key: string; value: unknown; source: string };
+  'blackboard:delete': { key: string; source: string };
   'strategy:decision': { composite: BTreeNode; strategy: string; decision: unknown };
   'agent:elicitation_declined': { node: BTreeNode; request: AgentElicitationRequest };
   'client:event': { name: string; data: unknown };
