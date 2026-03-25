@@ -52,6 +52,10 @@ export class ActorServer {
   private readonly sseClients: Set<SseClient> = new Set();
   private _readTree: BehaviorTree | null = null;
 
+  private createBridge(messageId?: string): EventBridge {
+    return new EventBridge(this.stateStore, ActorServer.STATE_KEY, messageId, (event) => this.forwardEvent(event));
+  }
+
   /** Returns a stable tree instance used for read-only introspection (consistent node IDs). */
   private get readTree(): BehaviorTree {
     if (!this._readTree) {
@@ -236,7 +240,7 @@ export class ActorServer {
 
     const acquired = await this.stateStore.acquireLock(ActorServer.STATE_KEY, requestId, 30000);
     if (!acquired) {
-      const bridge = new EventBridge(this.stateStore, ActorServer.STATE_KEY, msg.id, (event) => this.forwardEvent(event));
+      const bridge = this.createBridge(msg.id);
       msg.id = bridge.messageId;
       try {
         const { position } = await this.stateStore.enqueueMessage(ActorServer.STATE_KEY, msg, this.maxQueueDepth);
@@ -247,7 +251,7 @@ export class ActorServer {
       }
     }
 
-    const bridge = new EventBridge(this.stateStore, ActorServer.STATE_KEY, msg.id, (event) => this.forwardEvent(event));
+    const bridge = this.createBridge(msg.id);
     msg.id = bridge.messageId;
 
     return this.executeMessage(msg, requestId, bridge);
@@ -259,7 +263,7 @@ export class ActorServer {
     const acquired = await this.stateStore.acquireLock(ActorServer.STATE_KEY, requestId, 30000);
     if (!acquired) {
       // Lock held — try to queue
-      const bridge = new EventBridge(this.stateStore, ActorServer.STATE_KEY, clientMessageId, (event) => this.forwardEvent(event));
+      const bridge = this.createBridge(clientMessageId);
       msg.id = bridge.messageId;
       try {
         const { position } = await this.stateStore.enqueueMessage(ActorServer.STATE_KEY, msg, this.maxQueueDepth);
@@ -270,7 +274,7 @@ export class ActorServer {
       }
     }
 
-    const bridge = new EventBridge(this.stateStore, ActorServer.STATE_KEY, clientMessageId, (event) => this.forwardEvent(event));
+    const bridge = this.createBridge(clientMessageId);
     msg.id = bridge.messageId;
 
     // Respond immediately, process in background
@@ -328,7 +332,7 @@ export class ActorServer {
       return;
     }
 
-    const bridge = new EventBridge(this.stateStore, ActorServer.STATE_KEY, msg.id, (event) => this.forwardEvent(event));
+    const bridge = this.createBridge(msg.id);
     if (!msg.id) msg.id = bridge.messageId;
     await bridge.emitDequeued();
     // executeMessage will call drainQueue again in its finally block
