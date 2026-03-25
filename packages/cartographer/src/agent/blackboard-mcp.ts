@@ -11,7 +11,7 @@ interface McpToolResult {
 }
 
 /**
- * Typed map of the three blackboard tool handler functions.
+ * Typed map of the blackboard tool handler functions.
  *
  * Exposed via the `handlers` property on the server object returned by
  * {@link createBlackboardMcpServer}. Primarily useful for unit testing
@@ -21,6 +21,10 @@ interface BlackboardMcpHandlers {
   blackboard_read: (args: { key: string }) => Promise<McpToolResult>;
   blackboard_write: (args: { key: string; value: unknown }) => Promise<McpToolResult>;
   blackboard_keys: (args: Record<string, never>) => Promise<McpToolResult>;
+  blackboard_delete: (args: { key: string }) => Promise<McpToolResult>;
+  blackboard_read_many: (args: { keys: string[] }) => Promise<McpToolResult>;
+  blackboard_write_many: (args: { entries: Record<string, unknown> }) => Promise<McpToolResult>;
+  blackboard_delete_many: (args: { keys: string[] }) => Promise<McpToolResult>;
 }
 
 /**
@@ -33,13 +37,17 @@ interface BlackboardMcpHandlers {
  *
  * ## Exposed tools
  *
- * Claude can call three tools while the agent node is executing:
+ * Claude can call seven tools while the agent node is executing:
  *
  * | Tool | Arguments | Description |
  * |---|---|---|
  * | `blackboard_read` | `key: string` | Read a value by key. Returns the JSON-serialised value, or the string `"undefined"` if the key does not exist. |
  * | `blackboard_write` | `key: string`, `value: any` | Write any JSON-serialisable value to the blackboard. Returns `"Wrote {key}"` as confirmation. |
  * | `blackboard_keys` | *(none)* | List all keys currently in scope as a JSON array. |
+ * | `blackboard_delete` | `key: string` | Delete a key from the blackboard. Returns `"Deleted {key}"` as confirmation. |
+ * | `blackboard_read_many` | `keys: string[]` | Read multiple keys in one call. Returns a JSON object mapping each key to its value, or `null` for missing keys. |
+ * | `blackboard_write_many` | `entries: Record<string, any>` | Write multiple key-value pairs in one call. Returns `"Wrote keys: {k1}, {k2}, ..."` as confirmation. |
+ * | `blackboard_delete_many` | `keys: string[]` | Delete multiple keys in one call. Returns `"Deleted keys: {k1}, {k2}, ..."` as confirmation. |
  *
  * In `AgentNode`, these tools are made available to Claude via the pattern
  * `allowedTools: ['mcp__blackboard__*']`.
@@ -92,6 +100,33 @@ export function createBlackboardMcpServer(blackboard: Blackboard, namespace?: st
     content: [{ type: 'text' as const, text: JSON.stringify(scoped.keys()) }],
   });
 
+  const deleteHandler = async (args: { key: string }): Promise<McpToolResult> => {
+    scoped.delete(args.key);
+    return { content: [{ type: 'text' as const, text: `Deleted ${args.key}` }] };
+  };
+
+  const readManyHandler = async (args: { keys: string[] }): Promise<McpToolResult> => {
+    const result = scoped.getMany(args.keys);
+    // Map undefined → null for JSON serialization (JSON.stringify drops undefined object values)
+    const mapped: Record<string, unknown> = {};
+    for (const key of args.keys) {
+      mapped[key] = result[key] === undefined ? null : result[key];
+    }
+    return { content: [{ type: 'text' as const, text: JSON.stringify(mapped) }] };
+  };
+
+  const writeManyHandler = async (args: { entries: Record<string, unknown> }): Promise<McpToolResult> => {
+    scoped.setMany(args.entries);
+    const keys = Object.keys(args.entries).join(', ');
+    return { content: [{ type: 'text' as const, text: `Wrote keys: ${keys}` }] };
+  };
+
+  const deleteManyHandler = async (args: { keys: string[] }): Promise<McpToolResult> => {
+    scoped.deleteMany(args.keys);
+    const keys = args.keys.join(', ');
+    return { content: [{ type: 'text' as const, text: `Deleted keys: ${keys}` }] };
+  };
+
   const server = createSdkMcpServer({
     name: 'blackboard',
     version: '1.0.0',
@@ -117,6 +152,30 @@ export function createBlackboardMcpServer(blackboard: Blackboard, namespace?: st
         {},
         keysHandler,
       ),
+      tool(
+        'blackboard_delete',
+        'Delete a key from the behavior tree blackboard',
+        { key: z.string().describe('The key to delete') },
+        deleteHandler,
+      ),
+      tool(
+        'blackboard_read_many',
+        'Read multiple values from the behavior tree blackboard',
+        { keys: z.array(z.string()).describe('The keys to read') },
+        readManyHandler,
+      ),
+      tool(
+        'blackboard_write_many',
+        'Write multiple values to the behavior tree blackboard',
+        { entries: z.record(z.string(), z.any()).describe('Key-value pairs to write') },
+        writeManyHandler,
+      ),
+      tool(
+        'blackboard_delete_many',
+        'Delete multiple keys from the behavior tree blackboard',
+        { keys: z.array(z.string()).describe('The keys to delete') },
+        deleteManyHandler,
+      ),
     ],
   });
 
@@ -126,6 +185,10 @@ export function createBlackboardMcpServer(blackboard: Blackboard, namespace?: st
     blackboard_read: readHandler,
     blackboard_write: writeHandler,
     blackboard_keys: keysHandler,
+    blackboard_delete: deleteHandler,
+    blackboard_read_many: readManyHandler,
+    blackboard_write_many: writeManyHandler,
+    blackboard_delete_many: deleteManyHandler,
   };
 
   return Object.assign(server, { handlers });
