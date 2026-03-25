@@ -21,7 +21,7 @@ import type { BTreeNode } from '../types.js';
 import { AgentNode } from '../nodes/agent.js';
 import { serializeTree, serializeNodeRef } from './serializers.js';
 import { jsonResponse, jsonError } from './http-utils.js';
-import { blackboardToRecord } from './sse-handler.js';
+import { blackboardToRecord } from './blackboard-utils.js';
 
 /**
  * Runtime status snapshot maintained by the {@link ActorServer} across ticks.

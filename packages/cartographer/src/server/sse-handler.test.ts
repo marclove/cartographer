@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import {
   sendSseEvent,
-  blackboardToRecord,
   handleSseStream,
 } from './sse-handler.js';
+import { blackboardToRecord } from './blackboard-utils.js';
 import type { SseSnapshot } from './sse-handler.js';
 import { InProcessEventStream } from './event-stream.js';
 

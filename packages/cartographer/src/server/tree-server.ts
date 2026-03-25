@@ -7,7 +7,8 @@ import { InProcessEventStream } from './event-stream.js';
 import { serializeEvent, serializeTree as serializeTreeForApi } from './serializers.js';
 import { handleApiTree, handleApiStatus, handleApiBlackboard, handleApiNode } from './api-handlers.js';
 import type { StatusState } from './api-handlers.js';
-import { handleSseStream, blackboardToRecord } from './sse-handler.js';
+import { handleSseStream } from './sse-handler.js';
+import { blackboardToRecord } from './blackboard-utils.js';
 import type { SseClient } from './sse-handler.js';
 import { jsonError } from './http-utils.js';
 

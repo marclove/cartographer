@@ -4,7 +4,7 @@ import { serializeTree, restoreTree } from '../core/serialization.js';
 import type { StateStore } from '../state/state-store.js';
 import type { ActorMessage } from './types.js';
 import type { EventBridge } from '../server/event-bridge.js';
-import { blackboardToRecord } from '../server/sse-handler.js';
+import { blackboardToRecord } from '../server/blackboard-utils.js';
 
 /**
  * Configuration for creating a {@link TreeActor}.
