@@ -20,6 +20,29 @@ function generateRequestId(): string {
   return `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+type RouteHandler = (req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => Promise<void> | void;
+
+interface Route {
+  method: string;
+  pattern: string;
+  handler: RouteHandler;
+}
+
+function matchRoute(pathname: string, pattern: string): Record<string, string> | null {
+  const pathParts = pathname.split('/');
+  const patternParts = pattern.split('/');
+  if (pathParts.length !== patternParts.length) return null;
+  const params: Record<string, string> = {};
+  for (let i = 0; i < patternParts.length; i++) {
+    if (patternParts[i].startsWith(':')) {
+      params[patternParts[i].slice(1)] = decodeURIComponent(pathParts[i]);
+    } else if (patternParts[i] !== pathParts[i]) {
+      return null;
+    }
+  }
+  return params;
+}
+
 export interface ActorServerOptions {
   createTree: () => BehaviorTree;
   stateStore?: StateStore;
@@ -51,6 +74,7 @@ export class ActorServer {
   private readonly eventStream: EventStream = new InProcessEventStream(500);
   private readonly sseClients: Set<SseClient> = new Set();
   private _readTree: BehaviorTree | null = null;
+  private readonly routes: Route[];
 
   private createBridge(messageId?: string): EventBridge {
     return new EventBridge(this.stateStore, ActorServer.STATE_KEY, messageId, (event) => this.forwardEvent(event));
@@ -71,6 +95,19 @@ export class ActorServer {
     this.context = options.context ?? {};
     this.topologyPolicy = options.topologyPolicy ?? 'fail';
     this.maxQueueDepth = options.maxQueueDepth ?? parseInt(process.env.CARTOGRAPHER_MAX_QUEUE_DEPTH ?? '16', 10);
+    this.routes = [
+      { method: 'GET',  pattern: '/_platform/health',     handler: (_req, res) => this.handleHealth(res) },
+      { method: 'GET',  pattern: '/api/blackboard',       handler: (_req, res) => this.handleBlackboardRead(res) },
+      { method: 'GET',  pattern: '/api/status',           handler: (_req, res) => this.handleStatus(res) },
+      { method: 'GET',  pattern: '/api/tree',             handler: (_req, res) => this.handleTreeRead(res) },
+      { method: 'GET',  pattern: '/api/nodes/:id',        handler: (_req, res, p) => handleApiNode(res, this.readTree, p.id) },
+      { method: 'GET',  pattern: '/events',               handler: (req, res) => this.handleSSE(req, res) },
+      { method: 'POST', pattern: '/api/messages',         handler: (req, res) => this.handleMessage(req, res) },
+      { method: 'POST', pattern: '/api/commands/:name',   handler: (req, res, p) => this.handleCommand(req, res, p.name) },
+      { method: 'POST', pattern: '/api/blackboard/:key',  handler: (req, res, p) => this.handleBlackboardWrite(req, res, p.key) },
+      { method: 'POST', pattern: '/api/interrupt',        handler: (_req, res) => this.handleInterrupt(res) },
+      { method: 'POST', pattern: '/api/resume',           handler: (_req, res) => this.handleResume(res) },
+    ];
   }
 
   async start(): Promise<{ port: number }> {
@@ -147,67 +184,39 @@ export class ActorServer {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
     const method = req.method ?? 'GET';
 
-    // Platform health
-    if (method === 'GET' && url.pathname === '/_platform/health') {
-      return jsonResponse(res, 200, {
-        status: 'ok',
-        uptime: Math.floor((Date.now() - this.stats.startedAt) / 1000),
-      });
-    }
-
-    // Read endpoints
-    if (method === 'GET' && url.pathname === '/api/blackboard') {
-      const state = await this.stateStore.getState(ActorServer.STATE_KEY);
-      return jsonResponse(res, 200, state?.blackboard ?? {});
-    }
-
-    if (method === 'GET' && url.pathname === '/api/status') {
-      const tree = this.readTree;
-      return jsonResponse(res, 200, {
-        tree: tree.name,
-        ...this.stats,
-        uptime: Date.now() - this.stats.startedAt,
-      });
-    }
-
-    if (method === 'GET' && url.pathname === '/api/tree') {
-      const tree = this.readTree;
-      return jsonResponse(res, 200, { tree: tree.name, root: serializeTreeForApi(tree.root) });
-    }
-
-    const nodeMatch = url.pathname.match(/^\/api\/nodes\/(.+)$/);
-    if (method === 'GET' && nodeMatch) {
-      return handleApiNode(res, this.readTree, decodeURIComponent(nodeMatch[1]));
-    }
-
-    if (method === 'GET' && url.pathname === '/events') {
-      return this.handleSSE(req, res);
-    }
-
-    // Write endpoints
-    if (method === 'POST' && url.pathname === '/api/messages') {
-      return this.handleMessage(req, res);
-    }
-
-    const commandMatch = url.pathname.match(/^\/api\/commands\/(.+)$/);
-    if (method === 'POST' && commandMatch) {
-      return this.handleCommand(req, res, decodeURIComponent(commandMatch[1]));
-    }
-
-    const bbMatch = url.pathname.match(/^\/api\/blackboard\/(.+)$/);
-    if (method === 'POST' && bbMatch) {
-      return this.handleBlackboardWrite(req, res, decodeURIComponent(bbMatch[1]));
-    }
-
-    if (method === 'POST' && url.pathname === '/api/interrupt') {
-      return this.handleInterrupt(res);
-    }
-
-    if (method === 'POST' && url.pathname === '/api/resume') {
-      return this.handleResume(res);
+    for (const route of this.routes) {
+      if (route.method !== method) continue;
+      const params = matchRoute(url.pathname, route.pattern);
+      if (params) return route.handler(req, res, params);
     }
 
     jsonError(res, 404, 'Not found');
+  }
+
+  private handleHealth(res: ServerResponse): void {
+    jsonResponse(res, 200, {
+      status: 'ok',
+      uptime: Math.floor((Date.now() - this.stats.startedAt) / 1000),
+    });
+  }
+
+  private async handleBlackboardRead(res: ServerResponse): Promise<void> {
+    const state = await this.stateStore.getState(ActorServer.STATE_KEY);
+    jsonResponse(res, 200, state?.blackboard ?? {});
+  }
+
+  private handleStatus(res: ServerResponse): void {
+    const tree = this.readTree;
+    jsonResponse(res, 200, {
+      tree: tree.name,
+      ...this.stats,
+      uptime: Date.now() - this.stats.startedAt,
+    });
+  }
+
+  private handleTreeRead(res: ServerResponse): void {
+    const tree = this.readTree;
+    jsonResponse(res, 200, { tree: tree.name, root: serializeTreeForApi(tree.root) });
   }
 
   private async handleMessage(req: IncomingMessage, res: ServerResponse): Promise<void> {
