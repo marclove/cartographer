@@ -27,6 +27,8 @@ export interface StateStore {
   deleteState(key: string): Promise<void>;
   listKeys(): Promise<string[]>;
 
+  clearHeld(key: string): Promise<boolean>;
+
   acquireLock(key: string, requestId: string, ttlMs: number): Promise<boolean>;
   renewLock(key: string, requestId: string, ttlMs: number): Promise<boolean>;
   releaseLock(key: string, requestId: string): Promise<void>;

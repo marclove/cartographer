@@ -33,6 +33,13 @@ export class InMemoryStateStore implements StateStore {
     return [...this.store.keys()];
   }
 
+  async clearHeld(key: string): Promise<boolean> {
+    const state = this.store.get(key);
+    if (!state?.held) return false;
+    state.held = false;
+    return true;
+  }
+
   // --- Locking ---
 
   async acquireLock(key: string, requestId: string, _ttlMs: number): Promise<boolean> {

@@ -62,6 +62,20 @@ export class RedisStateStore implements StateStore {
     return keys.map(k => k.slice(`${this.keyPrefix}state:`.length));
   }
 
+  async clearHeld(key: string): Promise<boolean> {
+    const script = `
+      local raw = redis.call("get", KEYS[1])
+      if not raw then return 0 end
+      local state = cjson.decode(raw)
+      if not state.held then return 0 end
+      state.held = false
+      redis.call("set", KEYS[1], cjson.encode(state))
+      return 1
+    `;
+    const result = await this.redis.eval(script, 1, this.stateKey(key));
+    return result === 1;
+  }
+
   async acquireLock(key: string, requestId: string, ttlMs: number): Promise<boolean> {
     const result = await this.redis.set(
       this.lockKey(key), requestId, 'PX', ttlMs, 'NX'

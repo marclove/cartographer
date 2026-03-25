@@ -42,6 +42,27 @@ describe('InMemoryStateStore', () => {
     });
   });
 
+  describe('clearHeld', () => {
+    it('clears held flag and returns true when held', async () => {
+      const store = new InMemoryStateStore();
+      await store.saveState('key', { blackboard: {}, treeState: { rootHash: '', nodes: {} }, createdAt: 0, lastMessageAt: 0, held: true });
+      expect(await store.clearHeld('key')).toBe(true);
+      const state = await store.getState('key');
+      expect(state?.held).toBe(false);
+    });
+
+    it('returns false when not held', async () => {
+      const store = new InMemoryStateStore();
+      await store.saveState('key', { blackboard: {}, treeState: { rootHash: '', nodes: {} }, createdAt: 0, lastMessageAt: 0 });
+      expect(await store.clearHeld('key')).toBe(false);
+    });
+
+    it('returns false when no state exists', async () => {
+      const store = new InMemoryStateStore();
+      expect(await store.clearHeld('missing')).toBe(false);
+    });
+  });
+
   describe('locking', () => {
     it('acquires lock when not held', async () => {
       const store = new InMemoryStateStore();

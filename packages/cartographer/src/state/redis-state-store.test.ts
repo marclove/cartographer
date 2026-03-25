@@ -93,6 +93,24 @@ describe('RedisStateStore', () => {
     });
   });
 
+  describe('clearHeld', () => {
+    it('returns true and clears held via Lua script', async () => {
+      redis.eval.mockResolvedValue(1);
+      const result = await store.clearHeld('sess1');
+      expect(result).toBe(true);
+      expect(redis.eval).toHaveBeenCalledWith(
+        expect.stringContaining('cjson.decode'),
+        1,
+        'cartographer:state:sess1',
+      );
+    });
+
+    it('returns false when state is not held', async () => {
+      redis.eval.mockResolvedValue(0);
+      expect(await store.clearHeld('sess1')).toBe(false);
+    });
+  });
+
   describe('locking', () => {
     it('returns true on successful NX set', async () => {
       redis.set.mockResolvedValue('OK');

@@ -476,13 +476,8 @@ export class ActorServer {
   }
 
   private async handleResume(res: ServerResponse): Promise<void> {
-    const state = await this.stateStore.getState(ActorServer.STATE_KEY);
-    if (state?.held) {
-      await this.stateStore.saveState(ActorServer.STATE_KEY, { ...state, held: false });
-      jsonResponse(res, 200, { resumed: true });
-    } else {
-      jsonResponse(res, 200, { resumed: false });
-    }
+    const resumed = await this.stateStore.clearHeld(ActorServer.STATE_KEY);
+    jsonResponse(res, 200, { resumed });
   }
 
   private async handleSSE(req: IncomingMessage, res: ServerResponse): Promise<void> {

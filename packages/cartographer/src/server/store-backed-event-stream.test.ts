@@ -40,6 +40,7 @@ function createMockStore() {
     saveState: async () => {},
     deleteState: async () => {},
     listKeys: async () => [],
+    clearHeld: async () => false,
     acquireLock: async () => true,
     renewLock: async () => true,
     releaseLock: async () => {},
