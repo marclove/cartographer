@@ -36,6 +36,8 @@ export interface QueuedResult {
 }
 
 export class ActorServer {
+  private static readonly STATE_KEY = 'default';
+
   private readonly createTree: () => BehaviorTree;
   readonly stateStore: StateStore;
   private readonly configPort: number;
@@ -70,7 +72,7 @@ export class ActorServer {
   async start(): Promise<{ port: number }> {
     this.stats.startedAt = Date.now();
 
-    const existing = await this.stateStore.getState('default');
+    const existing = await this.stateStore.getState(ActorServer.STATE_KEY);
     if (!existing) {
       await this.initializeDefaultState();
     }
@@ -126,7 +128,7 @@ export class ActorServer {
     }
     const blackboard = blackboardToRecord(tree.blackboard);
     const treeState = serializeTree(tree.root, tree.rootHash);
-    await this.stateStore.saveState('default', {
+    await this.stateStore.saveState(ActorServer.STATE_KEY, {
       blackboard,
       treeState,
       treeStructure: serializeTreeForApi(tree.root),
@@ -149,7 +151,7 @@ export class ActorServer {
 
     // Read endpoints
     if (method === 'GET' && url.pathname === '/api/blackboard') {
-      const state = await this.stateStore.getState('default');
+      const state = await this.stateStore.getState(ActorServer.STATE_KEY);
       return jsonResponse(res, 200, state?.blackboard ?? {});
     }
 
@@ -232,12 +234,12 @@ export class ActorServer {
   async processMessage(msg: ActorMessage): Promise<ProcessResult | QueuedResult | null> {
     const requestId = generateRequestId();
 
-    const acquired = await this.stateStore.acquireLock('default', requestId, 30000);
+    const acquired = await this.stateStore.acquireLock(ActorServer.STATE_KEY, requestId, 30000);
     if (!acquired) {
-      const bridge = new EventBridge(this.stateStore, 'default', msg.id, (event) => this.forwardEvent(event));
+      const bridge = new EventBridge(this.stateStore, ActorServer.STATE_KEY, msg.id, (event) => this.forwardEvent(event));
       msg.id = bridge.messageId;
       try {
-        const { position } = await this.stateStore.enqueueMessage('default', msg, this.maxQueueDepth);
+        const { position } = await this.stateStore.enqueueMessage(ActorServer.STATE_KEY, msg, this.maxQueueDepth);
         await bridge.emitQueued(position);
         return { queued: true, messageId: bridge.messageId, position };
       } catch {
@@ -245,7 +247,7 @@ export class ActorServer {
       }
     }
 
-    const bridge = new EventBridge(this.stateStore, 'default', msg.id, (event) => this.forwardEvent(event));
+    const bridge = new EventBridge(this.stateStore, ActorServer.STATE_KEY, msg.id, (event) => this.forwardEvent(event));
     msg.id = bridge.messageId;
 
     return this.executeMessage(msg, requestId, bridge);
@@ -254,13 +256,13 @@ export class ActorServer {
   private async processAsync(msg: ActorMessage, res: ServerResponse, clientMessageId?: string): Promise<void> {
     const requestId = generateRequestId();
 
-    const acquired = await this.stateStore.acquireLock('default', requestId, 30000);
+    const acquired = await this.stateStore.acquireLock(ActorServer.STATE_KEY, requestId, 30000);
     if (!acquired) {
       // Lock held — try to queue
-      const bridge = new EventBridge(this.stateStore, 'default', clientMessageId, (event) => this.forwardEvent(event));
+      const bridge = new EventBridge(this.stateStore, ActorServer.STATE_KEY, clientMessageId, (event) => this.forwardEvent(event));
       msg.id = bridge.messageId;
       try {
-        const { position } = await this.stateStore.enqueueMessage('default', msg, this.maxQueueDepth);
+        const { position } = await this.stateStore.enqueueMessage(ActorServer.STATE_KEY, msg, this.maxQueueDepth);
         await bridge.emitQueued(position);
         return jsonResponse(res, 202, { id: bridge.messageId, status: 'queued', position });
       } catch {
@@ -268,7 +270,7 @@ export class ActorServer {
       }
     }
 
-    const bridge = new EventBridge(this.stateStore, 'default', clientMessageId, (event) => this.forwardEvent(event));
+    const bridge = new EventBridge(this.stateStore, ActorServer.STATE_KEY, clientMessageId, (event) => this.forwardEvent(event));
     msg.id = bridge.messageId;
 
     // Respond immediately, process in background
@@ -282,14 +284,14 @@ export class ActorServer {
     bridge: EventBridge,
   ): Promise<ProcessResult> {
     const heartbeat = setInterval(async () => {
-      try { await this.stateStore.acquireLock('default', requestId, 30000); } catch {}
+      try { await this.stateStore.acquireLock(ActorServer.STATE_KEY, requestId, 30000); } catch {}
     }, 10000);
 
     try {
       const actor = new TreeActor({
         createTree: this.createTree,
         stateStore: this.stateStore,
-        stateKey: 'default',
+        stateKey: ActorServer.STATE_KEY,
         topologyPolicy: this.topologyPolicy,
         eventBridge: bridge,
       });
@@ -310,23 +312,23 @@ export class ActorServer {
       this.activeActor = null;
       this.activeMessageId = null;
       clearInterval(heartbeat);
-      await this.stateStore.releaseLock('default', requestId);
+      await this.stateStore.releaseLock(ActorServer.STATE_KEY, requestId);
       this.drainQueue().catch(() => {});
     }
   }
 
   private async drainQueue(): Promise<void> {
     const requestId = generateRequestId();
-    const acquired = await this.stateStore.acquireLock('default', requestId, 30000);
+    const acquired = await this.stateStore.acquireLock(ActorServer.STATE_KEY, requestId, 30000);
     if (!acquired) return; // Someone else is processing; they'll drain when done
 
-    const msg = await this.stateStore.dequeueMessage('default');
+    const msg = await this.stateStore.dequeueMessage(ActorServer.STATE_KEY);
     if (!msg) {
-      await this.stateStore.releaseLock('default', requestId);
+      await this.stateStore.releaseLock(ActorServer.STATE_KEY, requestId);
       return;
     }
 
-    const bridge = new EventBridge(this.stateStore, 'default', msg.id, (event) => this.forwardEvent(event));
+    const bridge = new EventBridge(this.stateStore, ActorServer.STATE_KEY, msg.id, (event) => this.forwardEvent(event));
     if (!msg.id) msg.id = bridge.messageId;
     await bridge.emitDequeued();
     // executeMessage will call drainQueue again in its finally block
@@ -344,9 +346,9 @@ export class ActorServer {
   }
 
   private async handleResume(res: ServerResponse): Promise<void> {
-    const state = await this.stateStore.getState('default');
+    const state = await this.stateStore.getState(ActorServer.STATE_KEY);
     if (state?.held) {
-      await this.stateStore.saveState('default', { ...state, held: false });
+      await this.stateStore.saveState(ActorServer.STATE_KEY, { ...state, held: false });
       jsonResponse(res, 200, { resumed: true });
     } else {
       jsonResponse(res, 200, { resumed: false });
@@ -362,7 +364,7 @@ export class ActorServer {
 
     // Build snapshot from readTree (structure) + state store (blackboard) + stats
     const tree = this.readTree;
-    const state = await this.stateStore.getState('default');
+    const state = await this.stateStore.getState(ActorServer.STATE_KEY);
     const snapshot = {
       tree: serializeTreeForApi(tree.root),
       blackboard: state?.blackboard ?? {},
