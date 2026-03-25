@@ -24,7 +24,7 @@ Your background determines the fastest path through these docs.
 | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | **New to behavior trees**                         | Read [Concepts](concepts.md) for BT fundamentals, then [Getting Started](getting-started.md) to build your first tree.                        |
 | **Familiar with BTs but new to Claude Agent SDK** | Skim [Getting Started](getting-started.md), then jump to [Agent Integration](guide-agent-integration.md) for AgentNode modes and MCP tooling. |
-| **Building a message-driven application?**        | Start with [Application Server](guide-app-server.md) for TreeActor, ActorServer, StateStore, and the client SDK.                              |
+| **Building a message-driven application?**        | Start with [Application Server](guide-app-server.md) for MessageProcessor, ActorServer, ObserverServer, StateStore, and the client SDK.       |
 | **Connecting a Svelte frontend?**                 | See [Svelte Integration](guide-svelte.md) for reactive bindings to a running ActorServer.                                                     |
 | **Connecting a React frontend?**                  | See [React Integration](guide-react.md) for hooks that bind to a running ActorServer.                                                         |
 | **Looking for API details**                       | Go directly to the [API Reference](api/index.md).                                                                                             |
@@ -49,7 +49,7 @@ Your background determines the fastest path through these docs.
 - [Error Handling and Resilience](guide-error-handling.md) -- Error containment, retry/timeout stacking, abort signals, and scheduler error recovery.
 - [Testing Behavior Trees](guide-testing.md) -- Test contexts, helper functions, event verification, and multi-tick test patterns.
 - [Advanced Patterns](guide-advanced-patterns.md) -- Custom nodes, custom strategies, multi-tick resumption internals, parallel policies, and advanced blackboard patterns.
-- [Application Server](guide-app-server.md) -- TreeActor, ActorServer, StateStore, client SDK, SSE events, serialization, and content hashing.
+- [Application Server](guide-app-server.md) -- MessageProcessor, ActorServer, ObserverServer, StateStore, client SDK, SSE events, serialization, and content hashing.
 - [Svelte Integration](guide-svelte.md) -- Svelte 5 bindings: reactive blackboard, tree status, actions, and event subscriptions.
 - [React Integration](guide-react.md) -- React hooks: blackboard, tree status, actions, and event subscriptions.
 
@@ -69,7 +69,7 @@ Your background determines the fastest path through these docs.
 - [Builder](api/builder.md) -- `TreeBuilder`, `CompositeBuilder`, `SingleChildBuilder`.
 - [Config](api/config.md) -- `TreeRegistry`.
 - [Scheduler](api/scheduler.md) -- `TreeScheduler`, `SchedulerConfig`, `SchedulerEvents`.
-- [Actor](api/actor.md) -- `TreeActor`, `ActorServer`, `ActorMessage`, `StateStore`, `InMemoryStateStore`, `RedisStateStore`.
+- [Actor](api/actor.md) -- `MessageProcessor`, `ActorServer`, `ObserverServer`, `ActorMessage`, `StateStore`, `InMemoryStateStore`, `RedisStateStore`.
 - [Client](api/client.md) -- `createCartographerClient`, `CartographerClient`, `QueueFullError`.
 - [Serialization](api/serialization.md) -- `serializeTree`, `restoreTree`, `buildHashIndex`, `computeContentHash`.
 - [CLI](api/cli.md) -- `RunContext`, `TreeRunConfig`, `FormatterOptions`, `createFormatter`.

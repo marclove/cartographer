@@ -429,7 +429,7 @@ if (tree.hasInflightWork()) {
 }
 ```
 
-These are primarily used by `TreeActor.runToCompletion()` to distinguish between a tree that is waiting for async work to finish (keep waiting) and a tree that has genuinely suspended (save state, exit).
+These are primarily used by `MessageProcessor.runToCompletion()` to distinguish between a tree that is waiting for async work to finish (keep waiting) and a tree that has genuinely suspended (save state, exit).
 
 ---
 
@@ -473,7 +473,7 @@ Duplicate content hashes (e.g., two `ActionNode` instances with the same name) a
 
 ## Next Steps
 
-- [Application Server](guide-app-server.md) — TreeActor, ActorServer, StateStore, and client SDK.
+- [Application Server](guide-app-server.md) — MessageProcessor, ActorServer, ObserverServer, StateStore, and client SDK.
 - [TreeContext and Context Layering](guide-context.md) — How context overrides propagate through the tree.
 - [Elicitation](guide-elicitation.md) — Handling MCP server input requests.
 - [Building Trees](guide-building-trees.md) — Builder API, registry references, and direct instantiation compared side-by-side.

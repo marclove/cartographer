@@ -82,7 +82,7 @@ Unsubscribe a handler.
 
 #### `connect(): void`
 
-Opens an `EventSource` connection to `GET /api/events`. No-op if already connected. In Node.js, requires an `EventSource` polyfill (e.g., the `eventsource` package) or the `--experimental-eventsource` flag (Node 22+). If `globalThis.EventSource` is undefined, `connect()` silently returns without error. This means `commandAndWait()` and `interruptAndCommand()` (when processing is active) will hang indefinitely in environments without `EventSource` — ensure EventSource is available before calling `connect()`.
+Opens an `EventSource` connection to `GET /events`. No-op if already connected. In Node.js, requires an `EventSource` polyfill (e.g., the `eventsource` package) or the `--experimental-eventsource` flag (Node 22+). If `globalThis.EventSource` is undefined, `connect()` silently returns without error. This means `commandAndWait()` and `interruptAndCommand()` (when processing is active) will hang indefinitely in environments without `EventSource` — ensure EventSource is available before calling `connect()`.
 
 #### `disconnect(): void`
 

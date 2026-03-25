@@ -276,11 +276,11 @@ interface SessionConfig {
 
 The tree's `SessionRegistry` maps session names to provider session IDs. It is managed automatically:
 
-- **Created or restored** when the tree starts ticking (or when `TreeActor` hydrates state).
+- **Created or restored** when the tree starts ticking (or when `MessageProcessor` hydrates state).
 - **Preserved** across ticks that return `RUNNING` and across `interrupt()` calls — agents can resume their conversations on the next tick.
 - **Cleared** when the tree reaches a terminal status (`SUCCESS` or `FAILURE`), or when `abort()` or `reset()` is called.
 
-This means sessions live for the duration of a single tree run. If you need sessions to survive across independent runs, use `TreeActor` with a `StateStore` — the actor serializes and restores the session registry alongside the blackboard and tree state.
+This means sessions live for the duration of a single tree run. If you need sessions to survive across independent runs, use `ActorServer` with a `StateStore` — it serializes and restores the session registry alongside the blackboard and tree state.
 
 ### Session Concurrency Validation
 

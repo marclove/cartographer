@@ -157,25 +157,36 @@ Re-exported from the internal type definitions. See individual reference pages f
 
 ## [Application Server](actor.md)
 
-| Export                     | Description                                                      |
-| -------------------------- | ---------------------------------------------------------------- |
-| `TreeActor`                | Transient per-message processor                                  |
-| `TreeActorOptions`         | Options for `TreeActor` constructor                              |
-| `ProcessResult`            | Result of `TreeActor.process()`                                  |
-| `ActorServer`              | HTTP server wrapping `TreeActor` with REST and SSE               |
-| `ActorServerOptions`       | Options for `ActorServer` constructor                            |
-| `ActorMessage`             | Union of all message types                                       |
-| `TickMessage`              | Tick message type                                                |
-| `CommandMessage`           | Command message type                                             |
-| `WriteMessage`             | Write message type                                               |
-| `SignalMessage`            | Signal message type (stop, reset, abort, resume)                 |
-| `MessageQueuedEvent`       | Event emitted when a message is enqueued                         |
-| `MessageDequeuedEvent`     | Event emitted when a queued message begins processing            |
-| `MessageProcessedEvent`    | Event emitted on message completion                              |
-| `MessageInterruptedEvent`  | Event emitted when a message is interrupted                      |
-| `MessageFailedEvent`       | Event emitted on message failure                                 |
-| `QueuedResult`             | Result returned by `processMessage()` when a message is queued   |
-| `generateMessageId`        | Utility to generate unique message IDs                           |
+| Export                     | Description                                                              |
+| -------------------------- | ------------------------------------------------------------------------ |
+| `MessageProcessor`         | Transient per-message processor                                          |
+| `MessageProcessorOptions`  | Options for `MessageProcessor` constructor                               |
+| `ProcessResult`            | Result of `MessageProcessor.process()`                                   |
+| `ActorServer`              | HTTP server wrapping `MessageProcessor` with REST and SSE                |
+| `ActorServerOptions`       | Options for `ActorServer` constructor                                    |
+| `ObserverServer`           | Read-only HTTP server for observing a live behavior tree                 |
+| `ObserverServerOptions`    | Options for `ObserverServer` constructor                                 |
+| `createApp`                | Hono app factory for full actor functionality                            |
+| `AppOptions`               | Options for `createApp`                                                  |
+| `AppHandle`                | Handle returned by `createApp` with app, processing, and lifecycle       |
+| `createObserverApp`        | Hono app factory for read-only tree observation                          |
+| `ObserverAppOptions`       | Options for `createObserverApp`                                          |
+| `ObserverHandle`           | Handle returned by `createObserverApp` with app and close                |
+| `EventBridge`              | Bridges tree events to state persistence and SSE delivery                |
+| `ActorMessage`             | Union of all message types                                               |
+| `TickMessage`              | Tick message type                                                        |
+| `CommandMessage`           | Command message type                                                     |
+| `WriteMessage`             | Write message type                                                       |
+| `SignalMessage`            | Signal message type (stop, reset, abort, resume)                         |
+| `MessageQueuedEvent`       | Event emitted when a message is enqueued                                 |
+| `MessageDequeuedEvent`     | Event emitted when a queued message begins processing                    |
+| `MessageProcessedEvent`    | Event emitted on message completion                                      |
+| `MessageInterruptedEvent`  | Event emitted when a message is interrupted                              |
+| `MessageFailedEvent`       | Event emitted on message failure                                         |
+| `QueuedResult`             | Result returned by `processMessage()` when a message is queued           |
+| `SerializedNodeRef`        | Serialized node reference (id, name, type, status)                       |
+| `SerializedTreeNode`       | Recursive serialized tree node with children                             |
+| `generateMessageId`        | Utility to generate unique message IDs                                   |
 
 ## [State](state.md)
 

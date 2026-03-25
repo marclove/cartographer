@@ -2,7 +2,7 @@
 
 The application server turns Cartographer's behavior trees into persistent, message-driven services. Instead of ticking a tree in a loop, you define a tree factory and let the server handle state persistence, HTTP endpoints, and client communication.
 
-This guide covers the full stack: `TreeActor` for processing, `ActorServer` for HTTP, `StateStore` for persistence, and the client SDK for browser/Node.js consumers.
+This guide covers the full stack: `MessageProcessor` for processing, `ActorServer` for HTTP, `ObserverServer` for read-only observation, `StateStore` for persistence, and the client SDK for browser/Node.js consumers.
 
 ---
 
@@ -11,9 +11,10 @@ This guide covers the full stack: `TreeActor` for processing, `ActorServer` for 
 A Cartographer tree lives in memory and runs until its process ends. The application server changes this:
 
 1. A **tree factory** creates a fresh tree for every incoming message.
-2. **TreeActor** loads persisted state, hydrates the tree, processes one message to completion, then serializes and saves the result.
-3. **ActorServer** wraps TreeActor with an HTTP server — REST endpoints for sending messages, SSE for real-time events, and read endpoints for inspecting state.
-4. A **Client SDK** connects frontends to the server via fetch and EventSource.
+2. **MessageProcessor** loads persisted state, hydrates the tree, processes one message to completion, then serializes and saves the result.
+3. **ActorServer** wraps MessageProcessor with an HTTP server — REST endpoints for sending messages, SSE for real-time events, and read endpoints for inspecting state.
+4. **ObserverServer** provides a read-only HTTP server for observing a live tree (no state persistence, no message queue).
+5. A **Client SDK** connects frontends to the server via fetch and EventSource.
 
 The tree itself is _transient_ — created per request, then discarded. The _state_ is durable, stored in a `StateStore` (in-memory for development, Redis for production).
 
@@ -90,13 +91,13 @@ await client.command("approve", { comment: "Ship it" });
 
 ---
 
-## TreeActor
+## MessageProcessor
 
-`TreeActor` is the per-message processor. It is transient — created for each request, processes exactly one message, then discarded. You typically do not use it directly; `ActorServer` manages it internally.
+`MessageProcessor` is the per-message processor. It is transient — created for each request, processes exactly one message, then discarded. You typically do not use it directly; `ActorServer` manages it internally.
 
 ### Processing Pipeline
 
-For each message, `TreeActor.process()` runs this pipeline:
+For each message, `MessageProcessor.process()` runs this pipeline:
 
 1. **Create tree** from the factory function.
 2. **Load state** from the `StateStore` (blackboard values, serialized tree execution state, and named session registry).
@@ -116,13 +117,13 @@ The `runToCompletion()` loop is the core of the processing model. It distinguish
 - **Suspended** (`hasInflightWork() === false`): The tree returned `RUNNING` but nothing is in progress — typically because an `untilSuccess` or `receive` node is waiting for external input. The loop exits.
 
 ```typescript
-const actor = new TreeActor({
+const processor = new MessageProcessor({
   createTree: () => myTreeFactory(),
   stateStore: myStore,
   stateKey: "session-123",
 });
 
-const result = await actor.process({ type: "tick" });
+const result = await processor.process({ type: "tick" });
 // result.treeStatus is 'success', 'failure', 'running' (suspended), or 'error' (signal handled)
 ```
 
@@ -149,7 +150,7 @@ After interrupt, the tree is in the same state as a normal suspension point: `RU
 
 #### How it works
 
-`TreeActor` holds an internal `interruptController`. The `runToCompletion()` loop races `tree.settled()` against this interrupt signal. When interrupted:
+`MessageProcessor` holds an internal `interruptController`. The `runToCompletion()` loop races `tree.settled()` against this interrupt signal. When interrupted:
 
 1. `tree.interrupt()` is called — cancels in-flight SDK calls while preserving composite cycle state.
 2. The tree is serialized and saved normally.
@@ -175,17 +176,17 @@ The interrupted agent's in-flight state is cleared. On the next deliberate user 
 - **"Just retry as-is"**: `POST /api/resume` (clears held), then the next scheduler tick resumes the agent.
 
 ```typescript
-const actor = new TreeActor({
+const processor = new MessageProcessor({
   createTree: () => myTreeFactory(),
   stateStore: myStore,
   stateKey: "session-123",
 });
 
 // Start processing in the background
-const processPromise = actor.process({ type: "tick" });
+const processPromise = processor.process({ type: "tick" });
 
 // Interrupt from another context (e.g., HTTP handler)
-actor.requestInterrupt();
+processor.requestInterrupt();
 
 const result = await processPromise;
 // result.treeStatus === 'running'
@@ -196,7 +197,7 @@ const result = await processPromise;
 
 ## ActorServer
 
-`ActorServer` wraps `TreeActor` with an HTTP server. It handles routing, JSON parsing, locking, and SSE event delivery.
+`ActorServer` wraps `MessageProcessor` with an HTTP server. It handles routing, JSON parsing, locking, and SSE event delivery.
 
 ### Configuration
 
@@ -219,19 +220,20 @@ await server.stop();
 
 The `context` option injects key-value pairs into the blackboard on initialization, prefixed with `context:`. Use it to pass deployment metadata like tenant IDs.
 
-`ActorServer` currently manages a single session with the hardcoded state key `'default'`. All state, locks, and events are stored under this key. Multi-session support is not yet available at the server level, though `TreeActor` accepts any `stateKey`.
+`ActorServer` currently manages a single session with the hardcoded state key `'default'`. All state, locks, and events are stored under this key. Multi-session support is not yet available at the server level, though `MessageProcessor` accepts any `stateKey`.
 
 ### Endpoints
 
 #### Read Endpoints
 
-| Method | Path                | Description                                                |
-| ------ | ------------------- | ---------------------------------------------------------- |
-| GET    | `/_platform/health` | Platform health check. Returns `{ status: "ok", uptime }`. |
-| GET    | `/api/blackboard`   | Current blackboard state as JSON.                          |
-| GET    | `/api/status`       | Tree metadata: `lastMessageAt`, `treeRootHash`.            |
-| GET    | `/api/tree`         | Tree structure: `name`, `rootHash`.                        |
-| GET    | `/api/events`       | SSE event stream (see below).                              |
+| Method | Path                | Description                                                          |
+| ------ | ------------------- | -------------------------------------------------------------------- |
+| GET    | `/_platform/health` | Platform health check. Returns `{ status: "ok", uptime }`.           |
+| GET    | `/api/status`       | Tree metadata: name, tick/cycle counts, last status, uptime.         |
+| GET    | `/api/tree`         | Tree structure: `name`, serialized root.                             |
+| GET    | `/api/blackboard`   | Current blackboard state as JSON.                                    |
+| GET    | `/api/nodes/:id`    | Individual node detail. Includes agent metadata for `AgentNode`s.    |
+| GET    | `/events`           | SSE event stream (see below).                                        |
 
 #### Write Endpoints
 
@@ -283,7 +285,7 @@ The full message lifecycle is observable via SSE events:
 
 ### SSE Event Stream
 
-`GET /api/events` opens a Server-Sent Events stream. On connection, the server sends:
+`GET /events` opens a Server-Sent Events stream. On connection, the server sends:
 
 1. A `snapshot` event with the current blackboard, tree root hash, and last message timestamp.
 2. Incremental events as they occur during processing.
@@ -292,7 +294,7 @@ The stream supports the `Last-Event-ID` header for automatic reconnection and re
 
 ```typescript
 // Browser
-const source = new EventSource("http://localhost:3148/api/events");
+const source = new EventSource("http://localhost:3148/events");
 source.addEventListener("snapshot", (e) => {
   const state = JSON.parse(e.data);
   console.log("Initial state:", state.blackboard);
@@ -313,6 +315,86 @@ source.addEventListener("message:interrupted", (e) => {
   const { messageId } = JSON.parse(e.data);
   console.log(`Message ${messageId} was interrupted`);
 });
+```
+
+---
+
+## ObserverServer
+
+`ObserverServer` is a lightweight, read-only HTTP server for observing a live behavior tree. Unlike `ActorServer`, it has no state persistence, no message queue, and no write endpoints — it attaches directly to a running `BehaviorTree` instance and streams events in real time.
+
+Use `ObserverServer` when you want to inspect a tree that is being driven externally (e.g., by a `TreeScheduler` or manual ticks) without adding the overhead of a full `ActorServer`.
+
+```typescript
+import { BehaviorTree, ObserverServer, TreeScheduler } from "cartographer";
+
+const tree = new BehaviorTree({ name: "monitor", root: myRoot });
+
+const observer = new ObserverServer(tree, { port: 3147 });
+await observer.start();
+console.log("Observer running on http://localhost:3147");
+
+// Drive the tree externally
+const scheduler = new TreeScheduler(tree, { interval: 5000 });
+scheduler.start();
+
+// Events from every tick are streamed to connected SSE clients
+```
+
+### ObserverServer Endpoints
+
+| Method | Path             | Description                                                       |
+| ------ | ---------------- | ----------------------------------------------------------------- |
+| GET    | `/api/tree`      | Tree structure: name, serialized root.                            |
+| GET    | `/api/status`    | Tree metrics: tick count, cycle count, last status, uptime.       |
+| GET    | `/api/blackboard`| Live blackboard state as JSON.                                    |
+| GET    | `/api/nodes/:id` | Individual node detail. Includes agent metadata for `AgentNode`s. |
+| GET    | `/events`        | SSE event stream with snapshot and live events.                   |
+
+On SSE connection, the server sends a `snapshot` event with the current tree structure and blackboard. Event replay via `Last-Event-ID` is supported on reconnect.
+
+---
+
+## Hono App Factories
+
+Both `ActorServer` and `ObserverServer` are thin wrappers around composable Hono app factories. If you need to mount a Cartographer API into an existing Hono server or apply custom middleware, use the factories directly.
+
+### createApp
+
+Returns an `AppHandle` with the full actor Hono app, message processing, and queue management.
+
+```typescript
+import { createApp } from "cartographer";
+import { Hono } from "hono";
+
+const handle = createApp({
+  createTree: () => myTreeFactory(),
+  stateStore: myStore,
+});
+
+// Mount into a larger Hono server
+const root = new Hono();
+root.route("/cartographer", handle.app);
+
+// Initialize and start processing
+await handle.initializeState();
+handle.drainQueue().catch(() => {});
+```
+
+### createObserverApp
+
+Returns an `ObserverHandle` with a read-only Hono app for tree observation.
+
+```typescript
+import { createObserverApp } from "cartographer";
+
+const handle = createObserverApp({ tree: myTree });
+
+// Mount into an existing server
+app.route("/observer", handle.app);
+
+// Cleanup when done
+handle.close();
 ```
 
 ---
