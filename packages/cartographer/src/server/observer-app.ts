@@ -68,6 +68,10 @@ export function createObserverApp(options: ObserverAppOptions): ObserverHandle {
     return c.json({ error: err.message, status: 500 }, 500);
   });
 
+  app.notFound((c) => {
+    return c.json({ error: 'Not found', status: 404 }, 404);
+  });
+
   app.get('/api/tree', (c) => {
     return c.json({ tree: tree.name, root: serializeTree(tree.root) });
   });

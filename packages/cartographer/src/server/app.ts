@@ -111,6 +111,10 @@ export function createCartographerApp(options: CartographerAppOptions): Cartogra
     return c.json({ error: err.message, status: 500 }, 500);
   });
 
+  app.notFound((c) => {
+    return c.json({ error: 'Not found', status: 404 }, 404);
+  });
+
   // Read-only routes
   app.get('/_platform/health', (c) => {
     return c.json({ status: 'ok', uptime: Math.floor((Date.now() - stats.startedAt) / 1000) });
