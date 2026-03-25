@@ -17,25 +17,25 @@ describe('createBlackboardMcpServer', () => {
 });
 
 describe('blackboard MCP tools (unit)', () => {
-  it('read returns the value for a key', async () => {
+  it('get returns the value for a key', async () => {
     const bb = new InMemoryBlackboard();
     bb.set('name', 'Alice');
     const { handlers } = createBlackboardMcpServer(bb);
-    const result = await handlers.read({ key: 'name' });
+    const result = await handlers.get({ key: 'name' });
     expect(result.content[0].text).toBe(JSON.stringify('Alice'));
   });
 
-  it('read returns undefined for missing key', async () => {
+  it('get returns undefined for missing key', async () => {
     const bb = new InMemoryBlackboard();
     const { handlers } = createBlackboardMcpServer(bb);
-    const result = await handlers.read({ key: 'missing' });
+    const result = await handlers.get({ key: 'missing' });
     expect(result.content[0].text).toBe('undefined');
   });
 
-  it('write sets a value', async () => {
+  it('set stores a value', async () => {
     const bb = new InMemoryBlackboard();
     const { handlers } = createBlackboardMcpServer(bb);
-    await handlers.write({ key: 'score', value: 42 });
+    await handlers.set({ key: 'score', value: 42 });
     expect(bb.get('score')).toBe(42);
   });
 
@@ -57,14 +57,14 @@ describe('blackboard MCP tools (unit)', () => {
     const keysResult = await handlers.keys({});
     const keys = JSON.parse(keysResult.content[0].text);
     expect(keys).toEqual(['local']);
-    const readResult = await handlers.read({ key: 'local' });
-    expect(readResult.content[0].text).toBe(JSON.stringify('scoped'));
+    const getResult = await handlers.get({ key: 'local' });
+    expect(getResult.content[0].text).toBe(JSON.stringify('scoped'));
   });
 
-  it('writes to namespaced keys', async () => {
+  it('set respects namespace', async () => {
     const bb = new InMemoryBlackboard();
     const { handlers } = createBlackboardMcpServer(bb, 'agent1');
-    await handlers.write({ key: 'result', value: 'done' });
+    await handlers.set({ key: 'result', value: 'done' });
     expect(bb.get('agent1:result')).toBe('done');
   });
 
@@ -84,85 +84,85 @@ describe('blackboard MCP tools (unit)', () => {
     expect(bb.has('other')).toBe(true);
   });
 
-  it('read_many returns values for multiple keys', async () => {
+  it('mget returns values for multiple keys', async () => {
     const bb = new InMemoryBlackboard({ a: 1, b: 'hello' });
     const { handlers } = createBlackboardMcpServer(bb);
-    const result = await handlers.read_many({ keys: ['a', 'b'] });
+    const result = await handlers.mget({ keys: ['a', 'b'] });
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed).toEqual({ a: 1, b: 'hello' });
   });
 
-  it('read_many returns null for missing keys', async () => {
+  it('mget returns null for missing keys', async () => {
     const bb = new InMemoryBlackboard({ a: 1 });
     const { handlers } = createBlackboardMcpServer(bb);
-    const result = await handlers.read_many({ keys: ['a', 'missing'] });
+    const result = await handlers.mget({ keys: ['a', 'missing'] });
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed).toEqual({ a: 1, missing: null });
   });
 
-  it('read_many with empty keys returns empty object', async () => {
+  it('mget with empty keys returns empty object', async () => {
     const bb = new InMemoryBlackboard({ a: 1 });
     const { handlers } = createBlackboardMcpServer(bb);
-    const result = await handlers.read_many({ keys: [] });
+    const result = await handlers.mget({ keys: [] });
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed).toEqual({});
   });
 
-  it('read_many respects namespace', async () => {
+  it('mget respects namespace', async () => {
     const bb = new InMemoryBlackboard({ 'ns:a': 1, 'ns:b': 2, 'other:c': 3 });
     const { handlers } = createBlackboardMcpServer(bb, 'ns');
-    const result = await handlers.read_many({ keys: ['a', 'b'] });
+    const result = await handlers.mget({ keys: ['a', 'b'] });
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed).toEqual({ a: 1, b: 2 });
   });
 
-  it('write_many writes multiple entries', async () => {
+  it('mset sets multiple entries', async () => {
     const bb = new InMemoryBlackboard();
     const { handlers } = createBlackboardMcpServer(bb);
-    const result = await handlers.write_many({ entries: { x: 10, y: 20 } });
+    const result = await handlers.mset({ entries: { x: 10, y: 20 } });
     expect(bb.get('x')).toBe(10);
     expect(bb.get('y')).toBe(20);
-    expect(result.content[0].text).toBe('Wrote keys: x, y');
+    expect(result.content[0].text).toBe('Set keys: x, y');
   });
 
-  it('write_many respects namespace', async () => {
+  it('mset respects namespace', async () => {
     const bb = new InMemoryBlackboard();
     const { handlers } = createBlackboardMcpServer(bb, 'agent1');
-    await handlers.write_many({ entries: { a: 1, b: 2 } });
+    await handlers.mset({ entries: { a: 1, b: 2 } });
     expect(bb.get('agent1:a')).toBe(1);
     expect(bb.get('agent1:b')).toBe(2);
   });
 
-  it('write_many with empty entries', async () => {
+  it('mset with empty entries', async () => {
     const bb = new InMemoryBlackboard();
     const { handlers } = createBlackboardMcpServer(bb);
-    const result = await handlers.write_many({ entries: {} });
-    expect(result.content[0].text).toBe('Wrote keys: ');
+    const result = await handlers.mset({ entries: {} });
+    expect(result.content[0].text).toBe('Set keys: ');
   });
 
-  it('delete_many removes multiple keys', async () => {
+  it('mdelete removes multiple keys', async () => {
     const bb = new InMemoryBlackboard({ a: 1, b: 2, c: 3 });
     const { handlers } = createBlackboardMcpServer(bb);
-    const result = await handlers.delete_many({ keys: ['a', 'c'] });
+    const result = await handlers.mdelete({ keys: ['a', 'c'] });
     expect(bb.has('a')).toBe(false);
     expect(bb.has('b')).toBe(true);
     expect(bb.has('c')).toBe(false);
     expect(result.content[0].text).toBe('Deleted keys: a, c');
   });
 
-  it('delete_many respects namespace', async () => {
+  it('mdelete respects namespace', async () => {
     const bb = new InMemoryBlackboard({ 'ns:a': 1, 'ns:b': 2, 'other:c': 3 });
     const { handlers } = createBlackboardMcpServer(bb, 'ns');
-    await handlers.delete_many({ keys: ['a', 'b'] });
+    await handlers.mdelete({ keys: ['a', 'b'] });
     expect(bb.has('ns:a')).toBe(false);
     expect(bb.has('ns:b')).toBe(false);
     expect(bb.has('other:c')).toBe(true);
   });
 
-  it('delete_many with empty keys', async () => {
+  it('mdelete with empty keys', async () => {
     const bb = new InMemoryBlackboard();
     const { handlers } = createBlackboardMcpServer(bb);
-    const result = await handlers.delete_many({ keys: [] });
+    const result = await handlers.mdelete({ keys: [] });
     expect(result.content[0].text).toBe('Deleted keys: ');
   });
 });
