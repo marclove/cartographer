@@ -328,7 +328,7 @@ export class ActorServer {
     }
 
     const bridge = this.createBridge(msg.id);
-    if (!msg.id) msg.id = bridge.messageId;
+    msg.id = bridge.messageId;
     await bridge.emitDequeued();
     // executeMessage will call drainQueue again in its finally block
     this.executeMessage(msg, requestId, bridge).catch(() => {});
