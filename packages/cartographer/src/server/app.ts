@@ -12,6 +12,8 @@ import { serializeTree as serializeTreeState } from '../core/serialization.js';
 import { blackboardToRecord } from './blackboard-utils.js';
 import { AgentNode } from '../nodes/agent.js';
 import type { BTreeNode } from '../types.js';
+import { TreeActor } from '../actor/tree-actor.js';
+import { EventBridge } from './event-bridge.js';
 
 const STATE_KEY = 'default';
 
@@ -78,6 +80,19 @@ export function createCartographerApp(options: CartographerAppOptions): Cartogra
         stats.cycleCount++;
       }
     }
+  }
+
+  const topologyPolicy = options.topologyPolicy ?? 'fail';
+  const maxQueueDepth = options.maxQueueDepth ?? parseInt(process.env.CARTOGRAPHER_MAX_QUEUE_DEPTH ?? '16', 10);
+  let activeActor: TreeActor | null = null;
+  let activeMessageId: string | null = null;
+
+  function generateRequestId(): string {
+    return `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function createBridge(messageId?: string): EventBridge {
+    return new EventBridge(stateStore, STATE_KEY, messageId, (event) => forwardEvent(event));
   }
 
   let _readTree: BehaviorTree | null = null;
@@ -206,6 +221,58 @@ export function createCartographerApp(options: CartographerAppOptions): Cartogra
     });
   });
 
+  // POST routes
+  app.post('/api/messages', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || !body.type) {
+      return c.json({ error: 'Missing message type', status: 400 }, 400);
+    }
+    if (body.type === 'command' && !body.name) {
+      return c.json({ error: 'Command message requires name', status: 400 }, 400);
+    }
+    const msg: ActorMessage = { ...body };
+    const prep = await acquireOrQueue(msg, body.id);
+    if (prep.queued) {
+      return prep.queueFull
+        ? c.json({ error: 'Queue full', status: 429 }, 429)
+        : c.json({ id: prep.bridge.messageId, status: 'queued', position: prep.position }, 202);
+    }
+    const response = c.json({ id: prep.bridge.messageId, status: 'processing' }, 202);
+    executeMessage(msg, prep.requestId, prep.bridge).catch(() => {});
+    return response;
+  });
+
+  app.post('/api/commands/:name', async (c) => {
+    const name = c.req.param('name');
+    const payload = await c.req.json().catch(() => null);
+    const msg: ActorMessage = { type: 'command', name, payload };
+    const prep = await acquireOrQueue(msg);
+    if (prep.queued) {
+      return prep.queueFull
+        ? c.json({ error: 'Queue full', status: 429 }, 429)
+        : c.json({ id: prep.bridge.messageId, status: 'queued', position: prep.position }, 202);
+    }
+    const response = c.json({ id: prep.bridge.messageId, status: 'processing' }, 202);
+    executeMessage(msg, prep.requestId, prep.bridge).catch(() => {});
+    return response;
+  });
+
+  app.post('/api/blackboard/:key', async (c) => {
+    const key = c.req.param('key');
+    const body = await c.req.json().catch(() => null);
+    const value = body?.value;
+    const msg: ActorMessage = { type: 'write', key, value };
+    const prep = await acquireOrQueue(msg);
+    if (prep.queued) {
+      return prep.queueFull
+        ? c.json({ error: 'Queue full', status: 429 }, 429)
+        : c.json({ id: prep.bridge.messageId, status: 'queued', position: prep.position }, 202);
+    }
+    const response = c.json({ id: prep.bridge.messageId, status: 'processing' }, 202);
+    executeMessage(msg, prep.requestId, prep.bridge).catch(() => {});
+    return response;
+  });
+
   // Lifecycle
   async function initializeState() {
     stats.startedAt = Date.now();
@@ -228,15 +295,87 @@ export function createCartographerApp(options: CartographerAppOptions): Cartogra
     }
   }
 
-  // Stubs for methods implemented in later tasks
-  async function processMessage(_msg: ActorMessage): Promise<ProcessResult | QueuedResult | null> {
-    throw new Error('Not yet implemented — see task 106');
+  // Message processing core
+  async function acquireOrQueue(
+    msg: ActorMessage,
+    messageId?: string,
+  ): Promise<
+    | { queued: false; requestId: string; bridge: EventBridge }
+    | { queued: true; bridge: EventBridge; position: number; queueFull: false }
+    | { queued: true; bridge: EventBridge; position: number; queueFull: true }
+  > {
+    const requestId = generateRequestId();
+    const acquired = await stateStore.acquireLock(STATE_KEY, requestId, 30000);
+    const bridge = createBridge(messageId);
+    msg.id = bridge.messageId;
+    if (acquired) return { queued: false, requestId, bridge };
+    try {
+      const { position } = await stateStore.enqueueMessage(STATE_KEY, msg, maxQueueDepth);
+      await bridge.emitQueued(position);
+      return { queued: true, bridge, position, queueFull: false };
+    } catch {
+      return { queued: true, bridge, position: -1, queueFull: true };
+    }
   }
+
+  async function executeMessage(
+    msg: ActorMessage,
+    requestId: string,
+    bridge: EventBridge,
+  ): Promise<ProcessResult> {
+    const heartbeat = setInterval(async () => {
+      try { await stateStore.renewLock(STATE_KEY, requestId, 30000); } catch {}
+    }, 10000);
+
+    try {
+      const actor = new TreeActor({
+        createTree: createTreeFn,
+        stateStore,
+        stateKey: STATE_KEY,
+        topologyPolicy,
+        eventBridge: bridge,
+      });
+      activeActor = actor;
+      activeMessageId = bridge.messageId;
+      const result = await actor.process(msg);
+      if (result.interrupted) await bridge.emitInterrupted();
+      await bridge.emitProcessed(String(result.treeStatus));
+      return result;
+    } catch (error) {
+      await bridge.emitFailed(error instanceof Error ? error.message : String(error));
+      return { treeStatus: 'error', error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      activeActor = null;
+      activeMessageId = null;
+      clearInterval(heartbeat);
+      await stateStore.releaseLock(STATE_KEY, requestId);
+      drainQueue().catch(() => {});
+    }
+  }
+
+  async function processMessage(msg: ActorMessage): Promise<ProcessResult | QueuedResult | null> {
+    const prep = await acquireOrQueue(msg, msg.id);
+    if (prep.queued) return prep.queueFull ? null : { queued: true, messageId: prep.bridge.messageId, position: prep.position };
+    return executeMessage(msg, prep.requestId, prep.bridge);
+  }
+
+  async function drainQueue(): Promise<void> {
+    const requestId = generateRequestId();
+    const acquired = await stateStore.acquireLock(STATE_KEY, requestId, 30000);
+    if (!acquired) return;
+    const msg = await stateStore.dequeueMessage(STATE_KEY);
+    if (!msg) {
+      await stateStore.releaseLock(STATE_KEY, requestId);
+      return;
+    }
+    const bridge = createBridge(msg.id);
+    msg.id = bridge.messageId;
+    await bridge.emitDequeued();
+    executeMessage(msg, requestId, bridge).catch(() => {});
+  }
+
   function bridgeTree(_tree: BehaviorTree): void {
     // Implemented in task 107
-  }
-  async function drainQueue(): Promise<void> {
-    // Implemented in task 106
   }
   function closeSseClients(): void {
     for (const client of sseClients) {

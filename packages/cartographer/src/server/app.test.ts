@@ -222,3 +222,206 @@ describe('createCartographerApp — SSE streaming', () => {
     expect(data.stats).toBeDefined();
   });
 });
+
+// ---------- Message processing tests ----------
+
+describe('createCartographerApp — message processing', () => {
+  let handle: CartographerHandle;
+
+  beforeEach(async () => {
+    handle = createCartographerApp({ createTree: makeTree });
+    await handle.initializeState();
+  });
+
+  describe('processMessage (programmatic)', () => {
+    it('processes a tick message and returns result', async () => {
+      const result = await handle.processMessage({ type: 'tick' });
+      expect(result).toBeDefined();
+      expect((result as any).queued).toBeUndefined();
+      expect((result as any).treeStatus).toBeDefined();
+    });
+
+    it('queues a second message while one is processing', async () => {
+      const slowHandle = createCartographerApp({
+        createTree: () => {
+          const action = new ActionNode({
+            name: 'slow',
+            action: () => new Promise((resolve) => setTimeout(() => resolve(NodeStatus.SUCCESS), 200)),
+          });
+          return new BehaviorTree({ name: 'slow', root: action });
+        },
+      });
+      await slowHandle.initializeState();
+
+      const first = slowHandle.processMessage({ type: 'tick' });
+      await new Promise((r) => setTimeout(r, 20));
+      const second = await slowHandle.processMessage({ type: 'tick' });
+
+      expect(second).toBeDefined();
+      expect((second as any).queued).toBe(true);
+
+      await first;
+    });
+
+    it('returns null when queue is full', async () => {
+      const slowHandle = createCartographerApp({
+        createTree: () => {
+          const action = new ActionNode({
+            name: 'slow',
+            action: () => new Promise((resolve) => setTimeout(() => resolve(NodeStatus.SUCCESS), 500)),
+          });
+          return new BehaviorTree({ name: 'slow', root: action });
+        },
+        maxQueueDepth: 1,
+      });
+      await slowHandle.initializeState();
+
+      const first = slowHandle.processMessage({ type: 'tick' });
+      await new Promise((r) => setTimeout(r, 20));
+
+      await slowHandle.processMessage({ type: 'tick' });
+      const overflow = await slowHandle.processMessage({ type: 'tick' });
+      expect(overflow).toBeNull();
+
+      await first;
+    });
+  });
+
+  describe('POST /api/messages', () => {
+    let server: Server;
+    let port: number;
+
+    beforeEach(async () => {
+      await new Promise<void>((resolve) => {
+        server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
+          port = info.port;
+          resolve();
+        });
+      });
+    });
+
+    afterEach(async () => {
+      handle.closeSseClients();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+
+    it('accepts a tick message and returns 202', async () => {
+      const res = await fetch(`http://localhost:${port}/api/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'tick' }),
+      });
+      expect(res.status).toBe(202);
+      const body = await res.json();
+      expect(body.id).toBeDefined();
+      expect(body.status).toBe('processing');
+    });
+
+    it('rejects missing message type with 400', async () => {
+      const res = await fetch(`http://localhost:${port}/api/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects command without name with 400', async () => {
+      const res = await fetch(`http://localhost:${port}/api/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'command' }),
+      });
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('SSE replay after processing', () => {
+    let server: Server;
+    let port: number;
+
+    beforeEach(async () => {
+      await new Promise<void>((resolve) => {
+        server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
+          port = info.port;
+          resolve();
+        });
+      });
+    });
+
+    afterEach(async () => {
+      handle.closeSseClients();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+
+    it('replays events on reconnect via Last-Event-ID', async () => {
+      await handle.processMessage({ type: 'tick' });
+
+      const res = await fetch(`http://localhost:${port}/events`, {
+        headers: { 'Last-Event-ID': '0' },
+      });
+      const events = await readSseEvents(res, 3);
+
+      expect(events[0].event).toBe('snapshot');
+      expect(events.length).toBeGreaterThan(1);
+    });
+  });
+
+  describe('POST /api/commands/:name', () => {
+    let server: Server;
+    let port: number;
+
+    beforeEach(async () => {
+      await new Promise<void>((resolve) => {
+        server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
+          port = info.port;
+          resolve();
+        });
+      });
+    });
+
+    afterEach(async () => {
+      handle.closeSseClients();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+
+    it('sends a command message and returns 202', async () => {
+      const res = await fetch(`http://localhost:${port}/api/commands/doSomething`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'value' }),
+      });
+      expect(res.status).toBe(202);
+      const body = await res.json();
+      expect(body.status).toMatch(/processing|queued/);
+    });
+  });
+
+  describe('POST /api/blackboard/:key', () => {
+    let server: Server;
+    let port: number;
+
+    beforeEach(async () => {
+      await new Promise<void>((resolve) => {
+        server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
+          port = info.port;
+          resolve();
+        });
+      });
+    });
+
+    afterEach(async () => {
+      handle.closeSseClients();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+
+    it('writes a blackboard key and returns 202', async () => {
+      const res = await fetch(`http://localhost:${port}/api/blackboard/myKey`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: 'hello' }),
+      });
+      expect(res.status).toBe(202);
+    });
+  });
+});
