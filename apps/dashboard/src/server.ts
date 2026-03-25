@@ -69,7 +69,7 @@ export class DashboardServer {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
     const pathname = url.pathname;
 
-    // Proxy API and SSE requests to the TreeServer
+    // Proxy API and SSE requests to the ObserverServer
     if (pathname.startsWith('/api/') || pathname === '/events') {
       this.proxy(req, res);
       return;

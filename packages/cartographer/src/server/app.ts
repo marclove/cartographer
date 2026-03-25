@@ -4,7 +4,7 @@ import type { SSEStreamingApi } from 'hono/streaming';
 import type { BehaviorTree } from '../core/behavior-tree.js';
 import type { StateStore } from '../state/state-store.js';
 import type { ActorMessage } from '../actor/types.js';
-import type { ProcessResult } from '../actor/tree-actor.js';
+import type { ProcessResult } from '../actor/message-processor.js';
 import { InMemoryStateStore } from '../state/in-memory-state-store.js';
 import { InProcessEventStream } from './event-stream.js';
 import { serializeTree, serializeNodeRef, serializeEvent } from './serializers.js';
@@ -12,7 +12,7 @@ import { serializeTree as serializeTreeState } from '../core/serialization.js';
 import { blackboardToRecord } from './blackboard-utils.js';
 import { AgentNode } from '../nodes/agent.js';
 import type { BTreeNode } from '../types.js';
-import { TreeActor } from '../actor/tree-actor.js';
+import { MessageProcessor } from '../actor/message-processor.js';
 import { EventBridge } from './event-bridge.js';
 
 const STATE_KEY = 'default';
@@ -35,7 +35,7 @@ function findNodeById(root: BTreeNode, id: string): BTreeNode | undefined {
   return undefined;
 }
 
-export interface CartographerAppOptions {
+export interface AppOptions {
   createTree: () => BehaviorTree;
   stateStore?: StateStore;
   context?: Record<string, unknown>;
@@ -49,7 +49,7 @@ export interface QueuedResult {
   position: number;
 }
 
-export interface CartographerHandle {
+export interface AppHandle {
   app: Hono;
   stateStore: StateStore;
   topologyPolicy: 'fail' | 'reset';
@@ -61,7 +61,7 @@ export interface CartographerHandle {
   closeSseClients: () => void;
 }
 
-export function createCartographerApp(options: CartographerAppOptions): CartographerHandle {
+export function createApp(options: AppOptions): AppHandle {
   const createTreeFn = options.createTree;
   const stateStore = options.stateStore ?? new InMemoryStateStore();
   const context = options.context ?? {};
@@ -87,7 +87,7 @@ export function createCartographerApp(options: CartographerAppOptions): Cartogra
 
   const topologyPolicy = options.topologyPolicy ?? 'fail';
   const maxQueueDepth = options.maxQueueDepth ?? parseInt(process.env.CARTOGRAPHER_MAX_QUEUE_DEPTH ?? '16', 10);
-  let activeActor: TreeActor | null = null;
+  let activeActor: MessageProcessor | null = null;
   let activeMessageId: string | null = null;
 
   function generateRequestId(): string {
@@ -349,7 +349,7 @@ export function createCartographerApp(options: CartographerAppOptions): Cartogra
     }, 10000);
 
     try {
-      const actor = new TreeActor({
+      const actor = new MessageProcessor({
         createTree: createTreeFn,
         stateStore,
         stateKey: STATE_KEY,

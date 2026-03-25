@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TreeActor } from './tree-actor.js';
+import { MessageProcessor } from './message-processor.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { ActionNode } from '../nodes/action.js';
 import { InMemoryStateStore } from '../state/in-memory-state-store.js';
@@ -9,10 +9,10 @@ import { untilSuccess } from '../decorators/until-success.js';
 import { receive } from '../nodes/receive.js';
 import { SessionRegistry } from '../core/session-registry.js';
 
-describe('TreeActor', () => {
+describe('MessageProcessor', () => {
   it('processes a tick message and saves state', async () => {
     const store = new InMemoryStateStore();
-    const actor = new TreeActor({
+    const actor = new MessageProcessor({
       createTree: () => new BehaviorTree({
         name: 'test',
         root: new ActionNode({ name: 'fast', action: async () => NodeStatus.SUCCESS }),
@@ -32,7 +32,7 @@ describe('TreeActor', () => {
   it('processes a command message — writes to blackboard then ticks', async () => {
     let receivedValue: unknown;
     const store = new InMemoryStateStore();
-    const actor = new TreeActor({
+    const actor = new MessageProcessor({
       createTree: () => new BehaviorTree({
         name: 'test',
         root: new ActionNode({
@@ -53,7 +53,7 @@ describe('TreeActor', () => {
 
   it('runToCompletion ticks until suspended (not terminal)', async () => {
     const store = new InMemoryStateStore();
-    const actor = new TreeActor({
+    const actor = new MessageProcessor({
       createTree: () => new BehaviorTree({
         name: 'test',
         root: untilSuccess(receive('approve')),
@@ -82,11 +82,11 @@ describe('TreeActor', () => {
     };
 
     // First tick to seed state
-    const actor1 = new TreeActor({ createTree, stateStore: store, stateKey: 'default' });
+    const actor1 = new MessageProcessor({ createTree, stateStore: store, stateKey: 'default' });
     await actor1.process({ type: 'tick' });
 
     // Now send a reset signal
-    const actor2 = new TreeActor({ createTree, stateStore: store, stateKey: 'default' });
+    const actor2 = new MessageProcessor({ createTree, stateStore: store, stateKey: 'default' });
     const result = await actor2.process({ type: 'signal', signal: 'reset' });
 
     expect(result.treeStatus).toBe('error');
@@ -113,11 +113,11 @@ describe('TreeActor', () => {
     };
 
     // Seed state
-    const actor1 = new TreeActor({ createTree, stateStore: store, stateKey: 'default' });
+    const actor1 = new MessageProcessor({ createTree, stateStore: store, stateKey: 'default' });
     await actor1.process({ type: 'tick' });
 
     // Send abort signal
-    const actor2 = new TreeActor({ createTree, stateStore: store, stateKey: 'default' });
+    const actor2 = new MessageProcessor({ createTree, stateStore: store, stateKey: 'default' });
     const result = await actor2.process({ type: 'signal', signal: 'abort' });
 
     expect(result.treeStatus).toBe('error');
@@ -131,7 +131,7 @@ describe('TreeActor', () => {
   it('processes a write message — sets blackboard key and ticks', async () => {
     let receivedValue: unknown;
     const store = new InMemoryStateStore();
-    const actor = new TreeActor({
+    const actor = new MessageProcessor({
       createTree: () => new BehaviorTree({
         name: 'test',
         root: new ActionNode({
@@ -157,7 +157,7 @@ describe('TreeActor', () => {
   it('re-throws non-interrupted errors from tick', async () => {
     const store = new InMemoryStateStore();
     let tickCount = 0;
-    const actor = new TreeActor({
+    const actor = new MessageProcessor({
       createTree: () => {
         const tree = new BehaviorTree({
           name: 'test',
@@ -184,7 +184,7 @@ describe('TreeActor', () => {
     let resolveAction: ((status: NodeStatus) => void) | null = null;
     let tickCount = 0;
 
-    const actor = new TreeActor({
+    const actor = new MessageProcessor({
       createTree: () => new BehaviorTree({
         name: 'test',
         root: new ActionNode({
@@ -215,7 +215,7 @@ describe('TreeActor', () => {
   it('throws on topology mismatch with fail policy', async () => {
     const store = new InMemoryStateStore();
 
-    const actor1 = new TreeActor({
+    const actor1 = new MessageProcessor({
       createTree: () => new BehaviorTree({
         name: 'test',
         root: new ActionNode({ name: 'v1', action: async () => NodeStatus.SUCCESS }),
@@ -225,7 +225,7 @@ describe('TreeActor', () => {
     });
     await actor1.process({ type: 'tick' });
 
-    const actor2 = new TreeActor({
+    const actor2 = new MessageProcessor({
       createTree: () => new BehaviorTree({
         name: 'test',
         root: new ActionNode({ name: 'v2', action: async () => NodeStatus.SUCCESS }),
@@ -239,12 +239,12 @@ describe('TreeActor', () => {
   });
 });
 
-describe('TreeActor - sessions', () => {
+describe('MessageProcessor - sessions', () => {
   it('serializes session registry in saved state', async () => {
     const store = new InMemoryStateStore();
     // Use a tick counter in a closure so it persists across process() calls
     let tickCount = 0;
-    const actor = new TreeActor({
+    const actor = new MessageProcessor({
       createTree: () => new BehaviorTree({
         name: 'test',
         root: new ActionNode({
@@ -302,7 +302,7 @@ describe('TreeActor - sessions', () => {
     });
 
     // First tick — suspends with RUNNING
-    const actor1 = new TreeActor({ createTree, stateStore: store, stateKey: 'default' });
+    const actor1 = new MessageProcessor({ createTree, stateStore: store, stateKey: 'default' });
     await actor1.process({ type: 'tick' });
 
     // Inject sessions into saved state
@@ -310,7 +310,7 @@ describe('TreeActor - sessions', () => {
     await store.saveState('default', { ...existing!, sessions: { triage: 'restored-id' } });
 
     // Second tick — reads sessions from restored state
-    const actor2 = new TreeActor({ createTree, stateStore: store, stateKey: 'default' });
+    const actor2 = new MessageProcessor({ createTree, stateStore: store, stateKey: 'default' });
     await actor2.process({ type: 'tick' });
     expect(seenSessionId).toBe('restored-id');
   });
@@ -337,7 +337,7 @@ describe('TreeActor - sessions', () => {
     });
 
     // First tick — suspends with RUNNING
-    const actor1 = new TreeActor({ createTree, stateStore: store, stateKey: 'default' });
+    const actor1 = new MessageProcessor({ createTree, stateStore: store, stateKey: 'default' });
     await actor1.process({ type: 'tick' });
 
     // Remove sessions field to simulate old serialized state without sessions
@@ -346,7 +346,7 @@ describe('TreeActor - sessions', () => {
     await store.saveState('default', withoutSessions as TreeSessionState);
 
     // Second tick — should work fine with empty sessions (backward compat)
-    const actor2 = new TreeActor({ createTree, stateStore: store, stateKey: 'default' });
+    const actor2 = new MessageProcessor({ createTree, stateStore: store, stateKey: 'default' });
     const result = await actor2.process({ type: 'tick' });
     expect(result.treeStatus).toBe(NodeStatus.SUCCESS);
     expect(seenSessionId).toBeUndefined();
@@ -372,7 +372,7 @@ describe('TreeActor - sessions', () => {
       }),
     });
 
-    const actor1 = new TreeActor({ createTree, stateStore: store, stateKey: 'default' });
+    const actor1 = new MessageProcessor({ createTree, stateStore: store, stateKey: 'default' });
     const result1 = await actor1.process({ type: 'tick' });
     expect(result1.treeStatus).toBe(NodeStatus.RUNNING);
     const saved1 = await store.getState('default');
@@ -383,7 +383,7 @@ describe('TreeActor - sessions', () => {
     // from the saved state. The tree returns SUCCESS, which clears sessions.
     await store.saveState('default', { ...saved1!, sessions: { triage: 'session-xyz' } });
 
-    const actorSuccess = new TreeActor({
+    const actorSuccess = new MessageProcessor({
       createTree: () => new BehaviorTree({
         name: 'test',
         root: new ActionNode({ name: 'action', action: async () => NodeStatus.SUCCESS }),

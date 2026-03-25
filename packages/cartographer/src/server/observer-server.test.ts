@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { TreeServer } from './tree-server.js';
+import { ObserverServer } from './observer-server.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
 import { ActionNode } from '../nodes/action.js';
@@ -10,8 +10,8 @@ function createTestTree() {
   return new BehaviorTree({ name: 'TestTree', root, blackboard: new InMemoryBlackboard() });
 }
 
-describe('TreeServer', () => {
-  let server: TreeServer;
+describe('ObserverServer', () => {
+  let server: ObserverServer;
 
   afterEach(async () => {
     if (server) await server.close();
@@ -19,7 +19,7 @@ describe('TreeServer', () => {
 
   it('starts on specified port and responds to /api/status', async () => {
     const tree = createTestTree();
-    server = new TreeServer(tree, { port: 0 });
+    server = new ObserverServer(tree, { port: 0 });
     const { port } = await server.start();
 
     const res = await fetch(`http://localhost:${port}/api/status`);
@@ -31,7 +31,7 @@ describe('TreeServer', () => {
 
   it('returns 404 for unknown routes', async () => {
     const tree = createTestTree();
-    server = new TreeServer(tree, { port: 0 });
+    server = new ObserverServer(tree, { port: 0 });
     const { port } = await server.start();
 
     const res = await fetch(`http://localhost:${port}/api/nonexistent`);
@@ -42,7 +42,7 @@ describe('TreeServer', () => {
 
   it('returns JSON error format', async () => {
     const tree = createTestTree();
-    server = new TreeServer(tree, { port: 0 });
+    server = new ObserverServer(tree, { port: 0 });
     const { port } = await server.start();
 
     const res = await fetch(`http://localhost:${port}/api/nodes/nonexistent`);
@@ -53,7 +53,7 @@ describe('TreeServer', () => {
 
   it('returns 404 for non-API, non-SSE routes', async () => {
     const tree = createTestTree();
-    server = new TreeServer(tree, { port: 0 });
+    server = new ObserverServer(tree, { port: 0 });
     const { port } = await server.start();
 
     const res = await fetch(`http://localhost:${port}/index.html`);
@@ -64,7 +64,7 @@ describe('TreeServer', () => {
 
   it('close() shuts down the server', async () => {
     const tree = createTestTree();
-    server = new TreeServer(tree, { port: 0 });
+    server = new ObserverServer(tree, { port: 0 });
     const { port } = await server.start();
     await server.close();
 
@@ -73,7 +73,7 @@ describe('TreeServer', () => {
 
   it('GET /api/tree returns tree structure', async () => {
     const tree = createTestTree();
-    server = new TreeServer(tree, { port: 0 });
+    server = new ObserverServer(tree, { port: 0 });
     const { port } = await server.start();
 
     const res = await fetch(`http://localhost:${port}/api/tree`);
@@ -94,7 +94,7 @@ describe('TreeServer', () => {
     bb.set('count', 42);
     const root = new ActionNode({ name: 'TestAction', id: 'test-action', action: async () => NodeStatus.SUCCESS });
     const tree = new BehaviorTree({ name: 'TestTree', root, blackboard: bb });
-    server = new TreeServer(tree, { port: 0 });
+    server = new ObserverServer(tree, { port: 0 });
     const { port } = await server.start();
 
     const res = await fetch(`http://localhost:${port}/api/blackboard`);
@@ -105,7 +105,7 @@ describe('TreeServer', () => {
 
   it('GET /events establishes SSE connection and receives a snapshot event', async () => {
     const tree = createTestTree();
-    server = new TreeServer(tree, { port: 0 });
+    server = new ObserverServer(tree, { port: 0 });
     const { port } = await server.start();
 
     const controller = new AbortController();
@@ -139,7 +139,7 @@ describe('TreeServer', () => {
 
   it('tick stats tracking updates /api/status', async () => {
     const tree = createTestTree();
-    server = new TreeServer(tree, { port: 0 });
+    server = new ObserverServer(tree, { port: 0 });
     const { port } = await server.start();
 
     // ActionNode uses inflight pattern: first tick returns RUNNING, second returns the actual result
@@ -156,7 +156,7 @@ describe('TreeServer', () => {
 
   it('tick stats tracking increments cycleCount only for terminal status', async () => {
     const tree = createTestTree();
-    server = new TreeServer(tree, { port: 0 });
+    server = new ObserverServer(tree, { port: 0 });
     const { port } = await server.start();
 
     // First tick returns RUNNING (inflight pattern) — cycleCount should NOT increment
@@ -178,7 +178,7 @@ describe('TreeServer', () => {
 
   it('SSE event forwarding — tick events arrive via /events', async () => {
     const tree = createTestTree();
-    server = new TreeServer(tree, { port: 0 });
+    server = new ObserverServer(tree, { port: 0 });
     const { port } = await server.start();
 
     const controller = new AbortController();
@@ -217,7 +217,7 @@ describe('TreeServer', () => {
 
   it('close() terminates SSE clients', async () => {
     const tree = createTestTree();
-    server = new TreeServer(tree, { port: 0 });
+    server = new ObserverServer(tree, { port: 0 });
     const { port } = await server.start();
 
     const controller = new AbortController();

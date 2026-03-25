@@ -5,12 +5,12 @@ import type { BehaviorTree } from '../core/behavior-tree.js';
 import { createObserverApp } from './observer-app.js';
 import type { ObserverHandle } from './observer-app.js';
 
-export interface TreeServerOptions {
+export interface ObserverServerOptions {
   port?: number;
   eventStreamCapacity?: number;
 }
 
-export class TreeServer {
+export class ObserverServer {
   readonly app: Hono;
   private readonly handle: ObserverHandle;
   private server: ServerType | null = null;
@@ -18,7 +18,7 @@ export class TreeServer {
 
   constructor(
     tree: BehaviorTree,
-    options: TreeServerOptions = {},
+    options: ObserverServerOptions = {},
   ) {
     this.handle = createObserverApp({
       tree,

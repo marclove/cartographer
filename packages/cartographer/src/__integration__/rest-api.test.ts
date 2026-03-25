@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { TreeServer } from '../server/tree-server.js';
+import { ObserverServer } from '../server/observer-server.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
 import { ActionNode } from '../nodes/action.js';
@@ -7,7 +7,7 @@ import { ConditionNode } from '../nodes/condition.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { NodeStatus } from '../types.js';
 
-let server: TreeServer;
+let server: ObserverServer;
 let port: number;
 let tree: BehaviorTree;
 
@@ -21,7 +21,7 @@ function createTree() {
 
 beforeAll(async () => {
   tree = createTree();
-  server = new TreeServer(tree, { port: 0 });
+  server = new ObserverServer(tree, { port: 0 });
   ({ port } = await server.start());
 });
 

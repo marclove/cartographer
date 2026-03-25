@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { TreeServer } from '../server/tree-server.js';
+import { ObserverServer } from '../server/observer-server.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
 import { ActionNode } from '../nodes/action.js';
@@ -119,13 +119,13 @@ function createTree() {
   return new BehaviorTree({ name: 'SSETree', root, blackboard: bb });
 }
 
-let server: TreeServer;
+let server: ObserverServer;
 let port: number;
 let tree: BehaviorTree;
 
 beforeEach(async () => {
   tree = createTree();
-  server = new TreeServer(tree, { port: 0 });
+  server = new ObserverServer(tree, { port: 0 });
   ({ port } = await server.start());
 });
 
@@ -253,7 +253,7 @@ describe('GET /events — Last-Event-ID reconnection', () => {
     // Close the default server and create one with a tiny buffer to force eviction
     await server.close();
     tree = createTree();
-    server = new TreeServer(tree, { port: 0, eventStreamCapacity: 2 });
+    server = new ObserverServer(tree, { port: 0, eventStreamCapacity: 2 });
     ({ port } = await server.start());
 
     // Tick multiple times to generate events that overflow the 2-event buffer

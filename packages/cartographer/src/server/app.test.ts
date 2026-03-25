@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { serve } from '@hono/node-server';
 import type { Server } from 'node:http';
-import { createCartographerApp } from './app.js';
-import type { CartographerHandle } from './app.js';
+import { createApp } from './app.js';
+import type { AppHandle } from './app.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
@@ -24,11 +24,11 @@ function makeTreeWithChildren(): BehaviorTree {
   return new BehaviorTree({ name: 'tree-with-children', root: seq });
 }
 
-describe('createCartographerApp — read-only routes', () => {
-  let handle: CartographerHandle;
+describe('createApp — read-only routes', () => {
+  let handle: AppHandle;
 
   beforeEach(async () => {
-    handle = createCartographerApp({ createTree: makeTree });
+    handle = createApp({ createTree: makeTree });
     await handle.initializeState();
   });
 
@@ -75,7 +75,7 @@ describe('createCartographerApp — read-only routes', () => {
     });
 
     it('includes context values in initial blackboard', async () => {
-      const h = createCartographerApp({
+      const h = createApp({
         createTree: makeTree,
         context: { tenant: 'acme' },
       });
@@ -88,7 +88,7 @@ describe('createCartographerApp — read-only routes', () => {
 
   describe('GET /api/nodes/:id', () => {
     it('returns node detail for a valid ID', async () => {
-      const h = createCartographerApp({ createTree: makeTreeWithChildren });
+      const h = createApp({ createTree: makeTreeWithChildren });
       await h.initializeState();
 
       // Get tree to find a node ID
@@ -118,7 +118,7 @@ describe('createCartographerApp — read-only routes', () => {
 
   describe('error handling', () => {
     it('returns 500 JSON on unexpected errors', async () => {
-      const h = createCartographerApp({
+      const h = createApp({
         createTree: () => { throw new Error('boom'); },
         stateStore: new InMemoryStateStore(),
       });
@@ -189,13 +189,13 @@ async function readSseEvents(
 
 // ---------- SSE streaming tests ----------
 
-describe('createCartographerApp — SSE streaming', () => {
-  let handle: CartographerHandle;
+describe('createApp — SSE streaming', () => {
+  let handle: AppHandle;
   let server: Server;
   let port: number;
 
   beforeEach(async () => {
-    handle = createCartographerApp({ createTree: makeTree });
+    handle = createApp({ createTree: makeTree });
     await handle.initializeState();
     await new Promise<void>((resolve) => {
       server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
@@ -225,11 +225,11 @@ describe('createCartographerApp — SSE streaming', () => {
 
 // ---------- Message processing tests ----------
 
-describe('createCartographerApp — message processing', () => {
-  let handle: CartographerHandle;
+describe('createApp — message processing', () => {
+  let handle: AppHandle;
 
   beforeEach(async () => {
-    handle = createCartographerApp({ createTree: makeTree });
+    handle = createApp({ createTree: makeTree });
     await handle.initializeState();
   });
 
@@ -242,7 +242,7 @@ describe('createCartographerApp — message processing', () => {
     });
 
     it('queues a second message while one is processing', async () => {
-      const slowHandle = createCartographerApp({
+      const slowHandle = createApp({
         createTree: () => {
           const action = new ActionNode({
             name: 'slow',
@@ -264,7 +264,7 @@ describe('createCartographerApp — message processing', () => {
     });
 
     it('returns null when queue is full', async () => {
-      const slowHandle = createCartographerApp({
+      const slowHandle = createApp({
         createTree: () => {
           const action = new ActionNode({
             name: 'slow',
@@ -440,10 +440,10 @@ function makeSlowTree(): BehaviorTree {
   });
 }
 
-describe('createCartographerApp — interrupt and resume', () => {
+describe('createApp — interrupt and resume', () => {
   describe('POST /api/interrupt', () => {
     it('returns interrupted: false when no message is active', async () => {
-      const handle = createCartographerApp({ createTree: makeTree });
+      const handle = createApp({ createTree: makeTree });
       await handle.initializeState();
       let server!: Server;
       let port!: number;
@@ -465,7 +465,7 @@ describe('createCartographerApp — interrupt and resume', () => {
 
     it('returns interrupted: true with messageId while processing', async () => {
       const store = new InMemoryStateStore();
-      const handle = createCartographerApp({ createTree: makeSlowTree, stateStore: store });
+      const handle = createApp({ createTree: makeSlowTree, stateStore: store });
       await handle.initializeState();
       let server!: Server;
       let port!: number;
@@ -507,7 +507,7 @@ describe('createCartographerApp — interrupt and resume', () => {
 
   describe('POST /api/resume', () => {
     it('returns resumed: false when not held', async () => {
-      const handle = createCartographerApp({ createTree: makeTree });
+      const handle = createApp({ createTree: makeTree });
       await handle.initializeState();
       let server!: Server;
       let port!: number;
@@ -529,7 +529,7 @@ describe('createCartographerApp — interrupt and resume', () => {
 
     it('clears held state and returns resumed: true', async () => {
       const store = new InMemoryStateStore();
-      const handle = createCartographerApp({ createTree: makeTree, stateStore: store });
+      const handle = createApp({ createTree: makeTree, stateStore: store });
       await handle.initializeState();
 
       // Manually set held state on the store
@@ -560,9 +560,9 @@ describe('createCartographerApp — interrupt and resume', () => {
   });
 });
 
-describe('createCartographerApp — bridgeTree', () => {
+describe('createApp — bridgeTree', () => {
   it('forwards tree events to SSE clients', async () => {
-    const handle = createCartographerApp({ createTree: makeTree });
+    const handle = createApp({ createTree: makeTree });
     await handle.initializeState();
 
     const tree = makeTree();

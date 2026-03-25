@@ -3,9 +3,9 @@ import type { ServerType } from '@hono/node-server';
 import type { Hono } from 'hono';
 import type { BehaviorTree } from '../core/behavior-tree.js';
 import type { ActorMessage } from '../actor/types.js';
-import type { ProcessResult } from '../actor/tree-actor.js';
-import { createCartographerApp } from './app.js';
-import type { CartographerAppOptions, CartographerHandle, QueuedResult } from './app.js';
+import type { ProcessResult } from '../actor/message-processor.js';
+import { createApp } from './app.js';
+import type { AppOptions, AppHandle, QueuedResult } from './app.js';
 
 // Re-export types that were previously defined here
 export type { QueuedResult } from './app.js';
@@ -16,7 +16,7 @@ export type { QueuedResult } from './app.js';
  * At minimum, you must provide a `createTree` factory. All other options have
  * sensible defaults suitable for local development.
  */
-export interface ActorServerOptions extends CartographerAppOptions {
+export interface ActorServerOptions extends AppOptions {
   /**
    * TCP port to listen on. Defaults to the `PORT` environment variable, or `3148`
    * if unset. Pass `0` to let the OS assign an available port — the actual port
@@ -26,7 +26,7 @@ export interface ActorServerOptions extends CartographerAppOptions {
 }
 
 /**
- * HTTP server that wraps a {@link CartographerHandle} with a REST + SSE API.
+ * HTTP server that wraps a {@link AppHandle} with a REST + SSE API.
  *
  * ActorServer provides a message-driven interface to a behavior tree. Clients
  * send messages (ticks, commands, blackboard writes) via HTTP POST and observe
@@ -47,12 +47,12 @@ export class ActorServer {
   /** Maximum queued messages allowed while a message is being processed. */
   readonly maxQueueDepth;
 
-  private readonly handle: CartographerHandle;
+  private readonly handle: AppHandle;
   private server: ServerType | null = null;
   private readonly configPort: number;
 
   constructor(options: ActorServerOptions) {
-    this.handle = createCartographerApp(options);
+    this.handle = createApp(options);
     this.app = this.handle.app;
     this.stateStore = this.handle.stateStore;
     this.topologyPolicy = this.handle.topologyPolicy;
