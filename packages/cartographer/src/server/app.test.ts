@@ -425,3 +425,74 @@ describe('createCartographerApp — message processing', () => {
     });
   });
 });
+
+// ---------- Interrupt, resume, bridgeTree tests ----------
+
+describe('createCartographerApp — interrupt and resume', () => {
+  let handle: CartographerHandle;
+  let server: Server;
+  let port: number;
+
+  beforeEach(async () => {
+    handle = createCartographerApp({ createTree: makeTree });
+    await handle.initializeState();
+    await new Promise<void>((resolve) => {
+      server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
+        port = info.port;
+        resolve();
+      });
+    });
+  });
+
+  afterEach(async () => {
+    handle.closeSseClients();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  describe('POST /api/interrupt', () => {
+    it('returns interrupted: false when no message is active', async () => {
+      const res = await fetch(`http://localhost:${port}/api/interrupt`, { method: 'POST' });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.interrupted).toBe(false);
+    });
+  });
+
+  describe('POST /api/resume', () => {
+    it('returns resumed status', async () => {
+      const res = await fetch(`http://localhost:${port}/api/resume`, { method: 'POST' });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(typeof body.resumed).toBe('boolean');
+    });
+  });
+});
+
+describe('createCartographerApp — bridgeTree', () => {
+  it('forwards tree events to SSE clients', async () => {
+    const handle = createCartographerApp({ createTree: makeTree });
+    await handle.initializeState();
+
+    const tree = makeTree();
+    handle.bridgeTree(tree);
+
+    let server!: Server;
+    let port!: number;
+    await new Promise<void>((resolve) => {
+      server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
+        port = info.port;
+        resolve();
+      });
+    });
+
+    const res = await fetch(`http://localhost:${port}/events`);
+    await tree.tick();
+
+    const events = await readSseEvents(res, 3, 2000);
+    expect(events[0].event).toBe('snapshot');
+    expect(events.length).toBeGreaterThan(1);
+
+    handle.closeSseClients();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+});

@@ -7,7 +7,7 @@ import type { ActorMessage } from '../actor/types.js';
 import type { ProcessResult } from '../actor/tree-actor.js';
 import { InMemoryStateStore } from '../state/in-memory-state-store.js';
 import { InProcessEventStream } from './event-stream.js';
-import { serializeTree, serializeNodeRef } from './serializers.js';
+import { serializeTree, serializeNodeRef, serializeEvent } from './serializers.js';
 import { serializeTree as serializeTreeState } from '../core/serialization.js';
 import { blackboardToRecord } from './blackboard-utils.js';
 import { AgentNode } from '../nodes/agent.js';
@@ -273,6 +273,20 @@ export function createCartographerApp(options: CartographerAppOptions): Cartogra
     return response;
   });
 
+  app.post('/api/interrupt', (c) => {
+    if (activeActor) {
+      const messageId = activeMessageId;
+      activeActor.requestInterrupt();
+      return c.json({ interrupted: true, messageId });
+    }
+    return c.json({ interrupted: false });
+  });
+
+  app.post('/api/resume', async (c) => {
+    const resumed = await stateStore.clearHeld(STATE_KEY);
+    return c.json({ resumed });
+  });
+
   // Lifecycle
   async function initializeState() {
     stats.startedAt = Date.now();
@@ -374,8 +388,11 @@ export function createCartographerApp(options: CartographerAppOptions): Cartogra
     executeMessage(msg, requestId, bridge).catch(() => {});
   }
 
-  function bridgeTree(_tree: BehaviorTree): void {
-    // Implemented in task 107
+  function bridgeTree(tree: BehaviorTree): void {
+    tree.events.onAny((type, data) => {
+      const serialized = serializeEvent(type as any, data as any);
+      forwardEvent({ type, data: serialized });
+    });
   }
   function closeSseClients(): void {
     for (const client of sseClients) {
