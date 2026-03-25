@@ -141,6 +141,12 @@ export { ActorServer } from './server/actor-server.js';
 export type { ActorServerOptions } from './server/actor-server.js';
 export { EventBridge } from './server/event-bridge.js';
 
+// Hono apps
+export { createCartographerApp } from './server/app.js';
+export type { CartographerAppOptions, CartographerHandle, QueuedResult } from './server/app.js';
+export { createObserverApp } from './server/observer-app.js';
+export type { ObserverAppOptions, ObserverHandle } from './server/observer-app.js';
+
 
 // New nodes
 export { untilSuccess, UntilSuccessNode } from './decorators/until-success.js';
