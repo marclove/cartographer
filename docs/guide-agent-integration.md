@@ -156,11 +156,15 @@ Message: ${ctx.blackboard.get<string>("userMessage")}`,
 import { createBlackboardMcpServer } from "cartographer";
 ```
 
-The server exposes three tools:
+The server exposes seven tools (named to match Redis conventions):
 
-- `blackboard_read` -- Read a value by key.
-- `blackboard_write` -- Write a value by key.
-- `blackboard_keys` -- List all keys.
+- `get` -- Get a value by key.
+- `set` -- Set a value by key.
+- `keys` -- List all keys.
+- `delete` -- Delete a key.
+- `mget` -- Get multiple values by key.
+- `mset` -- Set multiple key-value pairs.
+- `mdelete` -- Delete multiple keys.
 
 When `blackboardNamespace` is configured on the AgentNode, the MCP server uses `blackboard.scoped(namespace)` -- the agent only sees and writes keys within its namespace.
 

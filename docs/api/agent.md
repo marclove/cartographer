@@ -248,21 +248,29 @@ The return value is an MCP server object (from the Claude Agent SDK's `createSdk
 
 ```typescript
 interface BlackboardMcpHandlers {
-  blackboard_read: (args: { key: string }) => Promise<McpToolResult>;
-  blackboard_write: (args: { key: string; value: unknown }) => Promise<McpToolResult>;
-  blackboard_keys: (args: Record<string, never>) => Promise<McpToolResult>;
+  get: (args: { key: string }) => Promise<McpToolResult>;
+  set: (args: { key: string; value: unknown }) => Promise<McpToolResult>;
+  keys: (args: Record<string, never>) => Promise<McpToolResult>;
+  delete: (args: { key: string }) => Promise<McpToolResult>;
+  mget: (args: { keys: string[] }) => Promise<McpToolResult>;
+  mset: (args: { entries: Record<string, unknown> }) => Promise<McpToolResult>;
+  mdelete: (args: { keys: string[] }) => Promise<McpToolResult>;
 }
 ```
 
 ### Exposed Tools
 
-The server exposes three tools to the Claude agent:
+The server exposes seven tools to the Claude agent, named to match Redis conventions:
 
-| Tool               | Input                      | Description                                                |
-| ------------------ | -------------------------- | ---------------------------------------------------------- |
-| `blackboard_read`  | `{ key: string }`          | Read a value. Returns JSON-serialized value or `undefined`. |
-| `blackboard_write` | `{ key: string; value: any }` | Write any JSON-serializable value.                         |
-| `blackboard_keys`  | (none)                     | List all keys in scope as a JSON array.                    |
+| Tool      | Input                            | Description                                                |
+| --------- | -------------------------------- | ---------------------------------------------------------- |
+| `get`     | `{ key: string }`               | Get a value. Returns JSON-serialized value or `"undefined"`. |
+| `set`     | `{ key: string; value: any }`   | Set any JSON-serializable value.                           |
+| `keys`    | (none)                           | List all keys in scope as a JSON array.                    |
+| `delete`  | `{ key: string }`               | Delete a key.                                              |
+| `mget`    | `{ keys: string[] }`            | Get multiple values. Returns a JSON object mapping each key to its value, or `null` for missing keys. |
+| `mset`    | `{ entries: Record<string, any> }` | Set multiple key-value pairs.                           |
+| `mdelete` | `{ keys: string[] }`            | Delete multiple keys.                                      |
 
 ### Example
 

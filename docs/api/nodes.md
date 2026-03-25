@@ -189,7 +189,7 @@ new AgentNode(config: AgentNodeConfig)
 ### Behavior
 
 - Every call delegates to the configured Agent. The Agent handles provider-specific concerns (SDK configuration, MCP servers, structured output, tool merging, `$schema` stripping).
-- A blackboard MCP server is automatically attached by the Agent, exposing three tools: `blackboard_read`, `blackboard_write`, and `blackboard_keys`.
+- A blackboard MCP server is automatically attached by the Agent, exposing seven tools: `get`, `set`, `keys`, `delete`, `mget`, `mset`, and `mdelete`.
 - On success, the result is written to the blackboard at key `{name}:output`.
 - If the agent's `outputFormat` is configured, the provider validates the response against the schema. If `mapResult` is provided, its return value determines the node status.
 - When `session` is configured, the node resolves session options from the tree's `SessionRegistry` and registers new session IDs when they are created. Resume mode appends to an existing conversation; fork mode branches from one. See [Sessions](../guide-agent-integration.md#sessions).
