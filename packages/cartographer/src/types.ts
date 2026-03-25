@@ -1,4 +1,3 @@
-import type { z } from 'zod';
 import type { Agent, OnElicitation, AgentElicitationRequest } from './agent/agent.js';
 import type { NodeState } from './core/serialization.js';
 import type { SessionRegistry } from './core/session-registry.js';
@@ -173,7 +172,7 @@ export interface TreeEvents {
   'agent:response': { node: BTreeNode; result: unknown; cost?: number; modelUsage?: Record<string, ModelUsage> };
   'agent:error': {
     node: BTreeNode;
-    subtype: string;
+    subtype: 'error';
     errors?: string[];
     permissionDenials?: unknown;
     cost?: number;
@@ -408,13 +407,21 @@ export interface BTreeNode {
  * });
  * ```
  */
-export interface SelectionStrategy {
-  /** Return children in the order they should be evaluated by the selector. */
+/**
+ * Shared base for strategies that reorder a composite's children.
+ *
+ * Both {@link SelectionStrategy} and {@link ExecutionStrategy} share this
+ * shape — they differ only in semantics (first-success vs all-must-succeed).
+ */
+export interface OrderingStrategy {
+  /** Return children in the order they should be evaluated. */
   order(children: BTreeNode[], context: TreeContext): BTreeNode[] | Promise<BTreeNode[]>;
 
   /** Reset any internal state (e.g., cached ordering). */
   reset?(): void;
 }
+
+export interface SelectionStrategy extends OrderingStrategy {}
 
 /**
  * Controls the order in which a `SequenceNode` executes its children.
@@ -435,13 +442,7 @@ export interface SelectionStrategy {
  * });
  * ```
  */
-export interface ExecutionStrategy {
-  /** Return children in the order they should be executed by the sequence. */
-  order(children: BTreeNode[], context: TreeContext): BTreeNode[] | Promise<BTreeNode[]>;
-
-  /** Reset any internal state (e.g., cached ordering). */
-  reset?(): void;
-}
+export interface ExecutionStrategy extends OrderingStrategy {}
 
 /**
  * Defines the success and failure thresholds for a `ParallelNode`.

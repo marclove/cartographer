@@ -6,6 +6,7 @@ export type {
   Blackboard,
   TreeEvents,
   TypedEventEmitter,
+  OrderingStrategy,
   SelectionStrategy,
   ExecutionStrategy,
   ParallelPolicy,
