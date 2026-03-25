@@ -236,19 +236,20 @@ export class ActorServer {
     // Drain any queued messages from a previous process
     this.drainQueue().catch(() => {});
 
-    this.server = createServer((req, res) => {
+    const server = createServer((req, res) => {
       this.handleRequest(req, res).catch((err) => {
         if (!res.headersSent) {
           jsonError(res, 500, err instanceof Error ? err.message : 'Internal error');
         }
       });
     });
+    this.server = server;
 
     return new Promise((resolve, reject) => {
-      this.server!.once('error', reject);
-      this.server!.listen(this.configPort, () => {
-        this.server!.removeListener('error', reject);
-        const addr = this.server!.address();
+      server.once('error', reject);
+      server.listen(this.configPort, () => {
+        server.removeListener('error', reject);
+        const addr = server.address();
         const actualPort = typeof addr === 'object' && addr ? addr.port : this.configPort;
         resolve({ port: actualPort });
       });
