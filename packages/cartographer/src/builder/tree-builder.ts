@@ -5,13 +5,13 @@ import { AgentNode } from '../nodes/agent.js';
 import { SelectorNode } from '../composites/selector.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { ParallelNode } from '../composites/parallel.js';
-import { InverterNode } from '../decorators/inverter.js';
-import { RepeatNode } from '../decorators/repeat.js';
-import { RetryNode } from '../decorators/retry.js';
-import { AlwaysSucceedNode } from '../decorators/always-succeed.js';
-import { AlwaysFailNode } from '../decorators/always-fail.js';
-import { TimeoutNode } from '../decorators/timeout.js';
-import { GuardNode } from '../decorators/guard.js';
+import { Inverter } from '../decorators/inverter.js';
+import { Repeat } from '../decorators/repeat.js';
+import { Retry } from '../decorators/retry.js';
+import { AlwaysSucceed } from '../decorators/always-succeed.js';
+import { AlwaysFail } from '../decorators/always-fail.js';
+import { Timeout } from '../decorators/timeout.js';
+import { Guard } from '../decorators/guard.js';
 import { NodeStatus } from '../types.js';
 import type { OnElicitation } from '../agent/agent.js';
 import type {
@@ -218,18 +218,18 @@ export class CompositeBuilder {
   }
 
   /**
-   * Add an {@link InverterNode} that flips `SUCCESS` ↔ `FAILURE` on its child.
+   * Add an {@link Inverter} that flips `SUCCESS` ↔ `FAILURE` on its child.
    * `RUNNING` is passed through unchanged.
    */
   inverter(name: string, configure: (b: SingleChildBuilder) => void): this {
     const builder = new SingleChildBuilder(this.registry);
     configure(builder);
-    this.children.push(new InverterNode({ name, child: builder.getChild() }));
+    this.children.push(new Inverter({ name, child: builder.getChild() }));
     return this;
   }
 
   /**
-   * Add a {@link RepeatNode} that ticks its child repeatedly.
+   * Add a {@link Repeat} that ticks its child repeatedly.
    *
    * @param options.count - Maximum number of repetitions.
    * @param options.untilStatus - Stop early when the child returns this status.
@@ -244,14 +244,14 @@ export class CompositeBuilder {
     const { context, ...nodeOptions } = options;
     const builder = new SingleChildBuilder(this.registry);
     configure(builder);
-    const node = new RepeatNode({ name, child: builder.getChild(), ...nodeOptions });
+    const node = new Repeat({ name, child: builder.getChild(), ...nodeOptions });
     applyContextOverrides(node, context);
     this.children.push(node);
     return this;
   }
 
   /**
-   * Add a {@link RetryNode} that retries its child on `FAILURE`.
+   * Add a {@link Retry} that retries its child on `FAILURE`.
    *
    * @param options.maxAttempts - Total attempts (including the first try).
    * @param options.delayMs - Milliseconds to wait between attempts.
@@ -266,36 +266,36 @@ export class CompositeBuilder {
     const { context, ...nodeOptions } = options;
     const builder = new SingleChildBuilder(this.registry);
     configure(builder);
-    const node = new RetryNode({ name, child: builder.getChild(), ...nodeOptions });
+    const node = new Retry({ name, child: builder.getChild(), ...nodeOptions });
     applyContextOverrides(node, context);
     this.children.push(node);
     return this;
   }
 
   /**
-   * Add an {@link AlwaysSucceedNode} that returns `SUCCESS` regardless of
+   * Add an {@link AlwaysSucceed} that returns `SUCCESS` regardless of
    * what its child returns.
    */
   alwaysSucceed(name: string, configure: (b: SingleChildBuilder) => void): this {
     const builder = new SingleChildBuilder(this.registry);
     configure(builder);
-    this.children.push(new AlwaysSucceedNode({ name, child: builder.getChild() }));
+    this.children.push(new AlwaysSucceed({ name, child: builder.getChild() }));
     return this;
   }
 
   /**
-   * Add an {@link AlwaysFailNode} that returns `FAILURE` regardless of
+   * Add an {@link AlwaysFail} that returns `FAILURE` regardless of
    * what its child returns.
    */
   alwaysFail(name: string, configure: (b: SingleChildBuilder) => void): this {
     const builder = new SingleChildBuilder(this.registry);
     configure(builder);
-    this.children.push(new AlwaysFailNode({ name, child: builder.getChild() }));
+    this.children.push(new AlwaysFail({ name, child: builder.getChild() }));
     return this;
   }
 
   /**
-   * Add a {@link TimeoutNode} that aborts its child if it exceeds a time limit.
+   * Add a {@link Timeout} that aborts its child if it exceeds a time limit.
    *
    * Returns `FAILURE` if the child does not complete within `timeoutMs`
    * milliseconds.
@@ -306,14 +306,14 @@ export class CompositeBuilder {
     const { context, ...nodeOptions } = options;
     const builder = new SingleChildBuilder(this.registry);
     configure(builder);
-    const node = new TimeoutNode({ name, child: builder.getChild(), ...nodeOptions });
+    const node = new Timeout({ name, child: builder.getChild(), ...nodeOptions });
     applyContextOverrides(node, context);
     this.children.push(node);
     return this;
   }
 
   /**
-   * Add a {@link GuardNode} that only ticks its child when a condition passes.
+   * Add a {@link Guard} that only ticks its child when a condition passes.
    *
    * Returns `FAILURE` without ticking the child when `condition` returns
    * `false`. Accepts either an inline function or a string registry reference
@@ -332,7 +332,7 @@ export class CompositeBuilder {
     const condition = typeof condOrRef === 'string' ? resolveCondition(this.registry, condOrRef) : condOrRef;
     const builder = new SingleChildBuilder(this.registry);
     configure(builder);
-    const node = new GuardNode({ name, child: builder.getChild(), condition });
+    const node = new Guard({ name, child: builder.getChild(), condition });
     applyContextOverrides(node, context);
     this.children.push(node);
     return this;
@@ -430,70 +430,70 @@ export class SingleChildBuilder {
     return this;
   }
 
-  /** Add an {@link InverterNode} as the single child. */
+  /** Add an {@link Inverter} as the single child. */
   inverter(name: string, configure: (b: SingleChildBuilder) => void): this {
     const builder = new SingleChildBuilder(this.registry);
     configure(builder);
-    this.child = new InverterNode({ name, child: builder.getChild() });
+    this.child = new Inverter({ name, child: builder.getChild() });
     return this;
   }
 
-  /** Add a {@link RepeatNode} as the single child. */
+  /** Add a {@link Repeat} as the single child. */
   repeat(name: string, options: { count?: number; untilStatus?: NodeStatus; context?: Partial<TreeContext> }, configure: (b: SingleChildBuilder) => void): this {
     const { context, ...nodeOptions } = options;
     const builder = new SingleChildBuilder(this.registry);
     configure(builder);
-    const node = new RepeatNode({ name, child: builder.getChild(), ...nodeOptions });
+    const node = new Repeat({ name, child: builder.getChild(), ...nodeOptions });
     applyContextOverrides(node, context);
     this.child = node;
     return this;
   }
 
-  /** Add a {@link RetryNode} as the single child. */
+  /** Add a {@link Retry} as the single child. */
   retry(name: string, options: { maxAttempts: number; delayMs?: number; context?: Partial<TreeContext> }, configure: (b: SingleChildBuilder) => void): this {
     const { context, ...nodeOptions } = options;
     const builder = new SingleChildBuilder(this.registry);
     configure(builder);
-    const node = new RetryNode({ name, child: builder.getChild(), ...nodeOptions });
+    const node = new Retry({ name, child: builder.getChild(), ...nodeOptions });
     applyContextOverrides(node, context);
     this.child = node;
     return this;
   }
 
-  /** Add an {@link AlwaysSucceedNode} as the single child. */
+  /** Add an {@link AlwaysSucceed} as the single child. */
   alwaysSucceed(name: string, configure: (b: SingleChildBuilder) => void): this {
     const builder = new SingleChildBuilder(this.registry);
     configure(builder);
-    this.child = new AlwaysSucceedNode({ name, child: builder.getChild() });
+    this.child = new AlwaysSucceed({ name, child: builder.getChild() });
     return this;
   }
 
-  /** Add an {@link AlwaysFailNode} as the single child. */
+  /** Add an {@link AlwaysFail} as the single child. */
   alwaysFail(name: string, configure: (b: SingleChildBuilder) => void): this {
     const builder = new SingleChildBuilder(this.registry);
     configure(builder);
-    this.child = new AlwaysFailNode({ name, child: builder.getChild() });
+    this.child = new AlwaysFail({ name, child: builder.getChild() });
     return this;
   }
 
-  /** Add a {@link TimeoutNode} as the single child. */
+  /** Add a {@link Timeout} as the single child. */
   timeout(name: string, options: { timeoutMs: number; context?: Partial<TreeContext> }, configure: (b: SingleChildBuilder) => void): this {
     const { context, ...nodeOptions } = options;
     const builder = new SingleChildBuilder(this.registry);
     configure(builder);
-    const node = new TimeoutNode({ name, child: builder.getChild(), ...nodeOptions });
+    const node = new Timeout({ name, child: builder.getChild(), ...nodeOptions });
     applyContextOverrides(node, context);
     this.child = node;
     return this;
   }
 
-  /** Add a {@link GuardNode} as the single child. Condition accepts a function or registry ref. */
+  /** Add a {@link Guard} as the single child. Condition accepts a function or registry ref. */
   guard(name: string, options: { condition: ConditionFn | string; context?: Partial<TreeContext> }, configure: (b: SingleChildBuilder) => void): this {
     const { context, condition: condOrRef } = options;
     const condition = typeof condOrRef === 'string' ? resolveCondition(this.registry, condOrRef) : condOrRef;
     const builder = new SingleChildBuilder(this.registry);
     configure(builder);
-    const node = new GuardNode({ name, child: builder.getChild(), condition });
+    const node = new Guard({ name, child: builder.getChild(), condition });
     applyContextOverrides(node, context);
     this.child = node;
     return this;

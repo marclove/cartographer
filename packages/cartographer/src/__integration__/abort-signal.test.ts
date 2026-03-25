@@ -3,7 +3,7 @@ import { NodeStatus } from '../types.js';
 import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { ParallelNode } from '../composites/parallel.js';
-import { RetryNode } from '../decorators/retry.js';
+import { Retry } from '../decorators/retry.js';
 import { TreeScheduler } from '../scheduler/tree-scheduler.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { createContext, AbortTrackingNode } from './helpers.js';
@@ -79,7 +79,7 @@ describe('Abort Signal Integration', () => {
   it('aborts through decorators — retry propagates abort to child', async () => {
     const tracker = new AbortTrackingNode('inner');
 
-    const retry = new RetryNode({
+    const retry = new Retry({
       name: 'retry',
       child: tracker,
       maxAttempts: 5,
@@ -87,7 +87,7 @@ describe('Abort Signal Integration', () => {
 
     const ctx = createContext();
 
-    // RetryNode: child returns RUNNING, retry returns RUNNING (not FAILURE, so no retry loop)
+    // Retry: child returns RUNNING, retry returns RUNNING (not FAILURE, so no retry loop)
     const status = await retry.tick(ctx);
     expect(status).toBe(NodeStatus.RUNNING);
 

@@ -7,11 +7,11 @@ import { computeContentHash } from '../core/content-hash.js';
  * A decorator that converts child FAILURE to RUNNING, creating an explicit
  * suspension point. SUCCESS and RUNNING pass through unchanged.
  *
- * Distinct from RepeatNode: RepeatNode loops internally within a single tick.
- * UntilSuccessNode returns RUNNING to the caller, allowing runToCompletion()
+ * Distinct from Repeat: Repeat loops internally within a single tick.
+ * UntilSuccess returns RUNNING to the caller, allowing runToCompletion()
  * to detect the suspension via hasInflightWork() === false.
  */
-export class UntilSuccessNode extends BaseNode {
+export class UntilSuccess extends BaseNode {
   private child: BTreeNode;
 
   override get children(): readonly BTreeNode[] {
@@ -32,14 +32,14 @@ export class UntilSuccessNode extends BaseNode {
   }
 
   protected override computeHash(): string {
-    return computeContentHash('UntilSuccessNode', this.child.contentHash());
+    return computeContentHash('UntilSuccess', this.child.contentHash());
   }
 
   reset(): void { this.child.reset(); }
   abort(): void { this.child.abort(); }
 }
 
-/** Factory function for creating an UntilSuccessNode. */
-export function untilSuccess(child: BTreeNode): UntilSuccessNode {
-  return new UntilSuccessNode({ name: 'untilSuccess', child });
+/** Factory function for creating an UntilSuccess decorator. */
+export function untilSuccess(child: BTreeNode): UntilSuccess {
+  return new UntilSuccess({ name: 'untilSuccess', child });
 }

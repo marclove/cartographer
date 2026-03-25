@@ -81,15 +81,15 @@ function decoratorParams(node: BTreeNode): string {
   const n = node as unknown as Record<string, unknown>;
   const parts: string[] = [];
 
-  // RepeatNode
+  // Repeat
   if (typeof n.count === 'number') parts.push(`count=${n.count}`);
   if (n.untilStatus) parts.push(`until=${String(n.untilStatus)}`);
 
-  // RetryNode
+  // Retry
   if (typeof n.maxAttempts === 'number') parts.push(`maxAttempts=${n.maxAttempts}`);
   if (typeof n.delayMs === 'number') parts.push(`delay=${n.delayMs}ms`);
 
-  // TimeoutNode
+  // Timeout
   if (typeof n.timeoutMs === 'number') parts.push(`timeout=${n.timeoutMs}ms`);
 
   return parts.length > 0 ? ` (${parts.join(', ')})` : '';

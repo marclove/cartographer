@@ -13,7 +13,7 @@ import { computeContentHash } from '../core/content-hash.js';
  * Common uses: forcing a branch to fail for testing purposes, or guaranteeing
  * that a Selector continues past a child that would otherwise short-circuit it.
  */
-export class AlwaysFailNode extends BaseNode {
+export class AlwaysFail extends BaseNode {
   private child: DecoratorConfig['child'];
 
   override get children(): readonly BTreeNode[] {
@@ -32,7 +32,7 @@ export class AlwaysFailNode extends BaseNode {
   }
 
   protected override computeHash(): string {
-    return computeContentHash('AlwaysFailNode', this.child.contentHash());
+    return computeContentHash('AlwaysFail', this.child.contentHash());
   }
 
   reset(): void { this.child.reset(); }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { GuardNode } from './guard.js';
+import { Guard } from './guard.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
@@ -23,24 +23,24 @@ function mockChild(status: NodeStatus): BTreeNode {
   };
 }
 
-describe('GuardNode', () => {
+describe('Guard', () => {
   it('ticks child when condition is true', async () => {
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new GuardNode({ name: 'guard', child, condition: () => true });
+    const node = new Guard({ name: 'guard', child, condition: () => true });
     expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
     expect(child.tick).toHaveBeenCalled();
   });
 
   it('returns FAILURE without ticking child when condition is false', async () => {
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new GuardNode({ name: 'guard', child, condition: () => false });
+    const node = new Guard({ name: 'guard', child, condition: () => false });
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
     expect(child.tick).not.toHaveBeenCalled();
   });
 
   it('supports async conditions (inflight pattern)', async () => {
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new GuardNode({ name: 'guard', child, condition: async () => true });
+    const node = new Guard({ name: 'guard', child, condition: async () => true });
     const ctx = createContext();
     // Tick 1: async condition starts, returns RUNNING
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
@@ -51,7 +51,7 @@ describe('GuardNode', () => {
 
   it('caches child terminal status while condition remains true', async () => {
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new GuardNode({ name: 'guard', child, condition: () => true });
+    const node = new Guard({ name: 'guard', child, condition: () => true });
     const ctx = createContext();
 
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
@@ -65,7 +65,7 @@ describe('GuardNode', () => {
   it('clears cache when condition flips false, allowing re-run', async () => {
     let allow = true;
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new GuardNode({ name: 'guard', child, condition: () => allow });
+    const node = new Guard({ name: 'guard', child, condition: () => allow });
     const ctx = createContext();
 
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
@@ -81,7 +81,7 @@ describe('GuardNode', () => {
 
   it('returns FAILURE when condition throws', async () => {
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new GuardNode({
+    const node = new Guard({
       name: 'guard', child,
       condition: () => { throw new Error('boom'); },
     });
@@ -90,12 +90,12 @@ describe('GuardNode', () => {
   });
 });
 
-describe('GuardNode async condition inflight', () => {
+describe('Guard async condition inflight', () => {
   it('returns RUNNING while async condition is pending', async () => {
     let resolveCondition!: (v: boolean) => void;
     const condition = () => new Promise<boolean>((r) => { resolveCondition = r; });
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new GuardNode({ name: 'guard', child, condition });
+    const node = new Guard({ name: 'guard', child, condition });
     const ctx = createContext();
 
     // Tick 1: condition is pending → RUNNING, child not ticked
@@ -115,7 +115,7 @@ describe('GuardNode async condition inflight', () => {
     let resolveCondition!: (v: boolean) => void;
     const condition = () => new Promise<boolean>((r) => { resolveCondition = r; });
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new GuardNode({ name: 'guard', child, condition });
+    const node = new Guard({ name: 'guard', child, condition });
     const ctx = createContext();
 
     // Tick 1: condition pending → RUNNING
@@ -135,7 +135,7 @@ describe('GuardNode async condition inflight', () => {
     let rejectCondition!: (e: Error) => void;
     const condition = () => new Promise<boolean>((_, r) => { rejectCondition = r; });
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new GuardNode({ name: 'guard', child, condition });
+    const node = new Guard({ name: 'guard', child, condition });
     const ctx = createContext();
 
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
@@ -151,7 +151,7 @@ describe('GuardNode async condition inflight', () => {
     let resolveCondition!: (v: boolean) => void;
     const condition = vi.fn(() => new Promise<boolean>((r) => { resolveCondition = r; }));
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new GuardNode({ name: 'guard', child, condition });
+    const node = new Guard({ name: 'guard', child, condition });
     const ctx = createContext();
 
     // Tick 1: condition pending
@@ -170,7 +170,7 @@ describe('GuardNode async condition inflight', () => {
     let resolveCondition!: (v: boolean) => void;
     const condition = vi.fn(() => new Promise<boolean>((r) => { resolveCondition = r; }));
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new GuardNode({ name: 'guard', child, condition });
+    const node = new Guard({ name: 'guard', child, condition });
     const ctx = createContext();
 
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
@@ -184,24 +184,24 @@ describe('GuardNode async condition inflight', () => {
 
   it('synchronous conditions still work without inflight overhead', async () => {
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new GuardNode({ name: 'guard', child, condition: () => true });
+    const node = new Guard({ name: 'guard', child, condition: () => true });
     // Synchronous condition resolves in a single tick
     expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
     expect(child.tick).toHaveBeenCalledOnce();
   });
 });
 
-describe('GuardNode abort on condition failure', () => {
+describe('Guard abort on condition failure', () => {
   it('aborts child when condition returns false', async () => {
     const child = mockChild(NodeStatus.RUNNING);
-    const node = new GuardNode({ name: 'guard', child, condition: () => false });
+    const node = new Guard({ name: 'guard', child, condition: () => false });
     await node.tick(createContext());
     expect(child.abort).toHaveBeenCalledOnce();
   });
 
   it('aborts child when condition throws', async () => {
     const child = mockChild(NodeStatus.RUNNING);
-    const node = new GuardNode({
+    const node = new Guard({
       name: 'guard', child,
       condition: () => { throw new Error('boom'); },
     });
@@ -211,7 +211,7 @@ describe('GuardNode abort on condition failure', () => {
 
   it('does not abort child when condition passes', async () => {
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new GuardNode({ name: 'guard', child, condition: () => true });
+    const node = new Guard({ name: 'guard', child, condition: () => true });
     await node.tick(createContext());
     expect(child.abort).not.toHaveBeenCalled();
   });
@@ -223,7 +223,7 @@ describe('GuardNode abort on condition failure', () => {
       reset: vi.fn(),
       abort: vi.fn(),
     };
-    const node = new GuardNode({ name: 'guard', child, condition: () => false });
+    const node = new Guard({ name: 'guard', child, condition: () => false });
     const result = await node.tick(createContext());
     expect(result).toBe(NodeStatus.FAILURE);
     expect(child.abort).toHaveBeenCalledOnce();

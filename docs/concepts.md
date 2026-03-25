@@ -87,13 +87,13 @@ Cartographer provides these decorators:
 
 | Decorator          | Behavior                                                     |
 |--------------------|--------------------------------------------------------------|
-| `InverterNode`     | Flips `SUCCESS` to `FAILURE` and vice versa.                |
-| `RepeatNode`       | Ticks the child multiple times or until a target status.     |
-| `RetryNode`        | Retries the child on `FAILURE`, up to a maximum attempt count.|
-| `AlwaysSucceedNode`| Returns `SUCCESS` regardless of the child's result.          |
-| `AlwaysFailNode`   | Returns `FAILURE` regardless of the child's result.          |
-| `TimeoutNode`      | Aborts the child and returns `FAILURE` if it exceeds a time limit.|
-| `GuardNode`        | Evaluates a condition before ticking the child. Returns `FAILURE` if the guard condition is false.|
+| `Inverter`     | Flips `SUCCESS` to `FAILURE` and vice versa.                |
+| `Repeat`       | Ticks the child multiple times or until a target status.     |
+| `Retry`        | Retries the child on `FAILURE`, up to a maximum attempt count.|
+| `AlwaysSucceed`| Returns `SUCCESS` regardless of the child's result.          |
+| `AlwaysFail`   | Returns `FAILURE` regardless of the child's result.          |
+| `Timeout`      | Aborts the child and returns `FAILURE` if it exceeds a time limit.|
+| `Guard`        | Evaluates a condition before ticking the child. Returns `FAILURE` if the guard condition is false.|
 
 ---
 

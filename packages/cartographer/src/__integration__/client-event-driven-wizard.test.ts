@@ -3,7 +3,7 @@ import { BehaviorTree } from '../core/behavior-tree.js';
 import { ActionNode } from '../nodes/action.js';
 import { ConditionNode } from '../nodes/condition.js';
 import { SequenceNode } from '../composites/sequence.js';
-import { RetryNode } from '../decorators/retry.js';
+import { Retry } from '../decorators/retry.js';
 import { emitToClient } from '../nodes/emit-to-client.js';
 import { receive } from '../nodes/receive.js';
 import { untilSuccess } from '../decorators/until-success.js';
@@ -16,7 +16,7 @@ function wizardStep(
   bbKey: string,
   validate: (data: Record<string, unknown>) => boolean,
 ) {
-  return new RetryNode({
+  return new Retry({
     name: `step-${stepNumber}-retry`,
     maxAttempts: 3,
     child: new SequenceNode({

@@ -4,7 +4,7 @@ import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { SelectorNode } from '../composites/selector.js';
 import { ParallelNode } from '../composites/parallel.js';
-import { RepeatNode } from '../decorators/repeat.js';
+import { Repeat } from '../decorators/repeat.js';
 import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
 import { createContext, countingAction } from './helpers.js';
 
@@ -208,15 +208,15 @@ describe('RUNNING State Management', () => {
     expect(c.getTicks()).toBe(1); // not re-called — poll returned SUCCESS
   });
 
-  it('RepeatNode propagates RUNNING from child and restarts iteration on next tick', async () => {
-    // RepeatNode(count=2): child returns RUNNING on first start, SUCCESS on second start.
+  it('Repeat propagates RUNNING from child and restarts iteration on next tick', async () => {
+    // Repeat(count=2): child returns RUNNING on first start, SUCCESS on second start.
     // When child returns RUNNING, repeat returns RUNNING and preserves _iteration.
     // On the next tick, the child is polled — RUNNING clears inflight, repeat sees RUNNING
     // and returns RUNNING. Next tick starts a fresh inflight; child resolves SUCCESS.
     // Repeat increments iteration (0→1), starts iteration 1, child resolves SUCCESS → done.
     const child = countingAction('child', [NodeStatus.RUNNING, NodeStatus.SUCCESS, NodeStatus.SUCCESS]);
 
-    const repeat = new RepeatNode({
+    const repeat = new Repeat({
       name: 'repeat',
       child: new ActionNode(child.config),
       count: 2,

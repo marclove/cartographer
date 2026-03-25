@@ -50,13 +50,13 @@ export { ParallelNode } from './composites/parallel.js';
 export { isReactiveNode } from './composites/is-reactive-node.js';
 
 // Decorators
-export { InverterNode } from './decorators/inverter.js';
-export { RepeatNode } from './decorators/repeat.js';
-export { RetryNode } from './decorators/retry.js';
-export { AlwaysSucceedNode } from './decorators/always-succeed.js';
-export { AlwaysFailNode } from './decorators/always-fail.js';
-export { TimeoutNode } from './decorators/timeout.js';
-export { GuardNode } from './decorators/guard.js';
+export { Inverter } from './decorators/inverter.js';
+export { Repeat } from './decorators/repeat.js';
+export { Retry } from './decorators/retry.js';
+export { AlwaysSucceed } from './decorators/always-succeed.js';
+export { AlwaysFail } from './decorators/always-fail.js';
+export { Timeout } from './decorators/timeout.js';
+export { Guard } from './decorators/guard.js';
 
 // Default strategies
 export { DefaultSelectionStrategy } from './strategies/default-selection.js';
@@ -150,7 +150,7 @@ export type { ObserverAppOptions, ObserverHandle } from './server/observer-app.j
 
 
 // New nodes
-export { untilSuccess, UntilSuccessNode } from './decorators/until-success.js';
+export { untilSuccess, UntilSuccess } from './decorators/until-success.js';
 export { receive, ReceiveNode } from './nodes/receive.js';
 export { emitToClient, EmitToClientNode } from './nodes/emit-to-client.js';
 

@@ -13,7 +13,7 @@ All decorators pass `RUNNING` through unchanged unless otherwise noted.
 
 ---
 
-## InverterNode
+## Inverter
 
 Flips the child's terminal status.
 
@@ -35,7 +35,7 @@ builder.inverter("not-busy", (b) => {
 
 ---
 
-## RepeatNode
+## Repeat
 
 Repeats child execution a fixed number of times or until a target status is reached.
 
@@ -71,7 +71,7 @@ builder.repeat("until-done", { untilStatus: NodeStatus.SUCCESS }, (b) => {
 
 ---
 
-## RetryNode
+## Retry
 
 Retries a failing child up to a maximum number of attempts with an optional delay between each retry.
 
@@ -102,7 +102,7 @@ builder.retry("retry-api", { maxAttempts: 3, delayMs: 1000 }, (b) => {
 
 ---
 
-## AlwaysSucceedNode
+## AlwaysSucceed
 
 Forces `SUCCESS` regardless of the child's result.
 
@@ -124,7 +124,7 @@ builder.alwaysSucceed("optional-step", (b) => {
 
 ---
 
-## AlwaysFailNode
+## AlwaysFail
 
 Forces `FAILURE` regardless of the child's result.
 
@@ -146,7 +146,7 @@ builder.alwaysFail("force-fail", (b) => {
 
 ---
 
-## TimeoutNode
+## Timeout
 
 Aborts the child if execution exceeds a time limit.
 
@@ -176,7 +176,7 @@ builder.timeout("time-limited", { timeoutMs: 5000 }, (b) => {
 
 ---
 
-## GuardNode
+## Guard
 
 Checks a condition before running the child.
 
@@ -212,7 +212,7 @@ builder.guard(
 
 ---
 
-## UntilSuccessNode
+## UntilSuccess
 
 Converts child `FAILURE` to `RUNNING`, creating an explicit suspension point. `SUCCESS` and `RUNNING` pass through unchanged.
 
@@ -234,9 +234,9 @@ const node = untilSuccess(childNode);
 
 `untilSuccess` is designed for the [application server](guide-app-server.md) where a tree processes one message at a time and suspends between messages. Wrapping a `receive` node in `untilSuccess` tells the processing loop "keep this tree alive and wait for more input."
 
-**How it differs from RepeatNode:**
+**How it differs from Repeat:**
 
-`RepeatNode` with `untilStatus: NodeStatus.SUCCESS` loops _internally_ within a single tick -- it re-ticks its child immediately after each failure and never returns `RUNNING` to the caller due to a child failure. `untilSuccess` returns `RUNNING` to the tree, which causes the `runToCompletion()` loop to detect the suspension (via `hasInflightWork() === false`) and save state.
+`Repeat` with `untilStatus: NodeStatus.SUCCESS` loops _internally_ within a single tick -- it re-ticks its child immediately after each failure and never returns `RUNNING` to the caller due to a child failure. `untilSuccess` returns `RUNNING` to the tree, which causes the `runToCompletion()` loop to detect the suspension (via `hasInflightWork() === false`) and save state.
 
 ```typescript
 import { untilSuccess, receive } from "cartographer";
@@ -259,19 +259,19 @@ All decorators support `interrupt()` for soft cancellation — cancelling in-fli
 
 By default, decorators delegate `interrupt()` to their child via the `BaseNode` default implementation. Two decorators have explicit overrides:
 
-- **TimeoutNode**: Clears the timer and recorded start time in addition to interrupting the child. On the next tick, a fresh timeout window starts from zero.
-- **GuardNode**: Clears any pending async condition evaluation in addition to interrupting the child.
+- **Timeout**: Clears the timer and recorded start time in addition to interrupting the child. On the next tick, a fresh timeout window starts from zero.
+- **Guard**: Clears any pending async condition evaluation in addition to interrupting the child.
 
-The remaining decorators (InverterNode, AlwaysSucceedNode, AlwaysFailNode, UntilSuccessNode) use the BaseNode default, which recurses `interrupt()` into the child.
+The remaining decorators (Inverter, AlwaysSucceed, AlwaysFail, UntilSuccess) use the BaseNode default, which recurses `interrupt()` into the child.
 
 ### Counter preservation
 
-`RepeatNode` and `RetryNode` preserve their counters on interrupt — this is a key behavioral difference from `abort()`:
+`Repeat` and `Retry` preserve their counters on interrupt — this is a key behavioral difference from `abort()`:
 
 | Decorator    | On `abort()`           | On `interrupt()`          |
 | ------------ | ---------------------- | ------------------------- |
-| `RepeatNode` | Counter resets to 0    | Counter preserved         |
-| `RetryNode`  | Attempt counter resets | Attempt counter preserved |
+| `Repeat` | Counter resets to 0    | Counter preserved         |
+| `Retry`  | Attempt counter resets | Attempt counter preserved |
 
 This means an interrupted retry resumes at the same attempt count, and an interrupted repeat resumes at the same iteration. The interrupted child restarts fresh (its inflight state is cleared), but the decorator does not count the interruption as a failed attempt or completed iteration.
 

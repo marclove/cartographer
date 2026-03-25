@@ -21,7 +21,7 @@ import { computeContentHash } from '../core/content-hash.js';
  * network action, or preventing a stuck subtree from blocking the tree
  * indefinitely.
  */
-export class TimeoutNode extends BaseNode {
+export class Timeout extends BaseNode {
   private child: TimeoutConfig['child'];
   private timeoutMs: number;
   private _startTime: number | null = null;
@@ -37,7 +37,7 @@ export class TimeoutNode extends BaseNode {
   }
 
   protected override computeHash(): string {
-    return computeContentHash('TimeoutNode', String(this.timeoutMs), this.child.contentHash());
+    return computeContentHash('Timeout', String(this.timeoutMs), this.child.contentHash());
   }
 
   constructor(config: TimeoutConfig) {

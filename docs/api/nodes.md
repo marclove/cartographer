@@ -311,7 +311,7 @@ function isReactiveNode(node: BTreeNode): boolean;
 A node is reactive if:
 
 - It is a `ConditionNode` (conditions are always reactive).
-- It is a `GuardNode` (guards re-evaluate their condition on every tick).
+- It is a `Guard` (guards re-evaluate their condition on every tick).
 - It is a single-child decorator whose child is reactive (reactivity inherits through decorator chains).
 
 Everything else (actions, agents, composites) is non-reactive. Non-reactive nodes have their terminal results cached within a composite's execution cycle.
@@ -319,7 +319,7 @@ Everything else (actions, agents, composites) is non-reactive. Non-reactive node
 ### Example
 
 ```typescript
-import { isReactiveNode, ConditionNode, ActionNode, InverterNode } from "cartographer";
+import { isReactiveNode, ConditionNode, ActionNode, Inverter } from "cartographer";
 
 const cond = new ConditionNode({ name: "check", condition: () => true });
 isReactiveNode(cond); // true
@@ -328,6 +328,6 @@ const action = new ActionNode({ name: "work", action: () => NodeStatus.SUCCESS }
 isReactiveNode(action); // false
 
 // Inverter wrapping a condition inherits reactivity
-const inv = new InverterNode({ name: "not-check", child: cond });
+const inv = new Inverter({ name: "not-check", child: cond });
 isReactiveNode(inv); // true
 ```

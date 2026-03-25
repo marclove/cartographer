@@ -210,10 +210,10 @@ function slowAction(name: string, delayMs: number, status: NodeStatus) {
 }
 ```
 
-Use it to test `TimeoutNode` or timing-sensitive behavior:
+Use it to test `Timeout` or timing-sensitive behavior:
 
 ```typescript
-const timeout = new TimeoutNode({
+const timeout = new Timeout({
   name: "timeout",
   child: new ActionNode(slowAction("slow", 200, NodeStatus.SUCCESS)),
   timeoutMs: 100, // deadline is shorter than the action

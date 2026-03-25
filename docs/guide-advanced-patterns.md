@@ -235,7 +235,7 @@ Composites use a reactive re-evaluation model: on every tick, they re-evaluate f
 - **Reactive children** (conditions, guards, decorators wrapping reactive children): Always re-ticked on every call to `execute()`. This enables preemption — a condition that was true on tick 1 may now be false, causing the composite to short-circuit before reaching a running action.
 - **Non-reactive children** (actions, agents, composites): Their terminal results (SUCCESS or FAILURE) are cached within the current cycle. Cached children are not re-ticked, avoiding redundant work like repeated API calls.
 
-The `isReactiveNode()` helper determines reactivity: `ConditionNode` and `GuardNode` are always reactive. Single-child decorators inherit reactivity from their child. Everything else is non-reactive.
+The `isReactiveNode()` helper determines reactivity: `ConditionNode` and `Guard` are always reactive. Single-child decorators inherit reactivity from their child. Everything else is non-reactive.
 
 ### Sequence Re-Evaluation
 
@@ -275,17 +275,17 @@ A uses its cached result (non-reactive). The inner selector re-evaluates from it
 
 ### Decorator Counter Persistence
 
-`RepeatNode` preserves its iteration counter across ticks. When a child returns `RUNNING`:
+`Repeat` preserves its iteration counter across ticks. When a child returns `RUNNING`:
 
 1. The repeat returns `RUNNING` immediately.
 2. On the next tick, the repeat resumes at the same iteration.
 
-This means a `RepeatNode(count=2)` with a child that returns `[RUNNING, SUCCESS, SUCCESS]` will:
+This means a `Repeat(count=2)` with a child that returns `[RUNNING, SUCCESS, SUCCESS]` will:
 
 - Tick 1: iteration 0 → child RUNNING → repeat RUNNING
 - Tick 2: iteration 0 → child SUCCESS → iteration 1 → child SUCCESS → repeat SUCCESS
 
-The child was ticked 3 times total across 2 tree ticks. Similarly, `RetryNode` preserves its attempt counter across ticks.
+The child was ticked 3 times total across 2 tree ticks. Similarly, `Retry` preserves its attempt counter across ticks.
 
 ---
 

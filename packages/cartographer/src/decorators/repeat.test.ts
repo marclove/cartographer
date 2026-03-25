@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { RepeatNode } from './repeat.js';
+import { Repeat } from './repeat.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
@@ -32,7 +32,7 @@ function dynamicChild(statuses: NodeStatus[]): BTreeNode {
   };
 }
 
-describe('RepeatNode instance field persistence', () => {
+describe('Repeat instance field persistence', () => {
   it('iteration counter persists across ticks when child returns RUNNING', async () => {
     // iteration 0: SUCCESS, iteration 1: RUNNING (persists), iteration 1 resumes: SUCCESS, iteration 2: SUCCESS => done
     const child = dynamicChild([
@@ -41,7 +41,7 @@ describe('RepeatNode instance field persistence', () => {
       NodeStatus.SUCCESS,  // iteration 1 resumes, completes
       NodeStatus.SUCCESS,  // iteration 2 completes => done (count=3)
     ]);
-    const node = new RepeatNode({ name: 'rep', child, count: 3 });
+    const node = new Repeat({ name: 'rep', child, count: 3 });
     const ctx = createContext();
 
     // Tick 1: iteration 0 succeeds, iteration 1 returns RUNNING
@@ -62,7 +62,7 @@ describe('RepeatNode instance field persistence', () => {
       NodeStatus.SUCCESS,  // iteration 2
       NodeStatus.SUCCESS,  // iteration 3 => done
     ]);
-    const node = new RepeatNode({ name: 'rep', child, count: 4 });
+    const node = new Repeat({ name: 'rep', child, count: 4 });
     const ctx = createContext();
 
     // Tick 1: iteration 0 ok, iteration 1 RUNNING
@@ -83,7 +83,7 @@ describe('RepeatNode instance field persistence', () => {
       NodeStatus.SUCCESS,  // iteration 1
       NodeStatus.SUCCESS,  // iteration 2 => done (count=3)
     ]);
-    const node = new RepeatNode({ name: 'rep', child, count: 3 });
+    const node = new Repeat({ name: 'rep', child, count: 3 });
     const ctx = createContext();
 
     // Tick 1: iteration 0 ok, iteration 1 RUNNING
@@ -106,7 +106,7 @@ describe('RepeatNode instance field persistence', () => {
       NodeStatus.SUCCESS,  // iteration 1
       NodeStatus.SUCCESS,  // iteration 2 => done (count=3)
     ]);
-    const node = new RepeatNode({ name: 'rep', child, count: 3 });
+    const node = new Repeat({ name: 'rep', child, count: 3 });
     const ctx = createContext();
 
     // Tick 1: iteration 0 ok, iteration 1 RUNNING
@@ -129,7 +129,7 @@ describe('RepeatNode instance field persistence', () => {
       NodeStatus.SUCCESS,
       NodeStatus.SUCCESS,
     ]);
-    const node = new RepeatNode({ name: 'rep', child, count: 2 });
+    const node = new Repeat({ name: 'rep', child, count: 2 });
     const ctx = createContext();
 
     // First complete run
@@ -142,10 +142,10 @@ describe('RepeatNode instance field persistence', () => {
   });
 });
 
-describe('RepeatNode', () => {
+describe('Repeat', () => {
   it('repeats child N times', async () => {
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new RepeatNode({ name: 'rep', child, count: 3 });
+    const node = new Repeat({ name: 'rep', child, count: 3 });
     const status = await node.tick(createContext());
     expect(status).toBe(NodeStatus.SUCCESS);
     expect(child.tick).toHaveBeenCalledTimes(3);
@@ -153,7 +153,7 @@ describe('RepeatNode', () => {
 
   it('stops early when child returns target status', async () => {
     const child = dynamicChild([NodeStatus.SUCCESS, NodeStatus.FAILURE, NodeStatus.SUCCESS]);
-    const node = new RepeatNode({ name: 'rep', child, count: 10, untilStatus: NodeStatus.FAILURE });
+    const node = new Repeat({ name: 'rep', child, count: 10, untilStatus: NodeStatus.FAILURE });
     const status = await node.tick(createContext());
     expect(status).toBe(NodeStatus.FAILURE);
     expect(child.tick).toHaveBeenCalledTimes(2);
@@ -161,7 +161,7 @@ describe('RepeatNode', () => {
 
   it('stops early on RUNNING', async () => {
     const child = dynamicChild([NodeStatus.SUCCESS, NodeStatus.RUNNING]);
-    const node = new RepeatNode({ name: 'rep', child, count: 5 });
+    const node = new Repeat({ name: 'rep', child, count: 5 });
     expect(await node.tick(createContext())).toBe(NodeStatus.RUNNING);
     expect(child.tick).toHaveBeenCalledTimes(2);
   });

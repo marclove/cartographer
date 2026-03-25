@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { TimeoutNode } from './timeout.js';
+import { Timeout } from './timeout.js';
 import { ActionNode } from '../nodes/action.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, TreeContext } from '../types.js';
@@ -24,9 +24,9 @@ function mockChild(status: NodeStatus): BTreeNode {
   };
 }
 
-describe('TimeoutNode', () => {
+describe('Timeout', () => {
   it('returns child status when child completes within timeout', async () => {
-    const node = new TimeoutNode({
+    const node = new Timeout({
       name: 'to',
       child: mockChild(NodeStatus.SUCCESS),
       timeoutMs: 1000,
@@ -37,7 +37,7 @@ describe('TimeoutNode', () => {
   it('returns FAILURE when child exceeds timeout', async () => {
     vi.useFakeTimers();
     const child = mockChild(NodeStatus.RUNNING);
-    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 50 });
+    const node = new Timeout({ name: 'to', child, timeoutMs: 50 });
     const ctx = createContext();
     // First tick starts the timer
     await node.tick(ctx);
@@ -51,7 +51,7 @@ describe('TimeoutNode', () => {
   it('calls abort on child when timeout fires', async () => {
     vi.useFakeTimers();
     const child = mockChild(NodeStatus.RUNNING);
-    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 50 });
+    const node = new Timeout({ name: 'to', child, timeoutMs: 50 });
     const ctx = createContext();
     await node.tick(ctx);
     await vi.advanceTimersByTimeAsync(100);
@@ -72,20 +72,20 @@ describe('TimeoutNode', () => {
         return NodeStatus.SUCCESS;
       },
     });
-    const node = new TimeoutNode({ name: 'timeout-parent', child, timeoutMs: 50 });
+    const node = new Timeout({ name: 'timeout-parent', child, timeoutMs: 50 });
     await node.tick(ctx);
 
     expect(exits).toEqual(['slow-action', 'timeout-parent']);
   });
 });
 
-describe('TimeoutNode wall-clock tracking', () => {
+describe('Timeout wall-clock tracking', () => {
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
 
   it('returns RUNNING while within timeout', async () => {
     const child = mockChild(NodeStatus.RUNNING);
-    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 1000 });
+    const node = new Timeout({ name: 'to', child, timeoutMs: 1000 });
     const ctx = createContext();
 
     const status = await node.tick(ctx);
@@ -94,7 +94,7 @@ describe('TimeoutNode wall-clock tracking', () => {
 
   it('returns FAILURE when timeout expires', async () => {
     const child = mockChild(NodeStatus.RUNNING);
-    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 500 });
+    const node = new Timeout({ name: 'to', child, timeoutMs: 500 });
     const ctx = createContext();
 
     // First tick — child returns RUNNING, starts timer
@@ -110,7 +110,7 @@ describe('TimeoutNode wall-clock tracking', () => {
 
   it('aborts child on timeout', async () => {
     const child = mockChild(NodeStatus.RUNNING);
-    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 500 });
+    const node = new Timeout({ name: 'to', child, timeoutMs: 500 });
     const ctx = createContext();
 
     await node.tick(ctx);
@@ -122,7 +122,7 @@ describe('TimeoutNode wall-clock tracking', () => {
 
   it('returns child terminal status before timeout', async () => {
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 1000 });
+    const node = new Timeout({ name: 'to', child, timeoutMs: 1000 });
     const ctx = createContext();
 
     const status = await node.tick(ctx);
@@ -140,7 +140,7 @@ describe('TimeoutNode wall-clock tracking', () => {
       }),
       reset: vi.fn(), abort: vi.fn(),
     };
-    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 500 });
+    const node = new Timeout({ name: 'to', child, timeoutMs: 500 });
     const ctx = createContext();
 
     // First tick — child returns SUCCESS, no timer started
@@ -168,7 +168,7 @@ describe('TimeoutNode wall-clock tracking', () => {
       tick: vi.fn(async () => returnRunning ? NodeStatus.RUNNING : NodeStatus.SUCCESS),
       reset: vi.fn(), abort: vi.fn(),
     };
-    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 500 });
+    const node = new Timeout({ name: 'to', child, timeoutMs: 500 });
     const ctx = createContext();
 
     // Tick 1 — RUNNING, starts timer
@@ -193,7 +193,7 @@ describe('TimeoutNode wall-clock tracking', () => {
 
   it('reset() clears startTime', async () => {
     const child = mockChild(NodeStatus.RUNNING);
-    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 500 });
+    const node = new Timeout({ name: 'to', child, timeoutMs: 500 });
     const ctx = createContext();
 
     // Start timer
@@ -212,7 +212,7 @@ describe('TimeoutNode wall-clock tracking', () => {
 
   it('background timer fires timeout even without a second tick', async () => {
     const child = mockChild(NodeStatus.RUNNING);
-    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 500 });
+    const node = new Timeout({ name: 'to', child, timeoutMs: 500 });
     const ctx = createContext();
 
     // Single tick — child returns RUNNING, starts background timer
@@ -238,7 +238,7 @@ describe('TimeoutNode wall-clock tracking', () => {
       tick: vi.fn(async () => ++tickCount === 1 ? NodeStatus.RUNNING : NodeStatus.SUCCESS),
       reset: vi.fn(), abort: vi.fn(),
     };
-    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 500 });
+    const node = new Timeout({ name: 'to', child, timeoutMs: 500 });
     const ctx = createContext();
 
     // Tick 1 — RUNNING, starts background timer
@@ -255,7 +255,7 @@ describe('TimeoutNode wall-clock tracking', () => {
 
   it('background timer is cleared on reset()', async () => {
     const child = mockChild(NodeStatus.RUNNING);
-    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 500 });
+    const node = new Timeout({ name: 'to', child, timeoutMs: 500 });
     const ctx = createContext();
 
     await node.tick(ctx);
@@ -268,7 +268,7 @@ describe('TimeoutNode wall-clock tracking', () => {
 
   it('background timer is cleared on abort()', async () => {
     const child = mockChild(NodeStatus.RUNNING);
-    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 500 });
+    const node = new Timeout({ name: 'to', child, timeoutMs: 500 });
     const ctx = createContext();
 
     await node.tick(ctx);
@@ -284,7 +284,7 @@ describe('TimeoutNode wall-clock tracking', () => {
 
   it('abort() clears startTime and aborts child', async () => {
     const child = mockChild(NodeStatus.RUNNING);
-    const node = new TimeoutNode({ name: 'to', child, timeoutMs: 500 });
+    const node = new Timeout({ name: 'to', child, timeoutMs: 500 });
     const ctx = createContext();
 
     // Start timer

@@ -6,10 +6,10 @@ import { ConditionNode } from '../nodes/condition.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { SelectorNode } from '../composites/selector.js';
 import { ParallelNode } from '../composites/parallel.js';
-import { RetryNode } from '../decorators/retry.js';
-import { RepeatNode } from '../decorators/repeat.js';
-import { TimeoutNode } from '../decorators/timeout.js';
-import { GuardNode } from '../decorators/guard.js';
+import { Retry } from '../decorators/retry.js';
+import { Repeat } from '../decorators/repeat.js';
+import { Timeout } from '../decorators/timeout.js';
+import { Guard } from '../decorators/guard.js';
 import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { createContext } from './helpers.js';
@@ -180,7 +180,7 @@ describe('Reactive Tick Model', () => {
       // Guard wrapping an action — as a child of a sequence alongside another action.
       // The guard's condition reads from the blackboard.
       const guardedAction = tracked('guarded', () => NodeStatus.SUCCESS);
-      const guard = new GuardNode({
+      const guard = new Guard({
         name: 'gate-guard',
         condition: (c) => c.blackboard.get('gate') === true,
         child: guardedAction.node,
@@ -217,7 +217,7 @@ describe('Reactive Tick Model', () => {
       const ctx = createContext({ allowed: true });
 
       const action = tracked('guarded-work', () => NodeStatus.SUCCESS);
-      const guard = new GuardNode({
+      const guard = new Guard({
         name: 'guard',
         condition: (c) => c.blackboard.get('allowed') === true,
         child: action.node,
@@ -316,7 +316,7 @@ describe('Reactive Tick Model', () => {
         i < 2 ? NodeStatus.FAILURE : NodeStatus.SUCCESS,
       );
 
-      const retry = new RetryNode({
+      const retry = new Retry({
         name: 'retry',
         child: action.node,
         maxAttempts: 3,
@@ -351,7 +351,7 @@ describe('Reactive Tick Model', () => {
 
       const action = tracked('repeated', () => NodeStatus.SUCCESS);
 
-      const repeat = new RepeatNode({
+      const repeat = new Repeat({
         name: 'repeat-3',
         child: action.node,
         count: 3,
@@ -397,7 +397,7 @@ describe('Reactive Tick Model', () => {
         action: () => new Promise<NodeStatus>(() => {}),
       });
 
-      const timeout = new TimeoutNode({
+      const timeout = new Timeout({
         name: 'timeout',
         child: neverNode,
         timeoutMs: 100,

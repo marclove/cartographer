@@ -6,13 +6,13 @@ All decorators extend `BaseNode`. All provide `reset()` and `abort()` methods th
 
 ---
 
-## InverterNode
+## Inverter
 
 ```typescript
-import { InverterNode } from "cartographer";
+import { Inverter } from "cartographer";
 ```
 
-**Constructor:** `new InverterNode(config: DecoratorConfig)`
+**Constructor:** `new Inverter(config: DecoratorConfig)`
 
 **DecoratorConfig:**
 
@@ -31,13 +31,13 @@ import { InverterNode } from "cartographer";
 
 ---
 
-## RepeatNode
+## Repeat
 
 ```typescript
-import { RepeatNode } from "cartographer";
+import { Repeat } from "cartographer";
 ```
 
-**Constructor:** `new RepeatNode(config: RepeatConfig)`
+**Constructor:** `new Repeat(config: RepeatConfig)`
 
 **RepeatConfig:**
 
@@ -52,13 +52,13 @@ import { RepeatNode } from "cartographer";
 
 ---
 
-## RetryNode
+## Retry
 
 ```typescript
-import { RetryNode } from "cartographer";
+import { Retry } from "cartographer";
 ```
 
-**Constructor:** `new RetryNode(config: RetryConfig)`
+**Constructor:** `new Retry(config: RetryConfig)`
 
 **RetryConfig:**
 
@@ -73,13 +73,13 @@ import { RetryNode } from "cartographer";
 
 ---
 
-## AlwaysSucceedNode
+## AlwaysSucceed
 
 ```typescript
-import { AlwaysSucceedNode } from "cartographer";
+import { AlwaysSucceed } from "cartographer";
 ```
 
-**Constructor:** `new AlwaysSucceedNode(config: DecoratorConfig)`
+**Constructor:** `new AlwaysSucceed(config: DecoratorConfig)`
 
 **DecoratorConfig:**
 
@@ -98,13 +98,13 @@ import { AlwaysSucceedNode } from "cartographer";
 
 ---
 
-## AlwaysFailNode
+## AlwaysFail
 
 ```typescript
-import { AlwaysFailNode } from "cartographer";
+import { AlwaysFail } from "cartographer";
 ```
 
-**Constructor:** `new AlwaysFailNode(config: DecoratorConfig)`
+**Constructor:** `new AlwaysFail(config: DecoratorConfig)`
 
 **DecoratorConfig:**
 
@@ -123,13 +123,13 @@ import { AlwaysFailNode } from "cartographer";
 
 ---
 
-## TimeoutNode
+## Timeout
 
 ```typescript
-import { TimeoutNode } from "cartographer";
+import { Timeout } from "cartographer";
 ```
 
-**Constructor:** `new TimeoutNode(config: TimeoutConfig)`
+**Constructor:** `new Timeout(config: TimeoutConfig)`
 
 **TimeoutConfig:**
 
@@ -143,13 +143,13 @@ import { TimeoutNode } from "cartographer";
 
 ---
 
-## GuardNode
+## Guard
 
 ```typescript
-import { GuardNode } from "cartographer";
+import { Guard } from "cartographer";
 ```
 
-**Constructor:** `new GuardNode(config: GuardConfig)`
+**Constructor:** `new Guard(config: GuardConfig)`
 
 **GuardConfig:**
 
@@ -163,15 +163,15 @@ import { GuardNode } from "cartographer";
 
 ---
 
-## UntilSuccessNode
+## UntilSuccess
 
 ```typescript
-import { untilSuccess, UntilSuccessNode } from "cartographer";
+import { untilSuccess, UntilSuccess } from "cartographer";
 ```
 
-**Factory:** `untilSuccess(child: BTreeNode): UntilSuccessNode`
+**Factory:** `untilSuccess(child: BTreeNode): UntilSuccess`
 
-**Constructor:** `new UntilSuccessNode(config: DecoratorConfig)`
+**Constructor:** `new UntilSuccess(config: DecoratorConfig)`
 
 **Behavior:** Converts child FAILURE to RUNNING, creating an explicit suspension point. SUCCESS and RUNNING from the child pass through unchanged. Designed for the [application server](../guide-app-server.md) where trees suspend between messages.
 
@@ -181,4 +181,4 @@ import { untilSuccess, UntilSuccessNode } from "cartographer";
 | FAILURE       | RUNNING              |
 | RUNNING       | RUNNING              |
 
-Distinct from `RepeatNode` with `untilStatus: SUCCESS` — RepeatNode loops internally within a single tick and never returns RUNNING due to child failure. UntilSuccessNode returns RUNNING to the caller so the processing loop can detect the suspension.
+Distinct from `Repeat` with `untilStatus: SUCCESS` — Repeat loops internally within a single tick and never returns RUNNING due to child failure. UntilSuccess returns RUNNING to the caller so the processing loop can detect the suspension.

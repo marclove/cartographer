@@ -846,7 +846,7 @@ export interface DecoratorConfig {
 }
 
 /**
- * Configuration for a `RepeatNode` decorator.
+ * Configuration for a `Repeat` decorator.
  *
  * Repeats its child a fixed number of times or until a target status
  * is reached.
@@ -876,7 +876,7 @@ export interface RepeatConfig extends DecoratorConfig {
 }
 
 /**
- * Configuration for a `RetryNode` decorator.
+ * Configuration for a `Retry` decorator.
  *
  * Retries its child on `FAILURE` up to a maximum number of attempts.
  * Returns `SUCCESS` if the child succeeds on any attempt, or `FAILURE`
@@ -901,7 +901,7 @@ export interface RetryConfig extends DecoratorConfig {
 }
 
 /**
- * Configuration for a `TimeoutNode` decorator.
+ * Configuration for a `Timeout` decorator.
  *
  * Wraps a child with a time limit. If the child does not complete within
  * `timeoutMs` milliseconds, the decorator returns `FAILURE` and aborts
@@ -922,7 +922,7 @@ export interface TimeoutConfig extends DecoratorConfig {
 }
 
 /**
- * Configuration for a `GuardNode` decorator.
+ * Configuration for a `Guard` decorator.
  *
  * Evaluates a condition before ticking its child. If the condition returns
  * `false`, the guard returns `FAILURE` without ticking the child.

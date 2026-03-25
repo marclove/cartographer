@@ -37,10 +37,10 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `SequenceConfig`      | Configuration for `SequenceNode`                     |
 | `ParallelConfig`      | Configuration for `ParallelNode`                     |
 | `DecoratorConfig`     | Base configuration for decorator nodes               |
-| `RepeatConfig`        | Configuration for `RepeatNode`                       |
-| `RetryConfig`         | Configuration for `RetryNode`                        |
-| `TimeoutConfig`       | Configuration for `TimeoutNode`                      |
-| `GuardConfig`         | Configuration for `GuardNode`                        |
+| `RepeatConfig`        | Configuration for `Repeat`                       |
+| `RetryConfig`         | Configuration for `Retry`                        |
+| `TimeoutConfig`       | Configuration for `Timeout`                      |
+| `GuardConfig`         | Configuration for `Guard`                        |
 | `BehaviorTreeConfig`  | Top-level tree configuration                         |
 | `SchedulerConfig`     | Configuration for `TreeScheduler`                    |
 | `SchedulerEvents`     | Event map for scheduler lifecycle events             |
@@ -104,13 +104,13 @@ Re-exported from the internal type definitions. See individual reference pages f
 
 | Export              | Description                                        |
 | ------------------- | -------------------------------------------------- |
-| `InverterNode`      | Inverts the child result (`SUCCESS` <-> `FAILURE`) |
-| `RepeatNode`        | Repeats the child a fixed number of times          |
-| `RetryNode`         | Retries the child on failure up to a limit         |
-| `AlwaysSucceedNode` | Wraps the child and always returns `SUCCESS`       |
-| `AlwaysFailNode`    | Wraps the child and always returns `FAILURE`       |
-| `TimeoutNode`       | Fails the child if it exceeds a time limit         |
-| `GuardNode`         | Gates execution behind a condition                 |
+| `Inverter`      | Inverts the child result (`SUCCESS` <-> `FAILURE`) |
+| `Repeat`        | Repeats the child a fixed number of times          |
+| `Retry`         | Retries the child on failure up to a limit         |
+| `AlwaysSucceed` | Wraps the child and always returns `SUCCESS`       |
+| `AlwaysFail`    | Wraps the child and always returns `FAILURE`       |
+| `Timeout`       | Fails the child if it exceeds a time limit         |
+| `Guard`         | Gates execution behind a condition                 |
 
 ## [Strategies](strategies.md)
 

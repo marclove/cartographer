@@ -6,8 +6,8 @@ import { ConditionNode } from '../nodes/condition.js';
 import { AgentNode } from '../nodes/agent.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { SelectorNode } from '../composites/selector.js';
-import { InverterNode } from '../decorators/inverter.js';
-import { RetryNode } from '../decorators/retry.js';
+import { Inverter } from '../decorators/inverter.js';
+import { Retry } from '../decorators/retry.js';
 import { NodeStatus } from '../types.js';
 
 describe('computeContentHash', () => {
@@ -104,18 +104,18 @@ describe('composite contentHash', () => {
 });
 
 describe('decorator contentHash', () => {
-  it('includes config in hash (RetryNode maxAttempts)', () => {
+  it('includes config in hash (Retry maxAttempts)', () => {
     const child = new ActionNode({ name: 'a', action: async () => NodeStatus.SUCCESS });
-    const r3 = new RetryNode({ name: 'r', child, maxAttempts: 3 });
-    const r5 = new RetryNode({ name: 'r', child, maxAttempts: 5 });
+    const r3 = new Retry({ name: 'r', child, maxAttempts: 3 });
+    const r5 = new Retry({ name: 'r', child, maxAttempts: 5 });
     expect(r3.contentHash()).not.toBe(r5.contentHash());
   });
 
   it('includes child in hash', () => {
     const a = new ActionNode({ name: 'a', action: async () => NodeStatus.SUCCESS });
     const b = new ActionNode({ name: 'b', action: async () => NodeStatus.SUCCESS });
-    const inv1 = new InverterNode({ name: 'inv', child: a });
-    const inv2 = new InverterNode({ name: 'inv', child: b });
+    const inv1 = new Inverter({ name: 'inv', child: a });
+    const inv2 = new Inverter({ name: 'inv', child: b });
     expect(inv1.contentHash()).not.toBe(inv2.contentHash());
   });
 });

@@ -11,7 +11,7 @@ import { computeContentHash } from '../core/content-hash.js';
  * ready"), or making a Selector branch that should only be taken when a subtree
  * fails behave as a success path instead.
  */
-export class InverterNode extends BaseNode {
+export class Inverter extends BaseNode {
   private child: DecoratorConfig['child'];
 
   override get children(): readonly BTreeNode[] {
@@ -31,7 +31,7 @@ export class InverterNode extends BaseNode {
   }
 
   protected override computeHash(): string {
-    return computeContentHash('InverterNode', this.child.contentHash());
+    return computeContentHash('Inverter', this.child.contentHash());
   }
 
   reset(): void { this.child.reset(); }

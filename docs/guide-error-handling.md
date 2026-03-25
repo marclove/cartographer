@@ -42,10 +42,10 @@ This containment means that a single misbehaving node never takes down the entir
 
 ### Retry + Timeout Stacking
 
-The most common resilience pattern stacks `RetryNode` around `TimeoutNode` to handle transient failures. The timeout caps each attempt, and the retry re-tries the whole operation.
+The most common resilience pattern stacks `Retry` around `Timeout` to handle transient failures. The timeout caps each attempt, and the retry re-tries the whole operation.
 
 ```typescript
-import { ActionNode, SequenceNode, RetryNode, TimeoutNode, NodeStatus } from "cartographer";
+import { ActionNode, SequenceNode, Retry, Timeout, NodeStatus } from "cartographer";
 
 let attempts = 0;
 
@@ -64,15 +64,15 @@ const unreliable = new ActionNode({
   },
 });
 
-// TimeoutNode wraps the action — each attempt gets 100ms
-const timeout = new TimeoutNode({
+// Timeout wraps the action — each attempt gets 100ms
+const timeout = new Timeout({
   name: "timeout-wrapper",
   child: unreliable,
   timeoutMs: 100,
 });
 
-// RetryNode wraps the timeout — up to 3 attempts total
-const retry = new RetryNode({
+// Retry wraps the timeout — up to 3 attempts total
+const retry = new Retry({
   name: "retry-wrapper",
   child: timeout,
   maxAttempts: 3,
@@ -87,14 +87,14 @@ const pipeline = new SequenceNode({
 
 **How it works:** On each attempt, the child is ticked. If the child returns `FAILURE` (e.g., the timeout fired), the retry increments its counter and tries again. If the child returns `SUCCESS` or `RUNNING`, the retry returns that status immediately.
 
-**Stacking order matters.** `RetryNode` must be the outer decorator so it can re-attempt after `TimeoutNode` returns `FAILURE`. If you reverse them, the timeout would cap the total retry budget instead of each individual attempt.
+**Stacking order matters.** `Retry` must be the outer decorator so it can re-attempt after `Timeout` returns `FAILURE`. If you reverse them, the timeout would cap the total retry budget instead of each individual attempt.
 
 ### Retry with Delay
 
-`RetryNode` accepts an optional `delayMs` for back-off between attempts:
+`Retry` accepts an optional `delayMs` for back-off between attempts:
 
 ```typescript
-const retry = new RetryNode({
+const retry = new Retry({
   name: "retry-with-backoff",
   child: apiCallNode,
   maxAttempts: 5,
@@ -104,9 +104,9 @@ const retry = new RetryNode({
 
 The delay is inserted after each `FAILURE` except the last attempt. If all attempts fail, the retry returns `FAILURE` without a trailing delay.
 
-### RetryNode and RUNNING Children
+### Retry and RUNNING Children
 
-When a child returns `RUNNING`, `RetryNode` returns `RUNNING` immediately — it does not count that as a failed attempt. The attempt counter persists across ticks as an instance field, so on the next tick the retry resumes at the same attempt rather than restarting from zero.
+When a child returns `RUNNING`, `Retry` returns `RUNNING` immediately — it does not count that as a failed attempt. The attempt counter persists across ticks as an instance field, so on the next tick the retry resumes at the same attempt rather than restarting from zero.
 
 ---
 
@@ -202,7 +202,7 @@ The signal is available on the `TreeContext` as `ctx.signal`. It is an instance 
 When `tree.abort()` is called, the abort cascades through the entire tree:
 
 - **Composites** (`SequenceNode`, `SelectorNode`, `ParallelNode`) call `abort()` on every child.
-- **Decorators** (`RetryNode`, `TimeoutNode`, `RepeatNode`, etc.) call `abort()` on their single child.
+- **Decorators** (`Retry`, `Timeout`, `Repeat`, etc.) call `abort()` on their single child.
 - **Leaf nodes** (`ActionNode`, `ConditionNode`) have a no-op `abort()` by default.
 
 This means abort reaches every node in the tree, regardless of depth:
@@ -221,12 +221,12 @@ parallel.abort();
 // All three children received the abort signal
 ```
 
-### TimeoutNode Abort Semantics
+### Timeout Abort Semantics
 
-`TimeoutNode` tracks wall-clock time across ticks. The timer starts when the child first returns `RUNNING` and tracks cumulative elapsed time. A background `setTimeout` fires when the deadline passes, proactively aborting the child via `child.abort()`. On the next tick after timeout, `FAILURE` is returned without re-ticking the child. A fresh timeout window begins on each new activation cycle (after the child completes or is reset).
+`Timeout` tracks wall-clock time across ticks. The timer starts when the child first returns `RUNNING` and tracks cumulative elapsed time. A background `setTimeout` fires when the deadline passes, proactively aborting the child via `child.abort()`. On the next tick after timeout, `FAILURE` is returned without re-ticking the child. A fresh timeout window begins on each new activation cycle (after the child completes or is reset).
 
 ```typescript
-const timeout = new TimeoutNode({
+const timeout = new Timeout({
   name: "capped",
   child: slowAction,
   timeoutMs: 5000,
@@ -299,7 +299,7 @@ await tree.tick(); // Skips A (cached), re-starts B
 `interrupt()` cascades through the tree similarly to `abort()`:
 
 - **Composites** (`SequenceNode`, `SelectorNode`, `ParallelNode`) call `interrupt()` on children but do **not** clear cycle state (`completedMap`, `committedOrder`). This is the critical difference from `abort()`.
-- **Decorators** call `child.interrupt()` and preserve their own state (retry count, repeat iteration). `TimeoutNode` additionally clears its timer so the timeout window resets on re-activation.
+- **Decorators** call `child.interrupt()` and preserve their own state (retry count, repeat iteration). `Timeout` additionally clears its timer so the timeout window resets on re-activation.
 - **Leaf nodes** (`ActionNode`) clear unsettled inflight state. `AgentNode` additionally aborts the active SDK controller but preserves `cachedStatus`.
 - **`BehaviorTree.interrupt()`** calls `root.interrupt()` and emits `tree:interrupt`. It does **not** trigger the `AbortController`, so `context.signal.aborted` remains `false`.
 
@@ -442,7 +442,7 @@ await scheduler.start();
 
 ## Next Steps
 
-- [Decorators](guide-decorators.md) — Full reference for RetryNode, TimeoutNode, and other decorators.
+- [Decorators](guide-decorators.md) — Full reference for Retry, Timeout, and other decorators.
 - [Scheduler](guide-scheduler.md) — Interval, cron, and one-shot scheduling.
 - [Testing Behavior Trees](guide-testing.md) — How to test error handling and resilience patterns.
 - [Advanced Patterns](guide-advanced-patterns.md) — Custom nodes, strategies, and multi-tick workflows.

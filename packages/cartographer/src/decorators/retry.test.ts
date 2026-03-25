@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { RetryNode } from './retry.js';
+import { Retry } from './retry.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
@@ -32,7 +32,7 @@ function dynamicChild(statuses: NodeStatus[]): BTreeNode {
   };
 }
 
-describe('RetryNode instance field persistence', () => {
+describe('Retry instance field persistence', () => {
   function createDeferredAction() {
     let resolve!: (status: NodeStatus) => void;
     const child: BTreeNode = {
@@ -52,7 +52,7 @@ describe('RetryNode instance field persistence', () => {
       NodeStatus.FAILURE,  // attempt 1 resumes, fails
       NodeStatus.FAILURE,  // attempt 2 fails => exhausted (maxAttempts=3)
     ]);
-    const node = new RetryNode({ name: 'retry', child, maxAttempts: 3 });
+    const node = new Retry({ name: 'retry', child, maxAttempts: 3 });
     const ctx = createContext();
 
     // Tick 1: attempt 0 fails, attempt 1 returns RUNNING
@@ -70,7 +70,7 @@ describe('RetryNode instance field persistence', () => {
       NodeStatus.RUNNING,  // attempt 0 returns RUNNING
       NodeStatus.SUCCESS,  // attempt 0 resumes, succeeds
     ]);
-    const node = new RetryNode({ name: 'retry', child, maxAttempts: 3 });
+    const node = new Retry({ name: 'retry', child, maxAttempts: 3 });
     const ctx = createContext();
 
     // Tick 1: attempt 0 returns RUNNING
@@ -91,7 +91,7 @@ describe('RetryNode instance field persistence', () => {
       NodeStatus.FAILURE,  // attempt 1 fails
       NodeStatus.FAILURE,  // attempt 2 fails => exhausted
     ]);
-    const node = new RetryNode({ name: 'retry', child, maxAttempts: 3 });
+    const node = new Retry({ name: 'retry', child, maxAttempts: 3 });
     const ctx = createContext();
 
     // Tick 1: attempt 0 fails, attempt 1 returns RUNNING
@@ -114,7 +114,7 @@ describe('RetryNode instance field persistence', () => {
       NodeStatus.FAILURE,  // attempt 1 fails
       NodeStatus.FAILURE,  // attempt 2 fails => exhausted
     ]);
-    const node = new RetryNode({ name: 'retry', child, maxAttempts: 3 });
+    const node = new Retry({ name: 'retry', child, maxAttempts: 3 });
     const ctx = createContext();
 
     // Tick 1: attempt 0 fails, attempt 1 returns RUNNING
@@ -136,7 +136,7 @@ describe('RetryNode instance field persistence', () => {
       // Second run: should start from attempt 0 again
       NodeStatus.SUCCESS,
     ]);
-    const node = new RetryNode({ name: 'retry', child, maxAttempts: 2 });
+    const node = new Retry({ name: 'retry', child, maxAttempts: 2 });
     const ctx = createContext();
 
     // All attempts exhausted
@@ -148,38 +148,38 @@ describe('RetryNode instance field persistence', () => {
   });
 });
 
-describe('RetryNode', () => {
+describe('Retry', () => {
   it('returns SUCCESS on first try if child succeeds', async () => {
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new RetryNode({ name: 'retry', child, maxAttempts: 3 });
+    const node = new Retry({ name: 'retry', child, maxAttempts: 3 });
     expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
     expect(child.tick).toHaveBeenCalledTimes(1);
   });
 
   it('retries on FAILURE up to maxAttempts', async () => {
     const child = mockChild(NodeStatus.FAILURE);
-    const node = new RetryNode({ name: 'retry', child, maxAttempts: 3 });
+    const node = new Retry({ name: 'retry', child, maxAttempts: 3 });
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
     expect(child.tick).toHaveBeenCalledTimes(3);
   });
 
   it('succeeds if a retry succeeds', async () => {
     const child = dynamicChild([NodeStatus.FAILURE, NodeStatus.FAILURE, NodeStatus.SUCCESS]);
-    const node = new RetryNode({ name: 'retry', child, maxAttempts: 5 });
+    const node = new Retry({ name: 'retry', child, maxAttempts: 5 });
     expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
     expect(child.tick).toHaveBeenCalledTimes(3);
   });
 
   it('returns RUNNING immediately without retry', async () => {
     const child = mockChild(NodeStatus.RUNNING);
-    const node = new RetryNode({ name: 'retry', child, maxAttempts: 3 });
+    const node = new Retry({ name: 'retry', child, maxAttempts: 3 });
     expect(await node.tick(createContext())).toBe(NodeStatus.RUNNING);
     expect(child.tick).toHaveBeenCalledTimes(1);
   });
 
   it('delays between retries when delayMs is set', async () => {
     const child = dynamicChild([NodeStatus.FAILURE, NodeStatus.SUCCESS]);
-    const node = new RetryNode({ name: 'retry', child, maxAttempts: 3, delayMs: 50 });
+    const node = new Retry({ name: 'retry', child, maxAttempts: 3, delayMs: 50 });
     const start = performance.now();
     await node.tick(createContext());
     const elapsed = performance.now() - start;

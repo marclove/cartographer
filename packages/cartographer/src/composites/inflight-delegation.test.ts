@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { SequenceNode } from './sequence.js';
 import { SelectorNode } from './selector.js';
 import { ParallelNode } from './parallel.js';
-import { AlwaysSucceedNode } from '../decorators/always-succeed.js';
-import { InverterNode } from '../decorators/inverter.js';
+import { AlwaysSucceed } from '../decorators/always-succeed.js';
+import { Inverter } from '../decorators/inverter.js';
 import { ActionNode } from '../nodes/action.js';
 import { NodeStatus } from '../types.js';
 import type { TreeContext } from '../types.js';
@@ -88,13 +88,13 @@ describe('composite inflight delegation', () => {
 });
 
 describe('decorator inflight delegation', () => {
-  it('AlwaysSucceedNode reports inflight work from its child', async () => {
+  it('AlwaysSucceed reports inflight work from its child', async () => {
     let resolve: (s: NodeStatus) => void;
     const slow = new ActionNode({
       name: 'slow',
       action: () => new Promise<NodeStatus>(r => { resolve = r; }),
     });
-    const decorated = new AlwaysSucceedNode({ name: 'wrap', child: slow });
+    const decorated = new AlwaysSucceed({ name: 'wrap', child: slow });
     const ctx = createContext();
 
     await decorated.tick(ctx);
@@ -107,13 +107,13 @@ describe('decorator inflight delegation', () => {
     expect(decorated.inflightPromise()).toBeNull();
   });
 
-  it('InverterNode reports inflight work from its child', async () => {
+  it('Inverter reports inflight work from its child', async () => {
     let resolve: (s: NodeStatus) => void;
     const slow = new ActionNode({
       name: 'slow',
       action: () => new Promise<NodeStatus>(r => { resolve = r; }),
     });
-    const decorated = new InverterNode({ name: 'inv', child: slow });
+    const decorated = new Inverter({ name: 'inv', child: slow });
     const ctx = createContext();
 
     await decorated.tick(ctx);
@@ -131,7 +131,7 @@ describe('decorator inflight delegation', () => {
       action: () => new Promise<NodeStatus>(r => { resolve = r; }),
     });
     const inner = new SequenceNode({ name: 'inner', children: [slow] });
-    const outer = new AlwaysSucceedNode({ name: 'outer', child: inner });
+    const outer = new AlwaysSucceed({ name: 'outer', child: inner });
     const ctx = createContext();
 
     await outer.tick(ctx);

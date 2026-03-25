@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { InverterNode } from './inverter.js';
+import { Inverter } from './inverter.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
@@ -23,25 +23,25 @@ function mockChild(status: NodeStatus): BTreeNode {
   };
 }
 
-describe('InverterNode', () => {
+describe('Inverter', () => {
   it('flips SUCCESS to FAILURE', async () => {
-    const node = new InverterNode({ name: 'inv', child: mockChild(NodeStatus.SUCCESS) });
+    const node = new Inverter({ name: 'inv', child: mockChild(NodeStatus.SUCCESS) });
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
   });
 
   it('flips FAILURE to SUCCESS', async () => {
-    const node = new InverterNode({ name: 'inv', child: mockChild(NodeStatus.FAILURE) });
+    const node = new Inverter({ name: 'inv', child: mockChild(NodeStatus.FAILURE) });
     expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
   });
 
   it('passes RUNNING through unchanged', async () => {
-    const node = new InverterNode({ name: 'inv', child: mockChild(NodeStatus.RUNNING) });
+    const node = new Inverter({ name: 'inv', child: mockChild(NodeStatus.RUNNING) });
     expect(await node.tick(createContext())).toBe(NodeStatus.RUNNING);
   });
 
   it('delegates reset to child', () => {
     const child = mockChild(NodeStatus.SUCCESS);
-    const node = new InverterNode({ name: 'inv', child });
+    const node = new Inverter({ name: 'inv', child });
     node.reset();
     expect(child.reset).toHaveBeenCalled();
   });

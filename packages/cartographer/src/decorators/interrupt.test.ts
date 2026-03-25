@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { TimeoutNode } from './timeout.js';
-import { RetryNode } from './retry.js';
-import { RepeatNode } from './repeat.js';
-import { InverterNode } from './inverter.js';
-import { GuardNode } from './guard.js';
-import { AlwaysSucceedNode } from './always-succeed.js';
-import { AlwaysFailNode } from './always-fail.js';
-import { UntilSuccessNode } from './until-success.js';
+import { Timeout } from './timeout.js';
+import { Retry } from './retry.js';
+import { Repeat } from './repeat.js';
+import { Inverter } from './inverter.js';
+import { Guard } from './guard.js';
+import { AlwaysSucceed } from './always-succeed.js';
+import { AlwaysFail } from './always-fail.js';
+import { UntilSuccess } from './until-success.js';
 import { ActionNode } from '../nodes/action.js';
 import { NodeStatus } from '../types.js';
 import type { TreeContext } from '../types.js';
@@ -25,7 +25,7 @@ function createContext(): TreeContext {
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
-describe('TimeoutNode.interrupt()', () => {
+describe('Timeout.interrupt()', () => {
   it('clears timer and start time so next activation gets fresh timeout', async () => {
     let resolveChild: (status: NodeStatus) => void;
     const child = new ActionNode({
@@ -33,7 +33,7 @@ describe('TimeoutNode.interrupt()', () => {
       action: () => new Promise<NodeStatus>((r) => { resolveChild = r; }),
     });
 
-    const timeout = new TimeoutNode({
+    const timeout = new Timeout({
       name: 'test-timeout',
       child,
       timeoutMs: 5000,
@@ -65,7 +65,7 @@ describe('TimeoutNode.interrupt()', () => {
       action: () => new Promise<NodeStatus>((r) => { resolveChild = r; }),
     });
 
-    const timeout = new TimeoutNode({
+    const timeout = new Timeout({
       name: 'test-timeout',
       child,
       timeoutMs: 10000,
@@ -83,7 +83,7 @@ describe('TimeoutNode.interrupt()', () => {
   });
 });
 
-describe('RetryNode.interrupt()', () => {
+describe('Retry.interrupt()', () => {
   it('preserves attempt count across interrupt', async () => {
     let callCount = 0;
     let resolveChild: (status: NodeStatus) => void;
@@ -97,7 +97,7 @@ describe('RetryNode.interrupt()', () => {
       },
     });
 
-    const retry = new RetryNode({
+    const retry = new Retry({
       name: 'test-retry',
       child,
       maxAttempts: 5,
@@ -127,7 +127,7 @@ describe('RetryNode.interrupt()', () => {
   });
 });
 
-describe('RepeatNode.interrupt()', () => {
+describe('Repeat.interrupt()', () => {
   it('preserves iteration count across interrupt', async () => {
     let callCount = 0;
     let resolveChild: (status: NodeStatus) => void;
@@ -141,7 +141,7 @@ describe('RepeatNode.interrupt()', () => {
       },
     });
 
-    const repeat = new RepeatNode({
+    const repeat = new Repeat({
       name: 'test-repeat',
       child,
       count: 5,
@@ -172,13 +172,13 @@ describe('RepeatNode.interrupt()', () => {
 });
 
 describe('simple decorator interrupt()', () => {
-  it('InverterNode delegates to child.interrupt()', async () => {
+  it('Inverter delegates to child.interrupt()', async () => {
     let resolveChild: (status: NodeStatus) => void;
     const child = new ActionNode({
       name: 'child',
       action: () => new Promise<NodeStatus>((r) => { resolveChild = r; }),
     });
-    const inverter = new InverterNode({ name: 'inv', child });
+    const inverter = new Inverter({ name: 'inv', child });
     const ctx = createContext();
 
     await inverter.tick(ctx);
@@ -188,13 +188,13 @@ describe('simple decorator interrupt()', () => {
     resolveChild!(NodeStatus.SUCCESS);
   });
 
-  it('GuardNode delegates to child.interrupt()', async () => {
+  it('Guard delegates to child.interrupt()', async () => {
     let resolveChild: (status: NodeStatus) => void;
     const child = new ActionNode({
       name: 'child',
       action: () => new Promise<NodeStatus>((r) => { resolveChild = r; }),
     });
-    const guard = new GuardNode({ name: 'g', child, condition: () => true });
+    const guard = new Guard({ name: 'g', child, condition: () => true });
     const ctx = createContext();
 
     await guard.tick(ctx);
@@ -206,13 +206,13 @@ describe('simple decorator interrupt()', () => {
     resolveChild!(NodeStatus.SUCCESS);
   });
 
-  it('AlwaysSucceedNode delegates to child.interrupt()', async () => {
+  it('AlwaysSucceed delegates to child.interrupt()', async () => {
     let resolveChild: (status: NodeStatus) => void;
     const child = new ActionNode({
       name: 'child',
       action: () => new Promise<NodeStatus>((r) => { resolveChild = r; }),
     });
-    const node = new AlwaysSucceedNode({ name: 'as', child });
+    const node = new AlwaysSucceed({ name: 'as', child });
     const ctx = createContext();
 
     await node.tick(ctx);
@@ -222,13 +222,13 @@ describe('simple decorator interrupt()', () => {
     resolveChild!(NodeStatus.SUCCESS);
   });
 
-  it('AlwaysFailNode delegates to child.interrupt()', async () => {
+  it('AlwaysFail delegates to child.interrupt()', async () => {
     let resolveChild: (status: NodeStatus) => void;
     const child = new ActionNode({
       name: 'child',
       action: () => new Promise<NodeStatus>((r) => { resolveChild = r; }),
     });
-    const node = new AlwaysFailNode({ name: 'af', child });
+    const node = new AlwaysFail({ name: 'af', child });
     const ctx = createContext();
 
     await node.tick(ctx);
@@ -238,13 +238,13 @@ describe('simple decorator interrupt()', () => {
     resolveChild!(NodeStatus.SUCCESS);
   });
 
-  it('UntilSuccessNode delegates to child.interrupt()', async () => {
+  it('UntilSuccess delegates to child.interrupt()', async () => {
     let resolveChild: (status: NodeStatus) => void;
     const child = new ActionNode({
       name: 'child',
       action: () => new Promise<NodeStatus>((r) => { resolveChild = r; }),
     });
-    const node = new UntilSuccessNode({ name: 'us', child });
+    const node = new UntilSuccess({ name: 'us', child });
     const ctx = createContext();
 
     await node.tick(ctx);

@@ -20,7 +20,7 @@ import { computeContentHash } from '../core/content-hash.js';
  * If neither early-exit fires, the last status returned by the child is returned
  * after all iterations complete.
  */
-export class RepeatNode extends BaseNode {
+export class Repeat extends BaseNode {
   private child: RepeatConfig['child'];
   private count?: number;
   private untilStatus?: NodeStatus;
@@ -31,7 +31,7 @@ export class RepeatNode extends BaseNode {
   }
 
   protected override computeHash(): string {
-    return computeContentHash('RepeatNode', String(this.count ?? ''), String(this.untilStatus ?? ''), this.child.contentHash());
+    return computeContentHash('Repeat', String(this.count ?? ''), String(this.untilStatus ?? ''), this.child.contentHash());
   }
 
   override serialize(): NodeState {

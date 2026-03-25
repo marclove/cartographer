@@ -6,7 +6,7 @@ import { SequenceNode } from '../composites/sequence.js';
 import { SelectorNode } from '../composites/selector.js';
 import { ParallelNode } from '../composites/parallel.js';
 import { NodeStatus } from '../types.js';
-import { InverterNode } from '../decorators/inverter.js';
+import { Inverter } from '../decorators/inverter.js';
 
 const dummyAction = new ActionNode({ name: 'DoStuff', id: 'do-stuff', action: async () => NodeStatus.SUCCESS });
 const dummyCondition = new ConditionNode({ name: 'IsReady', id: 'is-ready', condition: async () => true });
@@ -27,7 +27,7 @@ describe('getNodeType', () => {
   });
 
   it('returns decorator for decorator nodes', () => {
-    const inv = new InverterNode({ name: 'Inv', id: 'inv', child: dummyAction });
+    const inv = new Inverter({ name: 'Inv', id: 'inv', child: dummyAction });
     expect(getNodeType(inv)).toBe('decorator');
   });
 });

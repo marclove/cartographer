@@ -18,7 +18,7 @@ function createContext(): TreeContext {
 
 const flush = () => new Promise(r => setTimeout(r, 0));
 
-describe('UntilSuccessNode', () => {
+describe('UntilSuccess', () => {
   it('returns SUCCESS when child succeeds', async () => {
     const child = new ActionNode({ name: 'ok', action: async () => NodeStatus.SUCCESS });
     const node = untilSuccess(child);

@@ -24,7 +24,7 @@ import { computeContentHash } from '../core/content-hash.js';
  * checks before starting an expensive subtree, or feature-flag gates that should
  * be re-evaluated on every tick.
  */
-export class GuardNode extends BaseNode {
+export class Guard extends BaseNode {
   private child: GuardConfig['child'];
   private condition: GuardConfig['condition'];
   private cachedChildStatus: NodeStatus | null = null;
@@ -45,7 +45,7 @@ export class GuardNode extends BaseNode {
   }
 
   protected override computeHash(): string {
-    return computeContentHash('GuardNode', this.child.contentHash());
+    return computeContentHash('Guard', this.child.contentHash());
   }
 
   constructor(config: GuardConfig) {

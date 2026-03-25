@@ -626,7 +626,7 @@ const waitForDecision = untilSuccess(
 );
 ```
 
-This is distinct from `RepeatNode` with `untilStatus: NodeStatus.SUCCESS`. `RepeatNode` loops _internally_ within a single tick and never returns `RUNNING` due to child failure. `untilSuccess` returns `RUNNING` to the caller, allowing `runToCompletion()` to detect the suspension and save state.
+This is distinct from `Repeat` with `untilStatus: NodeStatus.SUCCESS`. `Repeat` loops _internally_ within a single tick and never returns `RUNNING` due to child failure. `untilSuccess` returns `RUNNING` to the caller, allowing `runToCompletion()` to detect the suspension and save state.
 
 ---
 

@@ -3,7 +3,7 @@ import { BehaviorTree } from '../core/behavior-tree.js';
 import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { SelectorNode } from '../composites/selector.js';
-import { GuardNode } from '../decorators/guard.js';
+import { Guard } from '../decorators/guard.js';
 import { emitToClient } from '../nodes/emit-to-client.js';
 import { receive } from '../nodes/receive.js';
 import { untilSuccess } from '../decorators/until-success.js';
@@ -36,7 +36,7 @@ describe('selector preemption reactive', () => {
                   new SequenceNode({
                     name: 'deploy-path',
                     children: [
-                      new GuardNode({
+                      new Guard({
                         name: 'no-errors',
                         condition: (ctx) => ctx.blackboard.get('error') == null,
                         child: new ActionNode({
@@ -50,7 +50,7 @@ describe('selector preemption reactive', () => {
                       untilSuccess(receive('confirm-provision')),
 
                       // Second guard — re-checked after confirmation
-                      new GuardNode({
+                      new Guard({
                         name: 'still-no-errors',
                         condition: (ctx) => ctx.blackboard.get('error') == null,
                         child: new ActionNode({

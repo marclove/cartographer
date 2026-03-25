@@ -22,7 +22,7 @@ import { computeContentHash } from '../core/content-hash.js';
  * requests where an occasional error is expected, or any action where a brief
  * back-off before retrying is appropriate.
  */
-export class RetryNode extends BaseNode {
+export class Retry extends BaseNode {
   private child: RetryConfig['child'];
   private maxAttempts: number;
   private delayMs?: number;
@@ -33,7 +33,7 @@ export class RetryNode extends BaseNode {
   }
 
   protected override computeHash(): string {
-    return computeContentHash('RetryNode', String(this.maxAttempts), this.child.contentHash());
+    return computeContentHash('Retry', String(this.maxAttempts), this.child.contentHash());
   }
 
   override serialize(): NodeState {

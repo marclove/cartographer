@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { AlwaysFailNode } from './always-fail.js';
+import { AlwaysFail } from './always-fail.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
@@ -23,19 +23,19 @@ function mockChild(status: NodeStatus): BTreeNode {
   };
 }
 
-describe('AlwaysFailNode', () => {
+describe('AlwaysFail', () => {
   it('returns FAILURE when child succeeds', async () => {
-    const node = new AlwaysFailNode({ name: 'af', child: mockChild(NodeStatus.SUCCESS) });
+    const node = new AlwaysFail({ name: 'af', child: mockChild(NodeStatus.SUCCESS) });
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
   });
 
   it('returns FAILURE when child fails', async () => {
-    const node = new AlwaysFailNode({ name: 'af', child: mockChild(NodeStatus.FAILURE) });
+    const node = new AlwaysFail({ name: 'af', child: mockChild(NodeStatus.FAILURE) });
     expect(await node.tick(createContext())).toBe(NodeStatus.FAILURE);
   });
 
   it('returns RUNNING when child returns RUNNING', async () => {
-    const node = new AlwaysFailNode({ name: 'af', child: mockChild(NodeStatus.RUNNING) });
+    const node = new AlwaysFail({ name: 'af', child: mockChild(NodeStatus.RUNNING) });
     expect(await node.tick(createContext())).toBe(NodeStatus.RUNNING);
   });
 });

@@ -5,8 +5,8 @@ import { ConditionNode } from '../nodes/condition.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { SelectorNode } from '../composites/selector.js';
 import { ParallelNode } from '../composites/parallel.js';
-import { RetryNode } from '../decorators/retry.js';
-import { TimeoutNode } from '../decorators/timeout.js';
+import { Retry } from '../decorators/retry.js';
+import { Timeout } from '../decorators/timeout.js';
 import { TreeBuilder } from '../builder/tree-builder.js';
 import { TreeScheduler } from '../scheduler/tree-scheduler.js';
 import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
@@ -38,13 +38,13 @@ describe('Deterministic Integration Tests', () => {
       },
     });
 
-    const timeout = new TimeoutNode({
+    const timeout = new Timeout({
       name: 'timeout-wrapper',
       child: unreliable,
       timeoutMs: 100,
     });
 
-    const retry = new RetryNode({
+    const retry = new Retry({
       name: 'retry-wrapper',
       child: timeout,
       maxAttempts: 3,

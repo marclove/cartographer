@@ -14,7 +14,7 @@ import { computeContentHash } from '../core/content-hash.js';
  * continues even if the step fails), or suppressing expected errors from cleanup
  * actions that may or may not have work to do.
  */
-export class AlwaysSucceedNode extends BaseNode {
+export class AlwaysSucceed extends BaseNode {
   private child: DecoratorConfig['child'];
 
   override get children(): readonly BTreeNode[] {
@@ -33,7 +33,7 @@ export class AlwaysSucceedNode extends BaseNode {
   }
 
   protected override computeHash(): string {
-    return computeContentHash('AlwaysSucceedNode', this.child.contentHash());
+    return computeContentHash('AlwaysSucceed', this.child.contentHash());
   }
 
   reset(): void { this.child.reset(); }

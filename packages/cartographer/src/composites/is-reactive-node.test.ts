@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { isReactiveNode } from './is-reactive-node.js';
 import { ConditionNode } from '../nodes/condition.js';
 import { ActionNode } from '../nodes/action.js';
-import { InverterNode } from '../decorators/inverter.js';
-import { AlwaysSucceedNode } from '../decorators/always-succeed.js';
-import { GuardNode } from '../decorators/guard.js';
+import { Inverter } from '../decorators/inverter.js';
+import { AlwaysSucceed } from '../decorators/always-succeed.js';
+import { Guard } from '../decorators/guard.js';
 import { SequenceNode } from './sequence.js';
 import { SelectorNode } from './selector.js';
 import { NodeStatus } from '../types.js';
@@ -35,29 +35,29 @@ describe('isReactiveNode', () => {
   });
 
   it('returns true for Inverter wrapping a ConditionNode', () => {
-    const inv = new InverterNode({ name: 'inv', child: cond });
+    const inv = new Inverter({ name: 'inv', child: cond });
     expect(isReactiveNode(inv)).toBe(true);
   });
 
   it('returns false for Inverter wrapping an ActionNode', () => {
-    const inv = new InverterNode({ name: 'inv', child: action });
+    const inv = new Inverter({ name: 'inv', child: action });
     expect(isReactiveNode(inv)).toBe(false);
   });
 
   it('returns true for nested decorators with ConditionNode at leaf', () => {
-    const inner = new InverterNode({ name: 'inv', child: cond });
-    const outer = new AlwaysSucceedNode({ name: 'as', child: inner });
+    const inner = new Inverter({ name: 'inv', child: cond });
+    const outer = new AlwaysSucceed({ name: 'as', child: inner });
     expect(isReactiveNode(outer)).toBe(true);
   });
 
   it('returns false for nested decorators with ActionNode at leaf', () => {
-    const inner = new InverterNode({ name: 'inv', child: action });
-    const outer = new AlwaysSucceedNode({ name: 'as', child: inner });
+    const inner = new Inverter({ name: 'inv', child: action });
+    const outer = new AlwaysSucceed({ name: 'as', child: inner });
     expect(isReactiveNode(outer)).toBe(false);
   });
 
-  it('returns true for GuardNode wrapping a ConditionNode', () => {
-    const guard = new GuardNode({
+  it('returns true for Guard wrapping a ConditionNode', () => {
+    const guard = new Guard({
       name: 'guard',
       child: cond,
       condition: () => true,
@@ -65,8 +65,8 @@ describe('isReactiveNode', () => {
     expect(isReactiveNode(guard)).toBe(true);
   });
 
-  it('returns true for GuardNode wrapping an ActionNode (guard has its own condition)', () => {
-    const guard = new GuardNode({
+  it('returns true for Guard wrapping an ActionNode (guard has its own condition)', () => {
+    const guard = new Guard({
       name: 'guard',
       child: action,
       condition: () => true,
@@ -74,13 +74,13 @@ describe('isReactiveNode', () => {
     expect(isReactiveNode(guard)).toBe(true);
   });
 
-  it('returns true for decorator wrapping a GuardNode', () => {
-    const guard = new GuardNode({
+  it('returns true for decorator wrapping a Guard', () => {
+    const guard = new Guard({
       name: 'guard',
       child: action,
       condition: () => true,
     });
-    const wrapper = new AlwaysSucceedNode({ name: 'as', child: guard });
+    const wrapper = new AlwaysSucceed({ name: 'as', child: guard });
     expect(isReactiveNode(wrapper)).toBe(true);
   });
 });

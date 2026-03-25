@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { AlwaysSucceedNode } from './always-succeed.js';
+import { AlwaysSucceed } from './always-succeed.js';
 import { NodeStatus } from '../types.js';
 import type { BTreeNode, TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
@@ -23,19 +23,19 @@ function mockChild(status: NodeStatus): BTreeNode {
   };
 }
 
-describe('AlwaysSucceedNode', () => {
+describe('AlwaysSucceed', () => {
   it('returns SUCCESS when child succeeds', async () => {
-    const node = new AlwaysSucceedNode({ name: 'as', child: mockChild(NodeStatus.SUCCESS) });
+    const node = new AlwaysSucceed({ name: 'as', child: mockChild(NodeStatus.SUCCESS) });
     expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
   });
 
   it('returns SUCCESS when child fails', async () => {
-    const node = new AlwaysSucceedNode({ name: 'as', child: mockChild(NodeStatus.FAILURE) });
+    const node = new AlwaysSucceed({ name: 'as', child: mockChild(NodeStatus.FAILURE) });
     expect(await node.tick(createContext())).toBe(NodeStatus.SUCCESS);
   });
 
   it('returns RUNNING when child returns RUNNING', async () => {
-    const node = new AlwaysSucceedNode({ name: 'as', child: mockChild(NodeStatus.RUNNING) });
+    const node = new AlwaysSucceed({ name: 'as', child: mockChild(NodeStatus.RUNNING) });
     expect(await node.tick(createContext())).toBe(NodeStatus.RUNNING);
   });
 });
