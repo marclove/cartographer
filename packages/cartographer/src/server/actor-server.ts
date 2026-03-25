@@ -236,50 +236,45 @@ export class ActorServer {
    * Returns null only if the queue is full.
    */
   async processMessage(msg: ActorMessage): Promise<ProcessResult | QueuedResult | null> {
-    const requestId = generateRequestId();
-
-    const acquired = await this.stateStore.acquireLock(ActorServer.STATE_KEY, requestId, 30000);
-    if (!acquired) {
-      const bridge = this.createBridge(msg.id);
-      msg.id = bridge.messageId;
-      try {
-        const { position } = await this.stateStore.enqueueMessage(ActorServer.STATE_KEY, msg, this.maxQueueDepth);
-        await bridge.emitQueued(position);
-        return { queued: true, messageId: bridge.messageId, position };
-      } catch {
-        return null;
-      }
-    }
-
-    const bridge = this.createBridge(msg.id);
-    msg.id = bridge.messageId;
-
-    return this.executeMessage(msg, requestId, bridge);
+    const prep = await this.acquireOrQueue(msg, msg.id);
+    if (prep.queued) return prep.queueFull ? null : { queued: true, messageId: prep.bridge.messageId, position: prep.position };
+    return this.executeMessage(msg, prep.requestId, prep.bridge);
   }
 
   private async processAsync(msg: ActorMessage, res: ServerResponse, clientMessageId?: string): Promise<void> {
-    const requestId = generateRequestId();
-
-    const acquired = await this.stateStore.acquireLock(ActorServer.STATE_KEY, requestId, 30000);
-    if (!acquired) {
-      // Lock held — try to queue
-      const bridge = this.createBridge(clientMessageId);
-      msg.id = bridge.messageId;
-      try {
-        const { position } = await this.stateStore.enqueueMessage(ActorServer.STATE_KEY, msg, this.maxQueueDepth);
-        await bridge.emitQueued(position);
-        return jsonResponse(res, 202, { id: bridge.messageId, status: 'queued', position });
-      } catch {
-        return jsonError(res, 429, 'Queue full');
-      }
+    const prep = await this.acquireOrQueue(msg, clientMessageId);
+    if (prep.queued) {
+      return prep.queueFull
+        ? jsonError(res, 429, 'Queue full')
+        : jsonResponse(res, 202, { id: prep.bridge.messageId, status: 'queued', position: prep.position });
     }
+    jsonResponse(res, 202, { id: prep.bridge.messageId, status: 'processing' });
+    this.executeMessage(msg, prep.requestId, prep.bridge).catch(() => {});
+  }
 
-    const bridge = this.createBridge(clientMessageId);
+  private async acquireOrQueue(
+    msg: ActorMessage,
+    messageId?: string,
+  ): Promise<
+    | { queued: false; requestId: string; bridge: EventBridge }
+    | { queued: true; bridge: EventBridge; position: number; queueFull: false }
+    | { queued: true; bridge: EventBridge; position: number; queueFull: true }
+  > {
+    const requestId = generateRequestId();
+    const acquired = await this.stateStore.acquireLock(ActorServer.STATE_KEY, requestId, 30000);
+
+    const bridge = this.createBridge(messageId);
     msg.id = bridge.messageId;
 
-    // Respond immediately, process in background
-    jsonResponse(res, 202, { id: bridge.messageId, status: 'processing' });
-    this.executeMessage(msg, requestId, bridge).catch(() => {});
+    if (acquired) return { queued: false, requestId, bridge };
+
+    try {
+      const { position } = await this.stateStore.enqueueMessage(ActorServer.STATE_KEY, msg, this.maxQueueDepth);
+      await bridge.emitQueued(position);
+      return { queued: true, bridge, position, queueFull: false };
+    } catch {
+      return { queued: true, bridge, position: -1, queueFull: true };
+    }
   }
 
   private async executeMessage(
