@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { serve } from '@hono/node-server';
+import type { Server } from 'node:http';
 import { createCartographerApp } from './app.js';
 import type { CartographerHandle } from './app.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
@@ -126,5 +128,97 @@ describe('createCartographerApp — read-only routes', () => {
       const body = await res.json();
       expect(body.error).toBeDefined();
     });
+  });
+});
+
+// ---------- SSE helpers ----------
+
+function parseSseEvents(text: string): Array<{ id?: string; event?: string; data?: string }> {
+  return text
+    .split('\n\n')
+    .filter((block) => block.trim())
+    .map((block) => {
+      const event: Record<string, string> = {};
+      for (const line of block.split('\n')) {
+        const colonIdx = line.indexOf(':');
+        if (colonIdx > 0) {
+          const key = line.slice(0, colonIdx).trim();
+          const value = line.slice(colonIdx + 1).trim();
+          event[key] = value;
+        }
+      }
+      return event;
+    });
+}
+
+async function readSseEvents(
+  response: Response,
+  count: number,
+  timeoutMs = 3000,
+): Promise<Array<{ id?: string; event?: string; data?: string }>> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  const events: Array<{ id?: string; event?: string; data?: string }> = [];
+  let buffer = '';
+
+  const timeout = AbortSignal.timeout(timeoutMs);
+  const onAbort = () => reader.cancel();
+  timeout.addEventListener('abort', onAbort);
+
+  try {
+    while (events.length < count) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop()!;
+      for (const part of parts) {
+        if (part.trim()) {
+          events.push(...parseSseEvents(part + '\n\n'));
+        }
+      }
+    }
+  } catch {
+    // timeout or cancel
+  } finally {
+    timeout.removeEventListener('abort', onAbort);
+    await reader.cancel();
+  }
+  return events;
+}
+
+// ---------- SSE streaming tests ----------
+
+describe('createCartographerApp — SSE streaming', () => {
+  let handle: CartographerHandle;
+  let server: Server;
+  let port: number;
+
+  beforeEach(async () => {
+    handle = createCartographerApp({ createTree: makeTree });
+    await handle.initializeState();
+    await new Promise<void>((resolve) => {
+      server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
+        port = info.port;
+        resolve();
+      });
+    });
+  });
+
+  afterEach(async () => {
+    handle.closeSseClients();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it('sends snapshot as first event', async () => {
+    const res = await fetch(`http://localhost:${port}/events`);
+    const events = await readSseEvents(res, 1);
+
+    expect(events.length).toBeGreaterThanOrEqual(1);
+    expect(events[0].event).toBe('snapshot');
+    const data = JSON.parse(events[0].data!);
+    expect(data.tree).toBeDefined();
+    expect(data.blackboard).toBeDefined();
+    expect(data.stats).toBeDefined();
   });
 });

@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
+import type { SSEStreamingApi } from 'hono/streaming';
 import type { BehaviorTree } from '../core/behavior-tree.js';
 import type { StateStore } from '../state/state-store.js';
 import type { ActorMessage } from '../actor/types.js';
@@ -60,6 +62,23 @@ export function createCartographerApp(options: CartographerAppOptions): Cartogra
   const context = options.context ?? {};
   const eventStream = new InProcessEventStream(500);
   const stats: StatusState = { tickCount: 0, cycleCount: 0, lastStatus: null, lastDurationMs: null, startedAt: 0 };
+  const sseClients = new Set<SSEStreamingApi>();
+
+  function forwardEvent(event: { type: string; data: Record<string, unknown> }): void {
+    trackEvent(event);
+    eventStream.push(event.type, event.data);
+  }
+
+  function trackEvent(event: { type: string; data: Record<string, unknown> }): void {
+    if (event.type === 'tree:tick') {
+      stats.tickCount++;
+      stats.lastStatus = event.data.status as string;
+      stats.lastDurationMs = event.data.durationMs as number;
+      if (event.data.status !== 'running') {
+        stats.cycleCount++;
+      }
+    }
+  }
 
   let _readTree: BehaviorTree | null = null;
   function readTree(): BehaviorTree {
@@ -122,6 +141,71 @@ export function createCartographerApp(options: CartographerAppOptions): Cartogra
     return c.json(detail);
   });
 
+  // SSE streaming
+  app.get('/events', async (c) => {
+    const tree = readTree();
+    const state = await stateStore.getState(STATE_KEY);
+    const snapshot = {
+      tree: serializeTree(tree.root),
+      blackboard: state?.blackboard ?? {},
+      stats: { ...stats, asOfEventId: eventStream.latestId },
+    };
+
+    return streamSSE(c, async (stream) => {
+      // 1. Send snapshot
+      await stream.writeSSE({
+        event: 'snapshot',
+        data: JSON.stringify(snapshot),
+        id: '0',
+      });
+
+      // 2. Replay missed events
+      const lastId = c.req.header('Last-Event-ID');
+      const sinceId = lastId ?? '0'; // always replay on connect for cartographer
+      const missed = eventStream.replaySince(sinceId);
+      if (missed === null) {
+        // Buffer gap — resend snapshot
+        await stream.writeSSE({
+          event: 'snapshot',
+          data: JSON.stringify(snapshot),
+          id: '0',
+        });
+      } else {
+        for (const entry of missed) {
+          await stream.writeSSE({
+            event: entry.event,
+            data: JSON.stringify(entry.data),
+            id: entry.id,
+          });
+        }
+      }
+
+      // 3. Subscribe to live events via serial write queue
+      let writePromise = Promise.resolve();
+      const unsubscribe = eventStream.subscribe((entry) => {
+        writePromise = writePromise
+          .then(() =>
+            stream.writeSSE({
+              event: entry.event,
+              data: JSON.stringify(entry.data),
+              id: entry.id,
+            }),
+          )
+          .catch(() => {});
+      });
+
+      // 4. Keep alive until client disconnects
+      stream.onAbort(() => {
+        unsubscribe();
+        sseClients.delete(stream);
+      });
+      sseClients.add(stream);
+
+      // Block until aborted
+      await new Promise(() => {});
+    });
+  });
+
   // Lifecycle
   async function initializeState() {
     stats.startedAt = Date.now();
@@ -155,7 +239,10 @@ export function createCartographerApp(options: CartographerAppOptions): Cartogra
     // Implemented in task 106
   }
   function closeSseClients(): void {
-    // Implemented in task 107
+    for (const client of sseClients) {
+      client.close();
+    }
+    sseClients.clear();
   }
 
   return { app, processMessage, bridgeTree, initializeState, drainQueue, closeSseClients };
