@@ -41,6 +41,7 @@ function createMockStore() {
     deleteState: async () => {},
     listKeys: async () => [],
     acquireLock: async () => true,
+    renewLock: async () => true,
     releaseLock: async () => {},
     appendEvents: async () => {},
     readEvents(_key: string, fromId?: string): AsyncIterable<TreeEvent> {

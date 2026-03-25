@@ -122,6 +122,25 @@ describe('RedisStateStore', () => {
         'req-1',
       );
     });
+
+    it('renewLock returns true when holder matches', async () => {
+      redis.eval.mockResolvedValue(1);
+      const renewed = await store.renewLock('sess1', 'req-1', 30000);
+      expect(renewed).toBe(true);
+      expect(redis.eval).toHaveBeenCalledWith(
+        expect.stringContaining('pexpire'),
+        1,
+        'cartographer:lock:sess1',
+        'req-1',
+        30000,
+      );
+    });
+
+    it('renewLock returns false when holder does not match', async () => {
+      redis.eval.mockResolvedValue(0);
+      const renewed = await store.renewLock('sess1', 'req-2', 30000);
+      expect(renewed).toBe(false);
+    });
   });
 
   describe('events', () => {

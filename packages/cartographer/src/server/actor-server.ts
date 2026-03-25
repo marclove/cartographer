@@ -414,7 +414,7 @@ export class ActorServer {
     bridge: EventBridge,
   ): Promise<ProcessResult> {
     const heartbeat = setInterval(async () => {
-      try { await this.stateStore.acquireLock(ActorServer.STATE_KEY, requestId, 30000); } catch {}
+      try { await this.stateStore.renewLock(ActorServer.STATE_KEY, requestId, 30000); } catch {}
     }, 10000);
 
     try {

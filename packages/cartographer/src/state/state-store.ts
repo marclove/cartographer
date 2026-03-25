@@ -28,6 +28,7 @@ export interface StateStore {
   listKeys(): Promise<string[]>;
 
   acquireLock(key: string, requestId: string, ttlMs: number): Promise<boolean>;
+  renewLock(key: string, requestId: string, ttlMs: number): Promise<boolean>;
   releaseLock(key: string, requestId: string): Promise<void>;
 
   appendEvents(key: string, events: TreeEvent[]): Promise<void>;

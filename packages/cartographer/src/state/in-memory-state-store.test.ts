@@ -61,6 +61,23 @@ describe('InMemoryStateStore', () => {
       expect(await store.acquireLock('key', 'req2', 30000)).toBe(true);
     });
 
+    it('renews lock when held by same requestId', async () => {
+      const store = new InMemoryStateStore();
+      await store.acquireLock('key', 'req1', 30000);
+      expect(await store.renewLock('key', 'req1', 30000)).toBe(true);
+    });
+
+    it('rejects renewal when held by different requestId', async () => {
+      const store = new InMemoryStateStore();
+      await store.acquireLock('key', 'req1', 30000);
+      expect(await store.renewLock('key', 'req2', 30000)).toBe(false);
+    });
+
+    it('rejects renewal when no lock exists', async () => {
+      const store = new InMemoryStateStore();
+      expect(await store.renewLock('key', 'req1', 30000)).toBe(false);
+    });
+
     it('does not release lock with wrong requestId', async () => {
       const store = new InMemoryStateStore();
       await store.acquireLock('key', 'req1', 30000);

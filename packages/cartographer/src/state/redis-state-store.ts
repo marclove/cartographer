@@ -69,6 +69,18 @@ export class RedisStateStore implements StateStore {
     return result === 'OK';
   }
 
+  async renewLock(key: string, requestId: string, ttlMs: number): Promise<boolean> {
+    const script = `
+      if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("pexpire", KEYS[1], ARGV[2])
+      else
+        return 0
+      end
+    `;
+    const result = await this.redis.eval(script, 1, this.lockKey(key), requestId, ttlMs);
+    return result === 1;
+  }
+
   async releaseLock(key: string, requestId: string): Promise<void> {
     const script = `
       if redis.call("get", KEYS[1]) == ARGV[1] then

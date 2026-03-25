@@ -41,6 +41,10 @@ export class InMemoryStateStore implements StateStore {
     return true;
   }
 
+  async renewLock(key: string, requestId: string, _ttlMs: number): Promise<boolean> {
+    return this.locks.get(key) === requestId;
+  }
+
   async releaseLock(key: string, requestId: string): Promise<void> {
     if (this.locks.get(key) === requestId) {
       this.locks.delete(key);
