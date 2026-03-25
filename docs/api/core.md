@@ -36,7 +36,7 @@ import { BehaviorTree } from "cartographer";
 | `root`          | `BTreeNode`     | Yes      | Root node                                                                                                                                                                                                                        |
 | `blackboard`    | `Blackboard`    | No       | Defaults to `new InMemoryBlackboard()`                                                                                                                                                                                           |
 | `onElicitation` | `OnElicitation` | No       | Default elicitation handler for all `AgentNode` descendants. When set, the root node's context overrides are updated so the handler is inherited throughout the tree. See [Elicitation](../guide-agent-integration.md#elicitation). |
-| `sessionRegistry` | `SessionRegistry` | No    | Pre-built session registry. When omitted, an empty one is created. Used by `TreeActor` to restore sessions from persisted state. |
+| `sessionRegistry` | `SessionRegistry` | No    | Pre-built session registry. When omitted, an empty one is created. Used by `MessageProcessor` to restore sessions from persisted state. |
 
 ### Properties
 

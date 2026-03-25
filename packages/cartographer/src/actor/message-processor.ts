@@ -4,12 +4,12 @@ import { serializeTree, restoreTree } from '../core/serialization.js';
 import type { StateStore } from '../state/state-store.js';
 import type { ActorMessage } from './types.js';
 import type { EventBridge } from '../server/event-bridge.js';
-import { blackboardToRecord } from '../server/sse-handler.js';
+import { blackboardToRecord } from '../server/blackboard-utils.js';
 
 /**
- * Configuration for creating a {@link TreeActor}.
+ * Configuration for creating a {@link MessageProcessor}.
  */
-export interface TreeActorOptions {
+export interface MessageProcessorOptions {
   /** Factory function that creates a fresh {@link BehaviorTree} instance for each message. */
   createTree: () => BehaviorTree;
   /** Persistent store used to load and save tree session state between messages. */
@@ -29,7 +29,7 @@ export interface TreeActorOptions {
 }
 
 /**
- * The outcome of processing a single {@link ActorMessage} through a {@link TreeActor}.
+ * The outcome of processing a single {@link ActorMessage} through a {@link MessageProcessor}.
  */
 export interface ProcessResult {
   /**
@@ -42,7 +42,7 @@ export interface ProcessResult {
   treeStatus: NodeStatus | 'error';
   /** Human-readable error or signal description when `treeStatus` is `'error'`. */
   error?: string;
-  /** `true` when processing was cut short by a call to {@link TreeActor.requestInterrupt}. */
+  /** `true` when processing was cut short by a call to {@link MessageProcessor.requestInterrupt}. */
   interrupted?: boolean;
   /** `true` when the tree is held (paused after interrupt) and a tick message was skipped. */
   held?: boolean;
@@ -51,7 +51,7 @@ export interface ProcessResult {
 /**
  * Transient per-message processor for a behavior tree session.
  *
- * A `TreeActor` is created for each incoming request and handles exactly one
+ * A `MessageProcessor` is created for each incoming request and handles exactly one
  * {@link ActorMessage}. It encapsulates the full processing pipeline:
  *
  * 1. **Load** — retrieve persisted session state from the {@link StateStore}.
@@ -66,7 +66,7 @@ export interface ProcessResult {
  *
  * @example
  * ```ts
- * const actor = new TreeActor({
+ * const actor = new MessageProcessor({
  *   createTree: () => buildMyTree(),
  *   stateStore: myRedisStore,
  *   stateKey: 'session:abc123',
@@ -76,7 +76,7 @@ export interface ProcessResult {
  * console.log(result.treeStatus); // 'SUCCESS', 'FAILURE', or 'RUNNING'
  * ```
  */
-export class TreeActor {
+export class MessageProcessor {
   private createTree: () => BehaviorTree;
   private stateStore: StateStore;
   private stateKey: string;
@@ -85,11 +85,11 @@ export class TreeActor {
   private interruptController: AbortController | null = null;
 
   /**
-   * Create a new `TreeActor`.
+   * Create a new `MessageProcessor`.
    *
-   * @param options - Configuration for this actor. See {@link TreeActorOptions}.
+   * @param options - Configuration for this actor. See {@link MessageProcessorOptions}.
    */
-  constructor(options: TreeActorOptions) {
+  constructor(options: MessageProcessorOptions) {
     this.createTree = options.createTree;
     this.stateStore = options.stateStore;
     this.stateKey = options.stateKey;

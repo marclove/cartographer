@@ -120,13 +120,13 @@ export type { TreeLoggerOptions } from './tree-logger.js';
 export type { RunContext, TreeRunConfig } from './cli/types.js';
 
 // Server
-export { TreeServer } from './server/tree-server.js';
-export type { TreeServerOptions } from './server/tree-server.js';
+export { ObserverServer } from './server/observer-server.js';
+export type { ObserverServerOptions } from './server/observer-server.js';
 export type { SerializedNodeRef, SerializedTreeNode } from './server/serializers.js';
 
-// Actor
-export { TreeActor } from './actor/tree-actor.js';
-export type { TreeActorOptions, ProcessResult } from './actor/tree-actor.js';
+// Message processor
+export { MessageProcessor } from './actor/message-processor.js';
+export type { MessageProcessorOptions, ProcessResult } from './actor/message-processor.js';
 export type { ActorMessage, TickMessage, CommandMessage, WriteMessage, SignalMessage, MessageInterruptedEvent, MessageProcessedEvent, MessageFailedEvent, MessageQueuedEvent, MessageDequeuedEvent } from './actor/types.js';
 export { generateMessageId } from './actor/types.js';
 
@@ -140,6 +140,12 @@ export type { RedisStateStoreOptions } from './state/redis-state-store.js';
 export { ActorServer } from './server/actor-server.js';
 export type { ActorServerOptions } from './server/actor-server.js';
 export { EventBridge } from './server/event-bridge.js';
+
+// Hono apps
+export { createApp } from './server/app.js';
+export type { AppOptions, AppHandle, QueuedResult } from './server/app.js';
+export { createObserverApp } from './server/observer-app.js';
+export type { ObserverAppOptions, ObserverHandle } from './server/observer-app.js';
 
 
 // New nodes

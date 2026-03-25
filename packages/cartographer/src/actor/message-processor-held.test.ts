@@ -4,7 +4,7 @@ import { ActionNode } from '../nodes/action.js';
 import { NodeStatus } from '../types.js';
 import { InMemoryStateStore } from '../state/in-memory-state-store.js';
 import { serializeTree } from '../core/serialization.js';
-import { TreeActor } from './tree-actor.js';
+import { MessageProcessor } from './message-processor.js';
 
 function createSimpleTree() {
   return () => {
@@ -33,13 +33,13 @@ async function seedHeldState(store: InMemoryStateStore, createTree: () => Behavi
   });
 }
 
-describe('TreeActor held state', () => {
+describe('MessageProcessor held state', () => {
   it('tick message is a no-op when held', async () => {
     const createTree = createSimpleTree();
     const store = new InMemoryStateStore();
     await seedHeldState(store, createTree);
 
-    const actor = new TreeActor({
+    const actor = new MessageProcessor({
       createTree,
       stateStore: store,
       stateKey: 'default',
@@ -60,7 +60,7 @@ describe('TreeActor held state', () => {
     const store = new InMemoryStateStore();
     await seedHeldState(store, createTree);
 
-    const actor = new TreeActor({
+    const actor = new MessageProcessor({
       createTree,
       stateStore: store,
       stateKey: 'default',
@@ -84,7 +84,7 @@ describe('TreeActor held state', () => {
     const store = new InMemoryStateStore();
     await seedHeldState(store, createTree);
 
-    const actor = new TreeActor({
+    const actor = new MessageProcessor({
       createTree,
       stateStore: store,
       stateKey: 'default',
@@ -108,7 +108,7 @@ describe('TreeActor held state', () => {
     const store = new InMemoryStateStore();
     await seedHeldState(store, createTree);
 
-    const actor = new TreeActor({
+    const actor = new MessageProcessor({
       createTree,
       stateStore: store,
       stateKey: 'default',
@@ -131,7 +131,7 @@ describe('TreeActor held state', () => {
     const createTree = createSimpleTree();
     const store = new InMemoryStateStore();
 
-    const actor = new TreeActor({
+    const actor = new MessageProcessor({
       createTree,
       stateStore: store,
       stateKey: 'default',

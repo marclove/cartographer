@@ -33,7 +33,7 @@ Contract for state persistence, locking, and event streaming. Two implementation
 import type { TreeSessionState } from "cartographer";
 ```
 
-Persisted snapshot of a tree's session, saved and restored by `TreeActor`.
+Persisted snapshot of a tree's session, saved and restored by `MessageProcessor`.
 
 | Field           | Type                      | Description                                                               |
 | --------------- | ------------------------- | ------------------------------------------------------------------------- |
@@ -97,8 +97,8 @@ import { InMemoryStateStore } from "cartographer";
 
 const store = new InMemoryStateStore({ maxEvents: 500 });
 
-// Use with TreeActor
-const actor = new TreeActor({
+// Use with MessageProcessor
+const processor = new MessageProcessor({
   stateStore: store,
   // ...
 });
@@ -166,8 +166,8 @@ const store = new RedisStateStore({
   maxEvents: 5000,
 });
 
-// Use with TreeActor
-const actor = new TreeActor({
+// Use with MessageProcessor
+const processor = new MessageProcessor({
   stateStore: store,
   // ...
 });

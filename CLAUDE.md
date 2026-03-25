@@ -63,7 +63,7 @@ Every node implements `tick(context: TreeContext) → Promise<NodeStatus>` retur
 ### Higher-Level Constructs
 
 - **TreeScheduler** (`src/scheduler/`) — Interval/cron scheduling with lifecycle hooks
-- **TreeActor** (`src/actor/`) — Message-driven processor with state serialization for persistent sessions
+- **MessageProcessor** (`src/actor/`) — Message-driven processor with state serialization for persistent sessions
 - **ActorServer** (`src/server/`) — HTTP server with SSE event streaming, REST API, state persistence via StateStore
 - **StateStore** (`src/state/`) — Abstract persistence interface with InMemoryStateStore and RedisStateStore implementations
 

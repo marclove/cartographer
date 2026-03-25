@@ -4,7 +4,7 @@ import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { NodeStatus } from '../types.js';
 import { InMemoryStateStore } from '../state/in-memory-state-store.js';
-import { TreeActor } from './tree-actor.js';
+import { MessageProcessor } from './message-processor.js';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
@@ -26,11 +26,11 @@ function createSlowTree(opts?: { onAction?: () => void }) {
   return { createTree, getResolver };
 }
 
-describe('TreeActor interrupt', () => {
+describe('MessageProcessor interrupt', () => {
   it('requestInterrupt() causes runToCompletion to exit with RUNNING', async () => {
     const { createTree } = createSlowTree();
     const store = new InMemoryStateStore();
-    const actor = new TreeActor({
+    const actor = new MessageProcessor({
       createTree,
       stateStore: store,
       stateKey: 'default',
@@ -58,7 +58,7 @@ describe('TreeActor interrupt', () => {
   it('requestInterrupt() is a no-op when not processing', () => {
     const { createTree } = createSlowTree();
     const store = new InMemoryStateStore();
-    const actor = new TreeActor({
+    const actor = new MessageProcessor({
       createTree,
       stateStore: store,
       stateKey: 'default',
@@ -88,7 +88,7 @@ describe('TreeActor interrupt', () => {
     };
 
     const store = new InMemoryStateStore();
-    const actor = new TreeActor({
+    const actor = new MessageProcessor({
       createTree,
       stateStore: store,
       stateKey: 'default',

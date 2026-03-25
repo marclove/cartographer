@@ -1,14 +1,14 @@
 # Actor API Reference
 
-## TreeActor
+## MessageProcessor
 
 Transient per-message processor. Created per request, processes one message, discarded.
 
 ```typescript
-import { TreeActor } from "cartographer";
+import { MessageProcessor } from "cartographer";
 ```
 
-### TreeActorOptions
+### MessageProcessorOptions
 
 | Field            | Type                 | Default    | Description                                                        |
 | ---------------- | -------------------- | ---------- | ------------------------------------------------------------------ |
@@ -16,6 +16,7 @@ import { TreeActor } from "cartographer";
 | `stateStore`     | `StateStore`         | (required) | Backing store for state persistence.                               |
 | `stateKey`       | `string`             | (required) | Key under which session state is stored.                           |
 | `topologyPolicy` | `'fail' \| 'reset'`  | `'fail'`   | What to do when stored root hash doesn't match the factory's tree. |
+| `eventBridge`    | `EventBridge`        | —          | Optional bridge for streaming tree events to connected clients.    |
 
 ### Methods
 
@@ -40,7 +41,7 @@ Signals the in-progress processing loop to interrupt. Safe to call at any time. 
 
 ## ActorServer
 
-HTTP server wrapping TreeActor with REST and SSE endpoints.
+HTTP server wrapping MessageProcessor with REST and SSE endpoints. A thin wrapper over `createApp()`.
 
 ```typescript
 import { ActorServer } from "cartographer";
@@ -48,14 +49,69 @@ import { ActorServer } from "cartographer";
 
 ### ActorServerOptions
 
-| Field            | Type                      | Default              | Description                                      |
-| ---------------- | ------------------------- | -------------------- | ------------------------------------------------ |
-| `createTree`     | `() => BehaviorTree`      | (required)           | Tree factory function.                           |
-| `stateStore`     | `StateStore`              | `InMemoryStateStore` | Backing store.                                   |
-| `port`           | `number`                  | `PORT` env or `3148` | Listen port.                                     |
-| `context`        | `Record<string, unknown>` | `{}`                 | Injected into blackboard as `context:*` on init. |
-| `topologyPolicy` | `'fail' \| 'reset'`       | `'fail'`             | Topology mismatch handling.                      |
-| `maxQueueDepth`  | `number`                  | `CARTOGRAPHER_MAX_QUEUE_DEPTH` env or `16` | Maximum number of messages that can wait in the queue while the server is processing. Returns `429` when full. |
+`ActorServerOptions` extends `AppOptions` with one additional field:
+
+| Field  | Type     | Default              | Description  |
+| ------ | -------- | -------------------- | ------------ |
+| `port` | `number` | `PORT` env or `3148` | Listen port. |
+
+See [AppOptions](#appoptions) for the remaining fields (`createTree`, `stateStore`, `context`, `topologyPolicy`, `maxQueueDepth`).
+
+### Properties
+
+| Property         | Type                 | Description                                              |
+| ---------------- | -------------------- | -------------------------------------------------------- |
+| `app`            | `Hono`               | Underlying Hono application. Mountable via `app.fetch`.  |
+| `stateStore`     | `StateStore`         | Persistence backend for state, locks, events, and queue. |
+| `topologyPolicy` | `'fail' \| 'reset'`  | How topology changes between ticks are handled.          |
+| `maxQueueDepth`  | `number`             | Maximum queued messages while processing.                |
+
+### Methods
+
+#### `start(): Promise<{ port: number }>`
+
+Initializes state and starts the HTTP server. Returns the actual listening port.
+
+#### `stop(): Promise<void>`
+
+Gracefully shuts down the server.
+
+#### `processMessage(msg: ActorMessage): Promise<ProcessResult | QueuedResult | null>`
+
+Processes a message programmatically without going through the REST API. Returns `null` if the queue is full.
+
+#### `bridgeTree(tree: BehaviorTree): void`
+
+Subscribes to a tree's events and forwards them through the SSE pipeline. Use this when an external tree (e.g., driven by `TreeScheduler`) should stream events to connected SSE clients.
+
+---
+
+## ObserverServer
+
+Read-only HTTP server for observing a live behavior tree. No state persistence, no message queue, no write endpoints.
+
+```typescript
+import { ObserverServer } from "cartographer";
+```
+
+### Constructor
+
+```typescript
+new ObserverServer(tree: BehaviorTree, options?: ObserverServerOptions)
+```
+
+### ObserverServerOptions
+
+| Field                 | Type     | Default | Description                          |
+| --------------------- | -------- | ------- | ------------------------------------ |
+| `port`                | `number` | `3147`  | Listen port.                         |
+| `eventStreamCapacity` | `number` | `500`   | Maximum events retained for replay.  |
+
+### Properties
+
+| Property | Type   | Description                                             |
+| -------- | ------ | ------------------------------------------------------- |
+| `app`    | `Hono` | Underlying Hono application. Mountable via `app.fetch`. |
 
 ### Methods
 
@@ -63,9 +119,77 @@ import { ActorServer } from "cartographer";
 
 Starts the HTTP server. Returns the actual listening port.
 
-#### `stop(): Promise<void>`
+#### `close(): Promise<void>`
 
-Gracefully shuts down the server.
+Unsubscribes from tree events and shuts down the server.
+
+### Endpoints
+
+| Method | Path              | Description                                                       |
+| ------ | ----------------- | ----------------------------------------------------------------- |
+| GET    | `/api/tree`       | Tree structure: name, serialized root.                            |
+| GET    | `/api/status`     | Tree metrics: tick count, cycle count, last status, uptime.       |
+| GET    | `/api/blackboard` | Live blackboard state as JSON.                                    |
+| GET    | `/api/nodes/:id`  | Individual node detail. Includes agent metadata for `AgentNode`s. |
+| GET    | `/events`         | SSE event stream with snapshot and live events.                   |
+
+---
+
+## Hono App Factories
+
+### createApp
+
+Factory function that creates the full actor Hono app with message processing, queue management, and SSE streaming.
+
+```typescript
+import { createApp } from "cartographer";
+```
+
+#### AppOptions
+
+| Field            | Type                      | Default                                    | Description                                      |
+| ---------------- | ------------------------- | ------------------------------------------ | ------------------------------------------------ |
+| `createTree`     | `() => BehaviorTree`      | (required)                                 | Tree factory function.                           |
+| `stateStore`     | `StateStore`              | `InMemoryStateStore`                       | Backing store.                                   |
+| `context`        | `Record<string, unknown>` | `{}`                                       | Injected into blackboard as `context:*` on init. |
+| `topologyPolicy` | `'fail' \| 'reset'`       | `'fail'`                                   | Topology mismatch handling.                      |
+| `maxQueueDepth`  | `number`                  | `CARTOGRAPHER_MAX_QUEUE_DEPTH` env or `16` | Maximum queued messages.                         |
+
+#### AppHandle
+
+| Field             | Type                                                              | Description                                        |
+| ----------------- | ----------------------------------------------------------------- | -------------------------------------------------- |
+| `app`             | `Hono`                                                            | The Hono application with all routes mounted.      |
+| `stateStore`      | `StateStore`                                                      | Resolved state store instance.                     |
+| `topologyPolicy`  | `'fail' \| 'reset'`                                               | Resolved topology policy.                          |
+| `maxQueueDepth`   | `number`                                                          | Resolved max queue depth.                          |
+| `processMessage`  | `(msg: ActorMessage) => Promise<ProcessResult \| QueuedResult \| null>` | Process a message programmatically.          |
+| `bridgeTree`      | `(tree: BehaviorTree) => void`                                    | Forward external tree events to SSE clients.       |
+| `initializeState` | `() => Promise<void>`                                             | Initialize state store with tree factory defaults. |
+| `drainQueue`      | `() => Promise<void>`                                             | Process the next queued message, if any.           |
+| `closeSseClients` | `() => void`                                                      | Close all connected SSE clients.                   |
+
+### createObserverApp
+
+Factory function that creates a read-only Hono app for tree observation.
+
+```typescript
+import { createObserverApp } from "cartographer";
+```
+
+#### ObserverAppOptions
+
+| Field                 | Type            | Default | Description                         |
+| --------------------- | --------------- | ------- | ----------------------------------- |
+| `tree`                | `BehaviorTree`  | (required) | The tree to observe.             |
+| `eventStreamCapacity` | `number`        | `500`   | Maximum events retained for replay. |
+
+#### ObserverHandle
+
+| Field   | Type         | Description                                            |
+| ------- | ------------ | ------------------------------------------------------ |
+| `app`   | `Hono`       | The Hono application with read-only routes mounted.    |
+| `close` | `() => void` | Unsubscribes from tree events and closes SSE clients.  |
 
 ---
 
@@ -190,17 +314,13 @@ import type {
 
 ---
 
-## ActorServer Endpoints
+## EventBridge
 
-In addition to the REST and SSE endpoints documented in the [Application Server guide](../guide-app-server.md#endpoints), `ActorServer` provides two control endpoints that bypass the processing lock:
+Bridges tree events to state persistence and SSE delivery. Used internally by `createApp()`.
 
-#### `POST /api/interrupt`
-
-Interrupts the active processing loop. Returns `{ interrupted: true, messageId }` when processing was active, or `{ interrupted: false }` when idle.
-
-#### `POST /api/resume`
-
-Clears the held state. Returns `{ resumed: true }` when the tree was held, or `{ resumed: false }` when it was not.
+```typescript
+import { EventBridge } from "cartographer";
+```
 
 ---
 

@@ -268,7 +268,7 @@ A flag on `TreeSessionState` set after an interrupt in the application server. W
 A named conversation that persists in the tree's `SessionRegistry`. Agents configured with `session: "name"` resume the same conversation across ticks. Agents with `session: { name: "...", fork: true }` branch from an existing session without modifying the original. See the [Sessions guide](guide-agent-integration.md#sessions).
 
 **Session Registry**
-A map from session names to provider session IDs, owned by `BehaviorTree`. Cleared on terminal status (SUCCESS/FAILURE), `abort()`, and `reset()`. Preserved across RUNNING ticks and `interrupt()`. Serialized by `TreeActor` for persistence across server restarts.
+A map from session names to provider session IDs, owned by `BehaviorTree`. Cleared on terminal status (SUCCESS/FAILURE), `abort()`, and `reset()`. Preserved across RUNNING ticks and `interrupt()`. Serialized by `MessageProcessor` for persistence across server restarts.
 
 **Strategy**
 A pluggable component that controls how a composite node orders its children or evaluates its policy. Strategies can be static (fixed rules) or agent-backed (AI-driven decisions).
