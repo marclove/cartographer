@@ -428,42 +428,134 @@ describe('createCartographerApp — message processing', () => {
 
 // ---------- Interrupt, resume, bridgeTree tests ----------
 
+function makeSlowTree(): BehaviorTree {
+  return new BehaviorTree({
+    name: 'slow',
+    root: new ActionNode({
+      name: 'slow',
+      action: () => new Promise<NodeStatus>(() => {
+        // never resolves — simulates a long-running agent
+      }),
+    }),
+  });
+}
+
 describe('createCartographerApp — interrupt and resume', () => {
-  let handle: CartographerHandle;
-  let server: Server;
-  let port: number;
-
-  beforeEach(async () => {
-    handle = createCartographerApp({ createTree: makeTree });
-    await handle.initializeState();
-    await new Promise<void>((resolve) => {
-      server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
-        port = info.port;
-        resolve();
-      });
-    });
-  });
-
-  afterEach(async () => {
-    handle.closeSseClients();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-  });
-
   describe('POST /api/interrupt', () => {
     it('returns interrupted: false when no message is active', async () => {
+      const handle = createCartographerApp({ createTree: makeTree });
+      await handle.initializeState();
+      let server!: Server;
+      let port!: number;
+      await new Promise<void>((resolve) => {
+        server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
+          port = info.port;
+          resolve();
+        });
+      });
+
       const res = await fetch(`http://localhost:${port}/api/interrupt`, { method: 'POST' });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.interrupted).toBe(false);
+
+      handle.closeSseClients();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+
+    it('returns interrupted: true with messageId while processing', async () => {
+      const store = new InMemoryStateStore();
+      const handle = createCartographerApp({ createTree: makeSlowTree, stateStore: store });
+      await handle.initializeState();
+      let server!: Server;
+      let port!: number;
+      await new Promise<void>((resolve) => {
+        server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
+          port = info.port;
+          resolve();
+        });
+      });
+
+      // Start a slow message (will be processing indefinitely)
+      fetch(`http://localhost:${port}/api/commands/go`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+
+      // Wait for processing to start
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Interrupt
+      const res = await fetch(`http://localhost:${port}/api/interrupt`, { method: 'POST' });
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.interrupted).toBe(true);
+      expect(body.messageId).toBeDefined();
+
+      // Wait for async processing to finish
+      await new Promise((r) => setTimeout(r, 50));
+
+      // State should be held after interrupt
+      const state = await store.getState('default');
+      expect(state?.held).toBe(true);
+
+      handle.closeSseClients();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     });
   });
 
   describe('POST /api/resume', () => {
-    it('returns resumed status', async () => {
+    it('returns resumed: false when not held', async () => {
+      const handle = createCartographerApp({ createTree: makeTree });
+      await handle.initializeState();
+      let server!: Server;
+      let port!: number;
+      await new Promise<void>((resolve) => {
+        server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
+          port = info.port;
+          resolve();
+        });
+      });
+
       const res = await fetch(`http://localhost:${port}/api/resume`, { method: 'POST' });
       expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(typeof body.resumed).toBe('boolean');
+      const body = await res.json() as any;
+      expect(body.resumed).toBe(false);
+
+      handle.closeSseClients();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+
+    it('clears held state and returns resumed: true', async () => {
+      const store = new InMemoryStateStore();
+      const handle = createCartographerApp({ createTree: makeTree, stateStore: store });
+      await handle.initializeState();
+
+      // Manually set held state on the store
+      const state = await store.getState('default');
+      await store.saveState('default', { ...state!, held: true });
+
+      let server!: Server;
+      let port!: number;
+      await new Promise<void>((resolve) => {
+        server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
+          port = info.port;
+          resolve();
+        });
+      });
+
+      const res = await fetch(`http://localhost:${port}/api/resume`, { method: 'POST' });
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.resumed).toBe(true);
+
+      // Verify held state is cleared
+      const updated = await store.getState('default');
+      expect(updated?.held).toBeFalsy();
+
+      handle.closeSseClients();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     });
   });
 });
