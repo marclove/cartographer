@@ -7,7 +7,7 @@
 		"build": "turbo build",
 		"test": "turbo test",
 		"typecheck": "turbo typecheck",
-		"test:integration": "pnpm --filter cartographer test:integration",
+		"test:integration": "turbo test:integration",
 		"test:live": "pnpm --filter cartographer test:live && pnpm --filter @cartographer/example-content-pipeline test:live && pnpm --filter @cartographer/example-scheduled-monitor test:live",
 		"test:all": "pnpm run test && pnpm run test:integration && pnpm run test:live"
 	},
