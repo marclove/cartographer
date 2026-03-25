@@ -7,10 +7,11 @@
  *
  * | Handler                  | Endpoint              | Description                          |
  * | ------------------------ | --------------------- | ------------------------------------ |
- * | {@link handleApiTree}       | `GET /api/tree`       | Full tree structure                  |
- * | {@link handleApiStatus}     | `GET /api/status`     | Tick/cycle counters and uptime       |
- * | {@link handleApiBlackboard} | `GET /api/blackboard` | Current blackboard key-value pairs   |
- * | {@link handleApiNode}       | `GET /api/node/:id`   | Detailed info for a single node      |
+ * | {@link handleApiHealth}     | `GET /_platform/health` | Health check with uptime           |
+ * | {@link handleApiTree}       | `GET /api/tree`         | Full tree structure                |
+ * | {@link handleApiStatus}     | `GET /api/status`       | Tick/cycle counters and uptime     |
+ * | {@link handleApiBlackboard} | `GET /api/blackboard`   | Current blackboard key-value pairs |
+ * | {@link handleApiNode}       | `GET /api/node/:id`     | Detailed info for a single node    |
  *
  * @module
  */
@@ -56,6 +57,19 @@ export interface StatusState {
 
   /** Unix timestamp (ms) when the server was started. Used to derive uptime. */
   startedAt: number;
+}
+
+/**
+ * Handles `GET /_platform/health` — returns a simple health check.
+ *
+ * @param res   - The HTTP response to write to.
+ * @param state - The current {@link StatusState} (used for uptime calculation).
+ */
+export function handleApiHealth(res: ServerResponse, state: StatusState): void {
+  jsonResponse(res, 200, {
+    status: 'ok',
+    uptime: Math.floor((Date.now() - state.startedAt) / 1000),
+  });
 }
 
 /**

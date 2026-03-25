@@ -5,12 +5,8 @@ import {
   blackboardToRecord,
   handleSseStream,
 } from './sse-handler.js';
+import type { SseSnapshot } from './sse-handler.js';
 import { InProcessEventStream } from './event-stream.js';
-
-// Mock serializeTree so we don't pull in real node classes
-vi.mock('./serializers.js', () => ({
-  serializeTree: vi.fn(() => ({ id: 'root', name: 'root', type: 'sequence', children: [] })),
-}));
 
 function makeRes() {
   return {
@@ -34,15 +30,14 @@ function makeEventStream(overrides: { latestId?: string; replaySince?: ReturnTyp
   };
 }
 
-function makeTree(bbOverrides?: Record<string, unknown>) {
-  const data: Record<string, unknown> = bbOverrides ?? { foo: 'bar' };
+function makeSnapshot(id = '0'): SseSnapshot {
   return {
-    root: { id: 'root', name: 'root', children: [] },
-    blackboard: {
-      keys: () => Object.keys(data),
-      get: (k: string) => data[k],
+    data: {
+      tree: { id: 'root', name: 'root', type: 'sequence', children: [] },
+      blackboard: { foo: 'bar' },
     },
-  } as unknown as import('../core/behavior-tree.js').BehaviorTree;
+    id,
+  };
 }
 
 // ---------- sendSseEvent ----------
@@ -86,19 +81,19 @@ describe('blackboardToRecord', () => {
 describe('handleSseStream', () => {
   let res: ReturnType<typeof makeRes>;
   let req: ReturnType<typeof makeReq>;
-  let tree: ReturnType<typeof makeTree>;
+  let snapshot: SseSnapshot;
   let sseClients: Set<import('./sse-handler.js').SseClient>;
 
   beforeEach(() => {
     res = makeRes();
     req = makeReq();
-    tree = makeTree();
+    snapshot = makeSnapshot();
     sseClients = new Set();
   });
 
   it('sets SSE response headers', () => {
     const stream = makeEventStream();
-    handleSseStream(req, res, tree, stream as any, sseClients);
+    handleSseStream(req, res, snapshot, stream as any, sseClients);
 
     expect(res.writeHead).toHaveBeenCalledWith(200, {
       'Content-Type': 'text/event-stream',
@@ -108,8 +103,9 @@ describe('handleSseStream', () => {
   });
 
   it('sends initial snapshot', () => {
+    snapshot = makeSnapshot('7');
     const stream = makeEventStream({ latestId: '7' });
-    handleSseStream(req, res, tree, stream as any, sseClients);
+    handleSseStream(req, res, snapshot, stream as any, sseClients);
 
     expect(res.write).toHaveBeenNthCalledWith(1, 'id: 7\n');
     expect(res.write).toHaveBeenNthCalledWith(2, 'event: snapshot\n');
@@ -130,7 +126,7 @@ describe('handleSseStream', () => {
     const stream = makeEventStream({ latestId: '4', replaySince });
 
     req = makeReq({ 'last-event-id': '2' });
-    handleSseStream(req, res, tree, stream as any, sseClients);
+    handleSseStream(req, res, snapshot, stream as any, sseClients);
 
     expect(replaySince).toHaveBeenCalledWith('2');
 
@@ -144,8 +140,9 @@ describe('handleSseStream', () => {
     const replaySince = vi.fn(() => null);
     const stream = makeEventStream({ latestId: '10', replaySince });
 
+    snapshot = makeSnapshot('10');
     req = makeReq({ 'last-event-id': '1' });
-    handleSseStream(req, res, tree, stream as any, sseClients);
+    handleSseStream(req, res, snapshot, stream as any, sseClients);
 
     expect(replaySince).toHaveBeenCalledWith('1');
 
@@ -159,7 +156,7 @@ describe('handleSseStream', () => {
     const replaySince = vi.fn();
     const stream = makeEventStream({ latestId: '5', replaySince });
 
-    handleSseStream(req, res, tree, stream as any, sseClients);
+    handleSseStream(req, res, snapshot, stream as any, sseClients);
 
     expect(replaySince).not.toHaveBeenCalled();
     expect(res.write).toHaveBeenCalledTimes(3);
@@ -167,7 +164,7 @@ describe('handleSseStream', () => {
 
   it('adds client to sseClients set', () => {
     const stream = makeEventStream();
-    handleSseStream(req, res, tree, stream as any, sseClients);
+    handleSseStream(req, res, snapshot, stream as any, sseClients);
 
     expect(sseClients.has(res)).toBe(true);
     expect(sseClients.size).toBe(1);
@@ -175,7 +172,7 @@ describe('handleSseStream', () => {
 
   it('removes client from sseClients set on request close', () => {
     const stream = makeEventStream();
-    handleSseStream(req, res, tree, stream as any, sseClients);
+    handleSseStream(req, res, snapshot, stream as any, sseClients);
 
     expect(sseClients.has(res)).toBe(true);
 
@@ -190,7 +187,7 @@ describe('handleSseStream', () => {
     const subscribe = vi.fn(() => unsubscribe);
     const stream = { ...makeEventStream(), subscribe };
 
-    handleSseStream(req, res, tree, stream as any, sseClients);
+    handleSseStream(req, res, snapshot, stream as any, sseClients);
 
     expect(subscribe).toHaveBeenCalledOnce();
     expect(unsubscribe).not.toHaveBeenCalled();
@@ -202,7 +199,7 @@ describe('handleSseStream', () => {
 
   it('forwards live events to the response', () => {
     const stream = new InProcessEventStream(100);
-    handleSseStream(req, res, tree, stream, sseClients);
+    handleSseStream(req, res, snapshot, stream, sseClients);
 
     // Clear snapshot writes
     (res.write as any).mockClear();

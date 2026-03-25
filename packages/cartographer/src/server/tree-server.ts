@@ -4,10 +4,10 @@ import type { BehaviorTree } from '../core/behavior-tree.js';
 import { NodeStatus } from '../types.js';
 import type { TreeEvents } from '../types.js';
 import { InProcessEventStream } from './event-stream.js';
-import { serializeEvent } from './serializers.js';
+import { serializeEvent, serializeTree as serializeTreeForApi } from './serializers.js';
 import { handleApiTree, handleApiStatus, handleApiBlackboard, handleApiNode } from './api-handlers.js';
 import type { StatusState } from './api-handlers.js';
-import { handleSseStream } from './sse-handler.js';
+import { handleSseStream, blackboardToRecord } from './sse-handler.js';
 import type { SseClient } from './sse-handler.js';
 import { jsonError } from './http-utils.js';
 
@@ -126,7 +126,11 @@ export class TreeServer {
 
     // SSE endpoint
     if (pathname === '/events') {
-      handleSseStream(req, res, this.tree, this.eventStream, this.sseClients);
+      const snapshot = {
+        data: { tree: serializeTreeForApi(this.tree.root), blackboard: blackboardToRecord(this.tree.blackboard) },
+        id: this.eventStream.latestId,
+      };
+      handleSseStream(req, res, snapshot, this.eventStream, this.sseClients);
       return;
     }
 

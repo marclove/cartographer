@@ -10,62 +10,164 @@ import type { ProcessResult } from '../actor/tree-actor.js';
 import { jsonResponse, jsonError, readBody } from './http-utils.js';
 import { EventBridge } from './event-bridge.js';
 import { InProcessEventStream, type EventStream } from './event-stream.js';
-import { sendSseEvent, blackboardToRecord } from './sse-handler.js';
+import { handleSseStream, blackboardToRecord } from './sse-handler.js';
 import type { SseClient } from './sse-handler.js';
 import { serializeTree as serializeTreeForApi, serializeEvent } from './serializers.js';
-import { handleApiNode } from './api-handlers.js';
+import { handleApiHealth, handleApiStatus, handleApiTree, handleApiNode } from './api-handlers.js';
 import type { StatusState } from './api-handlers.js';
+import { matchRoute } from './router.js';
+import type { Route } from './router.js';
 
 function generateRequestId(): string {
   return `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-type RouteHandler = (req: IncomingMessage, res: ServerResponse, params: Record<string, string>) => Promise<void> | void;
-
-interface Route {
-  method: string;
-  pattern: string;
-  handler: RouteHandler;
-}
-
-function matchRoute(pathname: string, pattern: string): Record<string, string> | null {
-  const pathParts = pathname.split('/');
-  const patternParts = pattern.split('/');
-  if (pathParts.length !== patternParts.length) return null;
-  const params: Record<string, string> = {};
-  for (let i = 0; i < patternParts.length; i++) {
-    if (patternParts[i].startsWith(':')) {
-      params[patternParts[i].slice(1)] = decodeURIComponent(pathParts[i]);
-    } else if (patternParts[i] !== pathParts[i]) {
-      return null;
-    }
-  }
-  return params;
-}
-
+/**
+ * Configuration for creating an {@link ActorServer}.
+ *
+ * At minimum, you must provide a `createTree` factory. All other options have
+ * sensible defaults suitable for local development.
+ *
+ * @example
+ * ```ts
+ * const server = new ActorServer({
+ *   createTree: () => new BehaviorTree({ name: 'my-tree', root: myRoot }),
+ *   port: 0,              // let the OS pick an available port
+ *   context: { tenant: 'acme' },
+ *   topologyPolicy: 'reset',
+ * });
+ * ```
+ */
 export interface ActorServerOptions {
+  /** Factory that creates a fresh {@link BehaviorTree} instance for each message processed. */
   createTree: () => BehaviorTree;
+
+  /**
+   * Persistence backend for tree state, locks, events, and the message queue.
+   * Defaults to an {@link InMemoryStateStore} (suitable for single-process / dev use).
+   */
   stateStore?: StateStore;
+
+  /**
+   * TCP port to listen on. Defaults to the `PORT` environment variable, or `3148`
+   * if unset. Pass `0` to let the OS assign an available port — the actual port
+   * is returned by {@link ActorServer.start}.
+   */
   port?: number;
+
+  /**
+   * Initial key-value pairs written to the blackboard under the `context:` namespace
+   * when the server creates its first state snapshot. Useful for injecting
+   * configuration (tenant IDs, API keys, feature flags) that nodes can read
+   * during execution.
+   */
   context?: Record<string, unknown>;
+
+  /**
+   * How the server reacts when the tree's topology (structure hash) has changed
+   * between ticks — for example, after a code deploy.
+   *
+   * - `'fail'` (default) — reject the message with an error, preserving the
+   *   existing state so an operator can investigate.
+   * - `'reset'` — discard the stale state and re-initialize from the new tree
+   *   definition, allowing processing to continue automatically.
+   */
   topologyPolicy?: 'fail' | 'reset';
+
+  /**
+   * Maximum number of messages that can wait in the queue while another message
+   * is being processed. When the queue is full, new messages are rejected with
+   * HTTP 429 (via the REST API) or a `null` return (via {@link ActorServer.processMessage}).
+   *
+   * Defaults to the `CARTOGRAPHER_MAX_QUEUE_DEPTH` environment variable, or `16`.
+   */
   maxQueueDepth?: number;
 }
 
+/**
+ * Returned by {@link ActorServer.processMessage} when the server is already
+ * processing another message and the incoming message has been placed in the
+ * queue for later execution.
+ */
 export interface QueuedResult {
+  /** Always `true` — discriminant for distinguishing from {@link ProcessResult}. */
   queued: true;
+  /** Unique identifier assigned to the queued message. */
   messageId: string;
+  /** 1-based position in the queue (1 = next to be processed). */
   position: number;
 }
 
+/**
+ * HTTP server that wraps a {@link TreeActor} with a REST + SSE API.
+ *
+ * ActorServer provides a message-driven interface to a behavior tree. Clients
+ * send messages (ticks, commands, blackboard writes) via HTTP POST and observe
+ * tree activity in real time through a Server-Sent Events stream. Only one
+ * message is processed at a time; additional messages are queued and drained
+ * in order.
+ *
+ * For programmatic (non-HTTP) usage within the same process, call
+ * {@link processMessage} directly instead of going through the REST API.
+ *
+ * ## REST API
+ *
+ * | Method | Path                      | Description                          |
+ * |--------|---------------------------|--------------------------------------|
+ * | GET    | `/_platform/health`       | Health check with uptime             |
+ * | GET    | `/api/blackboard`         | Current blackboard snapshot          |
+ * | GET    | `/api/status`             | Tick/cycle stats and tree name       |
+ * | GET    | `/api/tree`               | Full serialized tree structure       |
+ * | GET    | `/api/nodes/:id`          | Single node detail by ID             |
+ * | GET    | `/events`                 | SSE event stream                     |
+ * | POST   | `/api/messages`           | Submit an {@link ActorMessage}       |
+ * | POST   | `/api/commands/:name`     | Shorthand for command messages       |
+ * | POST   | `/api/blackboard/:key`    | Write a single blackboard key        |
+ * | POST   | `/api/interrupt`          | Request interruption of active tick  |
+ * | POST   | `/api/resume`             | Resume a held tree                   |
+ *
+ * ## SSE Event Stream
+ *
+ * Connecting to `GET /events` delivers:
+ * 1. A `snapshot` event with the current tree structure, blackboard, and stats.
+ * 2. Replayed events from the in-memory buffer (supports reconnection via
+ *    the `Last-Event-ID` header).
+ * 3. Live events as they occur (node ticks, agent activity, message lifecycle).
+ *
+ * @example
+ * ```ts
+ * const server = new ActorServer({
+ *   createTree: () => new BehaviorTree({ name: 'hello', root }),
+ *   port: 0,
+ * });
+ *
+ * const { port } = await server.start();
+ * console.log(`Listening on http://localhost:${port}`);
+ *
+ * // Send a tick via the REST API
+ * await fetch(`http://localhost:${port}/api/messages`, {
+ *   method: 'POST',
+ *   headers: { 'Content-Type': 'application/json' },
+ *   body: JSON.stringify({ type: 'tick' }),
+ * });
+ *
+ * // Or process a message programmatically
+ * const result = await server.processMessage({ type: 'tick' });
+ *
+ * await server.stop();
+ * ```
+ */
 export class ActorServer {
   private static readonly STATE_KEY = 'default';
 
   private readonly createTree: () => BehaviorTree;
+  /** The persistence backend used for tree state, locks, events, and the message queue. */
   readonly stateStore: StateStore;
   private readonly configPort: number;
   private readonly context: Record<string, unknown>;
+  /** How the server handles tree topology changes between ticks. See {@link ActorServerOptions.topologyPolicy}. */
   readonly topologyPolicy: 'fail' | 'reset';
+  /** Maximum queued messages allowed while a message is being processed. See {@link ActorServerOptions.maxQueueDepth}. */
   readonly maxQueueDepth: number = 16;
   private server: Server | null = null;
   private activeActor: TreeActor | null = null;
@@ -96,10 +198,10 @@ export class ActorServer {
     this.topologyPolicy = options.topologyPolicy ?? 'fail';
     this.maxQueueDepth = options.maxQueueDepth ?? parseInt(process.env.CARTOGRAPHER_MAX_QUEUE_DEPTH ?? '16', 10);
     this.routes = [
-      { method: 'GET',  pattern: '/_platform/health',     handler: (_req, res) => this.handleHealth(res) },
+      { method: 'GET',  pattern: '/_platform/health',     handler: (_req, res) => handleApiHealth(res, this.stats) },
       { method: 'GET',  pattern: '/api/blackboard',       handler: (_req, res) => this.handleBlackboardRead(res) },
-      { method: 'GET',  pattern: '/api/status',           handler: (_req, res) => this.handleStatus(res) },
-      { method: 'GET',  pattern: '/api/tree',             handler: (_req, res) => this.handleTreeRead(res) },
+      { method: 'GET',  pattern: '/api/status',           handler: (_req, res) => handleApiStatus(res, this.readTree, this.stats) },
+      { method: 'GET',  pattern: '/api/tree',             handler: (_req, res) => handleApiTree(res, this.readTree) },
       { method: 'GET',  pattern: '/api/nodes/:id',        handler: (_req, res, p) => handleApiNode(res, this.readTree, p.id) },
       { method: 'GET',  pattern: '/events',               handler: (req, res) => this.handleSSE(req, res) },
       { method: 'POST', pattern: '/api/messages',         handler: (req, res) => this.handleMessage(req, res) },
@@ -110,6 +212,19 @@ export class ActorServer {
     ];
   }
 
+  /**
+   * Initialize state (if needed) and start the HTTP server.
+   *
+   * On first call the server creates a default state snapshot in the
+   * {@link stateStore} using the `createTree` factory and any `context` values
+   * provided in {@link ActorServerOptions}. It also drains any messages that
+   * were queued by a previous process (relevant when using a persistent store
+   * like Redis).
+   *
+   * @returns The port the server is listening on. When the configured port is
+   *          `0`, this is the OS-assigned port.
+   * @throws  If the port is unavailable or another listen error occurs.
+   */
   async start(): Promise<{ port: number }> {
     this.stats.startedAt = Date.now();
 
@@ -142,7 +257,12 @@ export class ActorServer {
 
   /**
    * Subscribe to a tree's events and forward them through the SSE pipeline.
-   * Used to bridge TreeScheduler events to dashboard clients.
+   *
+   * This is useful when a {@link TreeScheduler} manages tree execution externally
+   * but you still want dashboard clients connected via `/events` to observe the
+   * tree's activity in real time.
+   *
+   * @param tree - The tree whose events should be forwarded to SSE clients.
    */
   bridgeTree(tree: BehaviorTree): void {
     tree.events.onAny((type, data) => {
@@ -151,6 +271,13 @@ export class ActorServer {
     });
   }
 
+  /**
+   * Gracefully shut down the server.
+   *
+   * Closes all active SSE connections first, then stops the HTTP server.
+   * In-flight message processing is *not* cancelled — if you need to abort
+   * an active tick, call the `/api/interrupt` endpoint before stopping.
+   */
   async stop(): Promise<void> {
     for (const client of this.sseClients) {
       client.end();
@@ -193,30 +320,9 @@ export class ActorServer {
     jsonError(res, 404, 'Not found');
   }
 
-  private handleHealth(res: ServerResponse): void {
-    jsonResponse(res, 200, {
-      status: 'ok',
-      uptime: Math.floor((Date.now() - this.stats.startedAt) / 1000),
-    });
-  }
-
   private async handleBlackboardRead(res: ServerResponse): Promise<void> {
     const state = await this.stateStore.getState(ActorServer.STATE_KEY);
     jsonResponse(res, 200, state?.blackboard ?? {});
-  }
-
-  private handleStatus(res: ServerResponse): void {
-    const tree = this.readTree;
-    jsonResponse(res, 200, {
-      tree: tree.name,
-      ...this.stats,
-      uptime: Date.now() - this.stats.startedAt,
-    });
-  }
-
-  private handleTreeRead(res: ServerResponse): void {
-    const tree = this.readTree;
-    jsonResponse(res, 200, { tree: tree.name, root: serializeTreeForApi(tree.root) });
   }
 
   private async handleMessage(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -242,9 +348,22 @@ export class ActorServer {
   }
 
   /**
-   * Process a message programmatically (no HTTP response needed).
-   * If the lock is held, the message is queued and a {@link QueuedResult} is returned.
-   * Returns null only if the queue is full.
+   * Process a message programmatically without going through the REST API.
+   *
+   * This is the primary entry point for in-process callers (e.g., a
+   * {@link TreeScheduler} or integration tests) that want to send messages
+   * to the tree actor directly.
+   *
+   * Behavior mirrors the HTTP `POST /api/messages` endpoint:
+   * - If no other message is being processed, the tree is ticked immediately
+   *   and a {@link ProcessResult} is returned when complete.
+   * - If a message is already in flight, the new message is placed in the
+   *   queue and a {@link QueuedResult} is returned.
+   * - If the queue is full, `null` is returned (equivalent to HTTP 429).
+   *
+   * @param msg - The message to process.
+   * @returns The processing result, a queued confirmation, or `null` if the
+   *          queue is full.
    */
   async processMessage(msg: ActorMessage): Promise<ProcessResult | QueuedResult | null> {
     const prep = await this.acquireOrQueue(msg, msg.id);
@@ -366,46 +485,17 @@ export class ActorServer {
   }
 
   private async handleSSE(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    });
-
-    // Build snapshot from readTree (structure) + state store (blackboard) + stats
     const tree = this.readTree;
     const state = await this.stateStore.getState(ActorServer.STATE_KEY);
     const snapshot = {
-      tree: serializeTreeForApi(tree.root),
-      blackboard: state?.blackboard ?? {},
-      stats: { ...this.stats, asOfEventId: this.eventStream.latestId },
+      data: {
+        tree: serializeTreeForApi(tree.root),
+        blackboard: state?.blackboard ?? {},
+        stats: { ...this.stats, asOfEventId: this.eventStream.latestId },
+      },
+      id: '0',
     };
-
-    // Send snapshot
-    sendSseEvent(res, 'snapshot', snapshot, '0');
-
-    // Replay buffered events — on reconnect, replay since last-event-id;
-    // on initial connect, replay the entire buffer so the dashboard
-    // shows events that occurred before the client connected.
-    const lastEventId = req.headers['last-event-id'] as string | undefined;
-    const sinceId = lastEventId ?? '0';
-    const events = this.eventStream.replaySince(sinceId);
-    if (events !== null) {
-      for (const event of events) {
-        sendSseEvent(res, event.event, event.data, event.id);
-      }
-    }
-
-    // Subscribe to live events
-    const unsubscribe = this.eventStream.subscribe((entry) => {
-      sendSseEvent(res, entry.event, entry.data, entry.id);
-    });
-
-    this.sseClients.add(res);
-    req.on('close', () => {
-      unsubscribe();
-      this.sseClients.delete(res);
-    });
+    handleSseStream(req, res, snapshot, this.eventStream, this.sseClients, { replayOnConnect: true });
   }
 
   private forwardEvent(event: { type: string; data: Record<string, unknown> }): void {
