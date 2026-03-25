@@ -1,5 +1,4 @@
 import type { z } from 'zod';
-import type { ModelUsage } from '@anthropic-ai/claude-agent-sdk';
 import type { Agent, OnElicitation, AgentElicitationRequest } from './agent/agent.js';
 import type { NodeState } from './core/serialization.js';
 import type { SessionRegistry } from './core/session-registry.js';
@@ -102,6 +101,17 @@ export interface Blackboard {
 
 // --- Event Emitter ---
 
+export interface ModelUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  webSearchRequests: number;
+  costUSD: number;
+  contextWindow: number;
+  maxOutputTokens: number;
+}
+
 /**
  * The set of events emitted during behavior tree execution.
  *
@@ -152,8 +162,6 @@ export interface Blackboard {
  * });
  * ```
  */
-export type { ModelUsage };
-
 export interface TreeEvents {
   'node:enter': { node: BTreeNode; context: TreeContext };
   'node:exit': { node: BTreeNode; status: NodeStatus; context: TreeContext; durationMs: number };
