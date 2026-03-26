@@ -27,12 +27,9 @@ async function main(): Promise<void> {
         verbose: parsed.flags.verbose,
         quiet: parsed.flags.quiet,
         envFile: parsed.flags.envFile,
-        serve: parsed.flags.serve,
         port: parsed.flags.port,
         noDashboard: parsed.flags.noDashboard,
         dashboardPort: parsed.flags.dashboardPort,
-        noTick: parsed.flags.noTick,
-        tickInterval: parsed.flags.tickInterval,
       });
       break;
     }

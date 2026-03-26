@@ -41,6 +41,7 @@ export interface AppOptions {
   context?: Record<string, unknown>;
   topologyPolicy?: 'fail' | 'reset';
   maxQueueDepth?: number;
+  autoTick?: { intervalMs: number };
 }
 
 export interface QueuedResult {
@@ -59,6 +60,8 @@ export interface AppHandle {
   initializeState: () => Promise<void>;
   drainQueue: () => Promise<void>;
   closeSseClients: () => void;
+  startAutoTick: () => void;
+  stopAutoTick: () => void;
 }
 
 export function createApp(options: AppOptions): AppHandle {
@@ -408,5 +411,31 @@ export function createApp(options: AppOptions): AppHandle {
     sseClients.clear();
   }
 
-  return { app, stateStore, topologyPolicy, maxQueueDepth, processMessage, bridgeTree, initializeState, drainQueue, closeSseClients };
+  let autoTickTimer: ReturnType<typeof setInterval> | null = null;
+  let autoTickInFlight = false;
+
+  function startAutoTick(): void {
+    if (!options.autoTick || autoTickTimer) return;
+    autoTickTimer = setInterval(async () => {
+      if (autoTickInFlight) return;
+      autoTickInFlight = true;
+      try {
+        await processMessage({ type: 'tick' });
+      } catch {
+        // Swallow transient errors (e.g. StateStore connection loss) so the
+        // server stays alive and retries on the next interval.
+      } finally {
+        autoTickInFlight = false;
+      }
+    }, options.autoTick.intervalMs);
+  }
+
+  function stopAutoTick(): void {
+    if (autoTickTimer) {
+      clearInterval(autoTickTimer);
+      autoTickTimer = null;
+    }
+  }
+
+  return { app, stateStore, topologyPolicy, maxQueueDepth, processMessage, bridgeTree, initializeState, drainQueue, closeSseClients, startAutoTick, stopAutoTick };
 }

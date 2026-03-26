@@ -4,7 +4,6 @@ import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { ParallelNode } from '../composites/parallel.js';
 import { Retry } from '../decorators/retry.js';
-import { TreeScheduler } from '../scheduler/tree-scheduler.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { createContext, AbortTrackingNode } from './helpers.js';
 import { AgentNode } from '../nodes/agent.js';
@@ -93,35 +92,6 @@ describe('Abort Signal Integration', () => {
 
     retry.abort();
     expect(tracker.aborted).toBe(true);
-  });
-
-  it('abort with scheduler — scheduler.stop() fires manual stop event', async () => {
-    const tree = new BehaviorTree({
-      name: 'scheduler-abort',
-      root: new ActionNode({
-        name: 'slow',
-        action: () => NodeStatus.RUNNING,
-      }),
-    });
-
-    const scheduler = new TreeScheduler({
-      tree,
-      schedule: { type: 'interval', delayMs: 10 },
-    });
-
-    const stopEvents: unknown[] = [];
-    scheduler.events.on('scheduler:stop', (data) => stopEvents.push(data));
-
-    // Start scheduler in background, stop after first tick
-    const startPromise = scheduler.start();
-    await new Promise((r) => setTimeout(r, 50));
-
-    await scheduler.stop();
-    await startPromise;
-
-    expect(scheduler.isRunning).toBe(false);
-    expect(stopEvents).toHaveLength(1);
-    expect((stopEvents[0] as any).reason).toBe('manual');
   });
 
   it('BehaviorTree.abort() cancels AgentNode in-flight SDK call via context.signal', async () => {
