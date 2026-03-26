@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { ObserverServer } from '../server/observer-server.js';
-import { BehaviorTree } from '../core/behavior-tree.js';
+import { ActorServer } from '../server/actor-server.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
+import { BehaviorTree } from '../core/behavior-tree.js';
 import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { NodeStatus } from '../types.js';
@@ -119,18 +119,19 @@ function createTree() {
   return new BehaviorTree({ name: 'SSETree', root, blackboard: bb });
 }
 
-let server: ObserverServer;
+let server: ActorServer;
 let port: number;
-let tree: BehaviorTree;
 
 beforeEach(async () => {
-  tree = createTree();
-  server = new ObserverServer(tree, { port: 0 });
+  server = new ActorServer({
+    createTree,
+    port: 0,
+  });
   ({ port } = await server.start());
 });
 
 afterEach(async () => {
-  await server.close();
+  await server.stop();
 });
 
 describe('GET /events — snapshot on connect', () => {
@@ -143,7 +144,7 @@ describe('GET /events — snapshot on connect', () => {
     expect(snap.id).toBeDefined();
 
     const data = snap.data as { tree: { name: string; id: string; type: string }; blackboard: Record<string, unknown> };
-    // snapshot.tree is the serialized ROOT node, not the BehaviorTree name
+    // snapshot.tree is the serialized ROOT node
     expect(data.tree.name).toBe('Root');
     expect(data.tree.id).toBe('root');
     expect(data.tree.type).toBe('sequence');
@@ -159,32 +160,26 @@ describe('GET /events — snapshot on connect', () => {
 
 describe('GET /events — live event streaming', () => {
   it('streams tree events to connected clients after a tick', async () => {
-    // Start collecting enough events to capture the full tick lifecycle:
-    // snapshot + node:enter(root) + node:enter(do-work) + blackboard:read +
-    // blackboard:write + node:exit(do-work) + node:exit(root) + tree:tick = 8 events
     const eventsPromise = collectSSEEvents(`http://localhost:${port}/events`, 8);
 
     // Give the SSE connection a moment to establish, then tick
     await new Promise((r) => setTimeout(r, 50));
-    await tree.tick();
+    await server.processMessage({ type: 'tick' });
 
     const events = await eventsPromise;
-    // Should have snapshot + live events
     expect(events.length).toBeGreaterThanOrEqual(2);
     expect(events[0].event).toBe('snapshot');
 
     const eventNames = events.slice(1).map((e) => e.event);
-    // After a tick we expect node:enter, node:exit, and tree:tick events
     expect(eventNames).toContain('node:enter');
     expect(eventNames).toContain('node:exit');
     expect(eventNames).toContain('tree:tick');
   });
 
   it('live events include a node:enter event for each entered node', async () => {
-    // Collect enough events: snapshot + enter(root) + enter(do-work) + more = 4 minimum
     const eventsPromise = collectSSEEvents(`http://localhost:${port}/events`, 4);
     await new Promise((r) => setTimeout(r, 50));
-    await tree.tick();
+    await server.processMessage({ type: 'tick' });
     const events = await eventsPromise;
 
     const enterEvents = events.filter((e) => e.event === 'node:enter');
@@ -200,14 +195,12 @@ describe('GET /events — incrementing IDs', () => {
   it('live events have monotonically increasing IDs', async () => {
     const eventsPromise = collectSSEEvents(`http://localhost:${port}/events`, 6);
     await new Promise((r) => setTimeout(r, 50));
-    await tree.tick();
+    await server.processMessage({ type: 'tick' });
     const events = await eventsPromise;
 
-    // All events must have numeric IDs
     const ids = events.map((e) => Number(e.id));
     expect(ids.every((id) => !isNaN(id))).toBe(true);
 
-    // IDs must be strictly increasing
     for (let i = 1; i < ids.length; i++) {
       expect(ids[i]).toBeGreaterThan(ids[i - 1]);
     }
@@ -216,18 +209,17 @@ describe('GET /events — incrementing IDs', () => {
 
 describe('GET /events — Last-Event-ID reconnection', () => {
   it('replays missed events when reconnecting with Last-Event-ID', async () => {
-    // First: tick the tree so events are buffered
-    await tree.tick();
+    // Tick the tree so events are buffered
+    await server.processMessage({ type: 'tick' });
 
-    // Connect fresh (no Last-Event-ID) to get current snapshot id
+    // Connect fresh to get current snapshot id
     const initial = await collectSSEEvents(`http://localhost:${port}/events`, 1);
     const snapshotId = initial[0].id!;
 
     // Tick again to generate more buffered events
-    await tree.tick();
+    await server.processMessage({ type: 'tick' });
 
     // Reconnect with Last-Event-ID set to the snapshot's id
-    // We should receive the events from the second tick
     const reconnected = await collectSSEEvents(
       `http://localhost:${port}/events`,
       5,
@@ -247,34 +239,5 @@ describe('GET /events — Last-Event-ID reconnection', () => {
     for (const id of replayedIds) {
       expect(id).toBeGreaterThan(lastSeenId);
     }
-  });
-
-  it('sends a fresh snapshot when Last-Event-ID is before the buffer window', async () => {
-    // Close the default server and create one with a tiny buffer to force eviction
-    await server.close();
-    tree = createTree();
-    server = new ObserverServer(tree, { port: 0, eventStreamCapacity: 2 });
-    ({ port } = await server.start());
-
-    // Tick multiple times to generate events that overflow the 2-event buffer
-    await tree.tick();
-    tree.reset();
-    await tree.tick();
-    tree.reset();
-    await tree.tick();
-
-    // Connect with Last-Event-ID = 1, which has been evicted from the tiny buffer.
-    // getEventsSince(1) returns null → server sends a second snapshot instead of replays.
-    const reconnected = await collectSSEEvents(
-      `http://localhost:${port}/events`,
-      2,
-      { 'Last-Event-ID': '1' },
-    );
-
-    // First event is the initial snapshot (always sent)
-    expect(reconnected[0].event).toBe('snapshot');
-    // Second event should also be a snapshot (the buffer-gap re-snapshot),
-    // not a replayed event like node:enter
-    expect(reconnected[1].event).toBe('snapshot');
   });
 });

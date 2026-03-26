@@ -24,9 +24,6 @@ export type {
   TimeoutConfig,
   GuardConfig,
   BehaviorTreeConfig,
-  SchedulerConfig,
-  SchedulerEvents,
-  TickLoopHandle,
   ModelUsage,
   SessionConfig,
 } from './types.js';
@@ -74,9 +71,6 @@ export { TreeBuilder, CompositeBuilder, SingleChildBuilder } from './builder/tre
 // Config
 export { TreeRegistry } from './config/registry.js';
 
-// Scheduler
-export { TreeScheduler } from './scheduler/tree-scheduler.js';
-
 // Agent abstraction
 export type {
   Agent,
@@ -121,8 +115,6 @@ export type { TreeLoggerOptions } from './tree-logger.js';
 export type { RunContext, TreeRunConfig } from './cli/types.js';
 
 // Server
-export { ObserverServer } from './server/observer-server.js';
-export type { ObserverServerOptions } from './server/observer-server.js';
 export type { SerializedNodeRef, SerializedTreeNode } from './server/serializers.js';
 
 // Message processor
@@ -145,9 +137,6 @@ export { EventBridge } from './server/event-bridge.js';
 // Hono apps
 export { createApp } from './server/app.js';
 export type { AppOptions, AppHandle, QueuedResult } from './server/app.js';
-export { createObserverApp } from './server/observer-app.js';
-export type { ObserverAppOptions, ObserverHandle } from './server/observer-app.js';
-
 
 // New nodes
 export { untilSuccess, UntilSuccess } from './decorators/until-success.js';

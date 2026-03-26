@@ -89,89 +89,23 @@ describe('parseArgs', () => {
   });
 
   it('parses --no-dashboard flag', () => {
-    const result = parseArgs(['node', 'cli', 'run', 'tree.ts', '--serve', '--no-tick', '--no-dashboard']);
+    const result = parse('run', 'tree.ts', '--no-dashboard');
     expect(result.flags.noDashboard).toBe(true);
   });
 
   it('noDashboard defaults to false', () => {
-    const result = parseArgs(['node', 'cli', 'run', 'tree.ts']);
+    const result = parse('run', 'tree.ts');
     expect(result.flags.noDashboard).toBe(false);
   });
 
   it('parses --dashboard-port flag', () => {
-    const result = parseArgs(['node', 'cli', 'run', 'tree.ts', '--serve', '--no-tick', '--dashboard-port', '4000']);
+    const result = parse('run', 'tree.ts', '--dashboard-port', '4000');
     expect(result.flags.dashboardPort).toBe(4000);
   });
 
-  it('does not recognize serve as a special command', () => {
-    const result = parseArgs(['node', 'cli', 'serve', 'my-tree.ts']);
-    expect(result.command).toBe('serve');
-  });
-
-  it('parses --serve flag', () => {
-    const result = parse('run', 'tree.ts', '--serve', '--tick-interval', '1000');
-    expect(result.flags.serve).toBe(true);
-  });
-
-  it('serve defaults to false', () => {
-    const result = parse('run', 'tree.ts');
-    expect(result.flags.serve).toBe(false);
-  });
-
-  describe('--serve validation', () => {
-    it('errors when --serve used without --tick-interval or --no-tick', () => {
-      expect(() => parse('run', 'tree.ts', '--serve')).toThrow(
-        '--serve requires either --tick-interval or --no-tick',
-      );
-    });
-
-    it('errors when --no-tick used without --serve', () => {
-      expect(() => parse('run', 'tree.ts', '--no-tick')).toThrow(
-        '--no-tick requires --serve',
-      );
-    });
-
-    it('errors when --tick-interval used without --serve', () => {
-      expect(() => parse('run', 'tree.ts', '--tick-interval', '1000')).toThrow(
-        '--tick-interval requires --serve',
-      );
-    });
-
-    it('errors when --no-tick and --tick-interval both set', () => {
-      expect(() =>
-        parse('run', 'tree.ts', '--serve', '--no-tick', '--tick-interval', '1000'),
-      ).toThrow('--no-tick and --tick-interval cannot be used together');
-    });
-
-    it('errors when --port used without --serve', () => {
-      expect(() => parse('run', 'tree.ts', '--port', '3000')).toThrow(
-        '--port requires --serve',
-      );
-    });
-
-    it('errors when --no-dashboard used without --serve', () => {
-      expect(() => parse('run', 'tree.ts', '--no-dashboard')).toThrow(
-        '--no-dashboard requires --serve',
-      );
-    });
-
-    it('errors when --dashboard-port used without --serve', () => {
-      expect(() => parse('run', 'tree.ts', '--dashboard-port', '4000')).toThrow(
-        '--dashboard-port requires --serve',
-      );
-    });
-
-    it('accepts --serve with --tick-interval', () => {
-      const result = parse('run', 'tree.ts', '--serve', '--tick-interval', '500');
-      expect(result.flags.serve).toBe(true);
-      expect(result.flags.tickInterval).toBe(500);
-    });
-
-    it('accepts --serve with --no-tick', () => {
-      const result = parse('run', 'tree.ts', '--serve', '--no-tick');
-      expect(result.flags.serve).toBe(true);
-      expect(result.flags.noTick).toBe(true);
-    });
+  it('parses --port flag', () => {
+    const result = parse('run', 'tree.ts', '--port', '3000');
+    expect(result.flags.port).toBe(3000);
   });
 
   describe('parseArgs error paths', () => {
@@ -189,7 +123,7 @@ describe('parseArgs', () => {
 
     it('exits on invalid --port (NaN)', () => {
       mockProcessExit();
-      expect(() => parse('run', 'file.ts', '--serve', '--port', 'abc')).toThrow('exit');
+      expect(() => parse('run', 'file.ts', '--port', 'abc')).toThrow('exit');
       expect(process.stderr.write).toHaveBeenCalledWith(
         expect.stringContaining('--port requires a valid port number'),
       );
@@ -197,7 +131,7 @@ describe('parseArgs', () => {
 
     it('exits on --port out of range', () => {
       mockProcessExit();
-      expect(() => parse('run', 'file.ts', '--serve', '--port', '99999')).toThrow('exit');
+      expect(() => parse('run', 'file.ts', '--port', '99999')).toThrow('exit');
       expect(process.stderr.write).toHaveBeenCalledWith(
         expect.stringContaining('--port requires a valid port number'),
       );
@@ -205,25 +139,9 @@ describe('parseArgs', () => {
 
     it('exits on invalid --dashboard-port (NaN)', () => {
       mockProcessExit();
-      expect(() => parse('run', 'file.ts', '--serve', '--dashboard-port', 'abc')).toThrow('exit');
+      expect(() => parse('run', 'file.ts', '--dashboard-port', 'abc')).toThrow('exit');
       expect(process.stderr.write).toHaveBeenCalledWith(
         expect.stringContaining('--dashboard-port requires a valid port number'),
-      );
-    });
-
-    it('exits on invalid --tick-interval (NaN)', () => {
-      mockProcessExit();
-      expect(() => parse('run', 'file.ts', '--serve', '--tick-interval', 'abc')).toThrow('exit');
-      expect(process.stderr.write).toHaveBeenCalledWith(
-        expect.stringContaining('--tick-interval requires a positive number'),
-      );
-    });
-
-    it('exits on --tick-interval zero or negative', () => {
-      mockProcessExit();
-      expect(() => parse('run', 'file.ts', '--serve', '--tick-interval', '0')).toThrow('exit');
-      expect(process.stderr.write).toHaveBeenCalledWith(
-        expect.stringContaining('--tick-interval requires a positive number'),
       );
     });
 

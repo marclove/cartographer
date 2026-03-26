@@ -155,65 +155,23 @@ describe('CLI: inspect command', () => {
   });
 });
 
-// ─── 4. run command — batch mode ──────────────────────────────────────────────
-//
-// ActionNode returns RUNNING on the first tick (it starts the action
-// asynchronously and reports the result on the *next* tick). Since the
-// CLI's batch mode calls tree.run() which performs a single tick, all
-// single-action trees exit with code 2 (RUNNING). This is the expected
-// behavior — we verify the formatter output and correct exit codes.
+// ─── 4. run command ─────────────────────────────────────────────────────────
 
-describe('CLI: run command — batch mode', () => {
-  it('run success-tree → exits with code 2 (RUNNING after single tick)', async () => {
-    const result = await runCli(['run', resolve(FIXTURES, 'success-tree.ts')]);
-    expect(result.exitCode).toBe(2);
-    expect(result.stdout).toContain('success-test');
-  });
-
-  it('run failure-tree → exits with code 2 (RUNNING after single tick)', async () => {
-    const result = await runCli(['run', resolve(FIXTURES, 'failure-tree.ts')]);
-    expect(result.exitCode).toBe(2);
-    expect(result.stdout).toContain('failure-test');
-  });
-
-  it('run --json success-tree → stdout lines parse as JSON', async () => {
-    const result = await runCli(['run', '--json', resolve(FIXTURES, 'success-tree.ts')]);
-    const lines = result.stdout.trim().split('\n').filter((l) => l.length > 0);
-    expect(lines.length).toBeGreaterThan(0);
-    for (const line of lines) {
-      expect(() => JSON.parse(line)).not.toThrow();
-    }
-  });
-
-  it('run --env-file env-tree → stdout contains "hello_from_env"', async () => {
-    const result = await runCli([
-      'run',
-      '--env-file',
-      resolve(FIXTURES, 'test.env'),
-      resolve(FIXTURES, 'env-tree.ts'),
-    ]);
-    expect(result.stdout).toContain('hello_from_env');
-  });
-
+describe('CLI: run command', () => {
   it('run without file → exitCode 1, stderr contains "run requires a file"', async () => {
     const result = await runCli(['run']);
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain('run requires a file');
   });
-});
 
-// ─── 5. run command — serve mode ──────────────────────────────────────────────
-
-describe('CLI: run command — serve mode', () => {
   it(
-    'serve with --no-tick --no-dashboard starts server, responds to /api/status, exits cleanly on SIGTERM',
+    'run --no-dashboard starts server, responds to /api/status, exits cleanly on SIGTERM',
     { timeout: 15_000 },
     async () => {
       const child = spawnCli([
         'run',
-        '--serve',
-        '--no-tick',
         '--no-dashboard',
+        '--port', '0',
         resolve(FIXTURES, 'serve-tree.ts'),
       ]);
 
@@ -237,16 +195,40 @@ describe('CLI: run command — serve mode', () => {
   );
 
   it(
-    'serve without --tick-interval or --no-tick exits with error',
+    'run --env-file loads environment into tree factory',
     { timeout: 15_000 },
     async () => {
-      const result = await runCli([
+      const child = spawnCli([
         'run',
-        '--serve',
-        resolve(FIXTURES, 'serve-tree.ts'),
+        '--no-dashboard',
+        '--port', '0',
+        '--env-file',
+        resolve(FIXTURES, 'test.env'),
+        resolve(FIXTURES, 'env-tree.ts'),
       ]);
-      expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain('--tick-interval');
+
+      try {
+        const port = await waitForServer(child);
+
+        // Tick the tree via HTTP to exercise the env-dependent action
+        await fetch(`http://localhost:${port}/api/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'tick' }),
+        });
+
+        // Give the tick a moment to process
+        await new Promise((r) => setTimeout(r, 200));
+
+        const bbResp = await fetch(`http://localhost:${port}/api/blackboard`);
+        const bb = await bbResp.json();
+        expect(bb['env_result']).toBe('hello_from_env');
+
+        child.kill('SIGTERM');
+        await new Promise<void>((resolve) => child.on('close', () => resolve()));
+      } finally {
+        if (!child.killed) child.kill('SIGKILL');
+      }
     },
   );
 });

@@ -3,10 +3,9 @@
 The `cartographer` binary runs, inspects, and scaffolds behavior trees from the command line.
 
 ```bash
-cartographer run my-tree.ts                              # execute a tree
-cartographer run my-tree.ts --serve --tick-interval 1000 # run as a persistent server
-cartographer inspect my-tree.ts                          # visualize its structure
-cartographer init my-tree                                # scaffold a new tree file
+cartographer run my-tree.ts           # start an actor server for a tree
+cartographer inspect my-tree.ts       # visualize its structure
+cartographer init my-tree             # scaffold a new tree file
 ```
 
 ---
@@ -20,18 +19,17 @@ cartographer init my-tree
 cartographer run my-tree.ts
 ```
 
-Output (text mode):
+The `run` command starts an ActorServer and a dashboard by default:
 
 ```
-▶ [sequence] main
-  ▶ [action] hello
-  ✓ [action] hello (1ms)
-  ▶ [action] log-result
-Hello from my-tree!
-  ✓ [action] log-result (0ms)
-✓ [sequence] main (2ms)
+Actor server: http://localhost:3147
+Dashboard: http://localhost:3148
+```
 
-Tree: my-tree — SUCCESS (3ms)
+Send a tick to execute the tree:
+
+```bash
+curl -X POST http://localhost:3147/api/messages -H 'Content-Type: application/json' -d '{"type":"tick"}'
 ```
 
 ---
@@ -61,13 +59,10 @@ The factory pattern defers tree construction until the CLI has loaded environmen
 
 ### TreeRunConfig
 
-| Field          | Type                          | Default    | Description                                             |
-| -------------- | ----------------------------- | ---------- | ------------------------------------------------------- |
-| `tree`         | `BehaviorTree`                | (required) | The constructed behavior tree to run.                   |
-| `schedule`     | `SchedulerConfig['schedule']` | —          | Optional schedule. Omit for a single run.               |
-| `maxCycles`    | `number`                      | —          | Maximum number of completed cycles (terminal statuses). |
-| `stopOnStatus` | `NodeStatus`                  | —          | Stop the scheduler when the tree returns this status.   |
-| `onError`      | `SchedulerConfig['onError']`  | —          | Error handling policy for scheduled runs.               |
+| Field      | Type                       | Default    | Description                                                                |
+| ---------- | -------------------------- | ---------- | -------------------------------------------------------------------------- |
+| `tree`     | `BehaviorTree`             | (required) | The constructed behavior tree to run.                                      |
+| `autoTick` | `{ intervalMs: number }`   | —          | Optional auto-tick interval. When set, the server sends tick messages at this interval. Omit for on-demand ticking only. |
 
 ### Example: reading environment variables
 
@@ -106,23 +101,7 @@ export default function (ctx: RunContext): TreeRunConfig {
 cartographer run api-caller.ts --env-file .env
 ```
 
----
-
-## Commands
-
-### run \<file\> [args...]
-
-Execute a behavior tree. The file must default-export a factory function.
-
-**Single-run mode** (no `schedule` in the returned config):
-
-```bash
-cartographer run deploy.ts
-```
-
-The CLI calls `tree.run()` once, prints output, and exits with a status-based exit code.
-
-**Scheduled mode** (factory returns a `schedule`):
+### Example: auto-tick for periodic execution
 
 ```typescript
 import type { RunContext, TreeRunConfig } from "cartographer";
@@ -140,18 +119,26 @@ export default function (ctx: RunContext): TreeRunConfig {
 
   return {
     tree,
-    schedule: { type: "interval", delayMs: 30_000 },
-    stopOnStatus: NodeStatus.FAILURE,
-    onError: "continue",
+    autoTick: { intervalMs: 30_000 }, // tick every 30 seconds
   };
 }
 ```
 
+---
+
+## Commands
+
+### run \<file\> [args...]
+
+Start an ActorServer for a behavior tree. The file must default-export a factory function.
+
 ```bash
-cartographer run health-check.ts --env-file .env
+cartographer run deploy.ts
 ```
 
-The CLI wraps execution in a `TreeScheduler` and runs until a stop condition is met or a signal is received.
+The CLI calls the factory, creates an ActorServer, and starts it. The server exposes HTTP endpoints for sending messages, reading state, and streaming events via SSE. A dashboard is also started for real-time observation.
+
+When the factory returns an `autoTick` field, the server automatically sends tick messages at the configured interval. Without `autoTick`, the tree only runs when messages arrive via the HTTP API.
 
 ### inspect \<file\>
 
@@ -277,110 +264,24 @@ SECRET='my-secret-value'
 
 ---
 
+## Server Flags
+
+| Flag                        | Description                                     |
+| --------------------------- | ----------------------------------------------- |
+| `--port <number>`           | Port for the ActorServer (default: 3147).        |
+| `--no-dashboard`            | Disable the dashboard server.                    |
+| `--dashboard-port <number>` | Port for the dashboard (default: 3148).          |
+
+---
+
 ## Signal Handling and Exit Codes
 
-The CLI handles `SIGINT` (Ctrl-C) and `SIGTERM` gracefully.
-
-In **batch mode** (default), the first signal calls `tree.abort()`, giving nodes a chance to clean up. In scheduled mode, the scheduler is also stopped.
-
-In **serve mode** (`--serve`), the signal triggers a clean shutdown: the tick-loop scheduler (if running) is stopped, the dashboard server is closed, and the ActorServer is shut down. The process exits with code 0.
-
-### Exit codes (batch mode)
-
-| Code | Meaning                                                            |
-| ---- | ------------------------------------------------------------------ |
-| `0`  | Tree returned `SUCCESS`.                                           |
-| `1`  | Tree returned `FAILURE`, or a runtime error occurred.              |
-| `2`  | Tree returned `RUNNING`, or execution was interrupted by a signal. |
-
-In serve mode, the process exits with code `0` on clean shutdown.
-
----
-
-## Scheduling via CLI
-
-When the factory returns a `schedule` field, the CLI automatically wraps execution in a `TreeScheduler`. All scheduler options (`maxCycles`, `stopOnStatus`, `onError`) are set through the `TreeRunConfig` — no additional flags needed.
-
-```typescript
-export default function (ctx: RunContext): TreeRunConfig {
-  return {
-    tree,
-    schedule: { type: "cron", expression: "*/5 * * * *" },
-    maxCycles: 100,
-    onError: "continue",
-  };
-}
-```
-
-For full details on schedule types and behavior, see the [Scheduler guide](guide-scheduler.md).
-
----
-
-## Serve Mode
-
-The `--serve` flag starts an ActorServer alongside tree execution, turning your tree into a persistent service that accepts messages over HTTP. This is the bridge between batch tree execution and the [Application Server](guide-app-server.md).
-
-```bash
-# Tick every 2 seconds + accept HTTP messages + dashboard
-cartographer run my-tree.ts --serve --tick-interval 2000
-
-# Message-driven only (no auto-ticking)
-cartographer run my-tree.ts --serve --no-tick
-```
-
-When `--serve` is active, the CLI starts an ActorServer that:
-
-- Exposes HTTP endpoints for sending messages, reading blackboard state, and observing the tree
-- Streams real-time events via SSE (consumed by the dashboard)
-- Persists tree state across message processing
-
-### Serve mode flags
-
-| Flag                        | Description                                                    |
-| --------------------------- | -------------------------------------------------------------- |
-| `--serve`                   | Enable serve mode. Requires `--tick-interval` or `--no-tick`.  |
-| `--tick-interval <ms>`      | Auto-tick the tree on this interval.                           |
-| `--no-tick`                 | Disable auto-ticking; the tree only runs when messages arrive. |
-| `--port <number>`           | Port for the ActorServer (default: 3147).                      |
-| `--no-dashboard`            | Disable the dashboard server.                                  |
-| `--dashboard-port <number>` | Port for the dashboard (default: 3148).                        |
-
-The `--tick-interval` or `--no-tick` flag is required with `--serve` -- the tick rate must be explicit. All other serve flags (`--port`, `--no-dashboard`, `--dashboard-port`) also require `--serve`.
-
-### Auto-tick mode vs message-driven mode
-
-**Auto-tick** (`--serve --tick-interval 1000`): A local tree ticks on the specified interval, with events streamed to the dashboard. The ActorServer also accepts messages via HTTP. Use this when the tree has autonomous behavior that should run continuously alongside external input.
-
-**Message-driven** (`--serve --no-tick`): The tree only runs when messages arrive via the ActorServer's HTTP API. No local tree ticks. Use this when the tree should be purely reactive to external events.
-
-In both modes, output formatting flags (`--json`, `--verbose`, `--quiet`) work as normal. In auto-tick mode, the formatter shows tick-loop events. In message-driven mode, the formatter shows events from each message-processing tree.
-
-### Example: serve with auto-tick and dashboard
-
-```bash
-cartographer run health-monitor.ts --serve --tick-interval 5000 --env-file .env
-```
-
-```
-Actor server: http://localhost:3147
-Dashboard: http://localhost:3148
-▶ [sequence] check
-  ▶ [action] ping
-  ✓ [action] ping (45ms)
-✓ [sequence] check (46ms)
-
-Tree: health-monitor — SUCCESS (47ms)
-```
-
-Open `http://localhost:3148` for a real-time dashboard view of tree execution, blackboard state, and event timeline.
-
-For full details on the ActorServer HTTP API and message types, see the [Application Server guide](guide-app-server.md).
+The CLI handles `SIGINT` (Ctrl-C) and `SIGTERM` gracefully. On signal, the dashboard server is closed and the ActorServer is shut down. The process exits with code 0.
 
 ---
 
 ## Where to go next
 
 - [API Reference: CLI](api/cli.md) -- full type signatures for `RunContext`, `TreeRunConfig`, `FormatterOptions`, and `createFormatter`.
-- [Application Server](guide-app-server.md) -- message-driven tree execution, state persistence, and the HTTP API exposed by `--serve`.
-- [Scheduler](guide-scheduler.md) -- interval, cron, and one-shot scheduling in depth.
+- [Application Server](guide-app-server.md) -- message-driven tree execution, state persistence, and the HTTP API.
 - [Blackboard and Events](guide-blackboard-and-events.md) -- the event system that the CLI formatter consumes.

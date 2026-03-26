@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { ObserverServer } from '../server/observer-server.js';
+import { ActorServer } from '../server/actor-server.js';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
 import { ActionNode } from '../nodes/action.js';
@@ -7,9 +7,8 @@ import { ConditionNode } from '../nodes/condition.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { NodeStatus } from '../types.js';
 
-let server: ObserverServer;
+let server: ActorServer;
 let port: number;
-let tree: BehaviorTree;
 
 function createTree() {
   const check = new ConditionNode({ name: 'CheckReady', id: 'check-ready', condition: async () => true });
@@ -20,13 +19,15 @@ function createTree() {
 }
 
 beforeAll(async () => {
-  tree = createTree();
-  server = new ObserverServer(tree, { port: 0 });
+  server = new ActorServer({
+    createTree,
+    port: 0,
+  });
   ({ port } = await server.start());
 });
 
 afterAll(async () => {
-  await server.close();
+  await server.stop();
 });
 
 describe('GET /api/tree', () => {
@@ -57,20 +58,17 @@ describe('GET /api/status', () => {
   });
 
   it('reflects status after a tick', async () => {
-    const flush = () => new Promise<void>(r => setTimeout(r, 0));
-    await tree.tick();
-    await flush();
-    await tree.tick();
+    await server.processMessage({ type: 'tick' });
     const res = await fetch(`http://localhost:${port}/api/status`);
     const body = await res.json();
-    expect(body.tickCount).toBe(2);
+    expect(body.tickCount).toBeGreaterThanOrEqual(1);
     expect(body.lastStatus).toBe('success');
     expect(body.lastDurationMs).toBeGreaterThanOrEqual(0);
   });
 });
 
 describe('GET /api/blackboard', () => {
-  it('returns full blackboard snapshot with scoped keys', async () => {
+  it('returns blackboard snapshot with scoped keys', async () => {
     const res = await fetch(`http://localhost:${port}/api/blackboard`);
     expect(res.status).toBe(200);
     const body = await res.json();

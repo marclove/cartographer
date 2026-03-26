@@ -1,4 +1,3 @@
-import type { NodeStatus, SchedulerConfig } from '../types.js';
 import type { BehaviorTree } from '../core/behavior-tree.js';
 
 /**
@@ -28,25 +27,21 @@ export interface RunContext {
 /**
  * Configuration returned by the user's tree factory function.
  *
- * At minimum, provide a `tree`. Optionally configure a schedule to run
- * the tree repeatedly, with stopping conditions and error handling.
- *
- * When `schedule` is omitted, the CLI runs the tree once via `tree.run()`.
- * When `schedule` is provided, the CLI wraps execution in a `TreeScheduler`.
+ * Provide a `tree` and optionally an `autoTick` interval. The CLI
+ * starts an ActorServer for the tree. When `autoTick` is set, the
+ * server automatically sends tick messages at the configured interval.
  *
  * @example
  * ```ts
- * // Single run
  * export default function(ctx: RunContext): TreeRunConfig {
  *   return { tree: myBehaviorTree };
  * }
  *
- * // Scheduled — poll every 30 seconds, stop on success
+ * // With auto-tick — tick every 5 seconds
  * export default function(ctx: RunContext): TreeRunConfig {
  *   return {
  *     tree: myBehaviorTree,
- *     schedule: { type: 'interval', delayMs: 30_000 },
- *     stopOnStatus: NodeStatus.SUCCESS,
+ *     autoTick: { intervalMs: 5_000 },
  *   };
  * }
  * ```
@@ -55,15 +50,6 @@ export interface TreeRunConfig {
   /** The constructed behavior tree to run. */
   tree: BehaviorTree;
 
-  /** Optional schedule — omit for a single run. */
-  schedule?: SchedulerConfig['schedule'];
-
-  /** Maximum number of completed cycles (only meaningful with a schedule). */
-  maxCycles?: number;
-
-  /** Stop scheduler when tree returns this status. */
-  stopOnStatus?: NodeStatus;
-
-  /** Error handling policy for scheduled runs. */
-  onError?: SchedulerConfig['onError'];
+  /** Optional auto-tick — omit for on-demand ticking only. */
+  autoTick?: { intervalMs: number };
 }

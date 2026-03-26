@@ -67,19 +67,23 @@ export class ActorServer {
     await this.handle.initializeState();
     this.handle.drainQueue().catch(() => {});
 
-    return new Promise((resolve, reject) => {
+    const result = await new Promise<{ port: number }>((resolve, reject) => {
       this.server = serve(
         { fetch: this.handle.app.fetch, port: this.configPort },
         (info) => { resolve({ port: info.port }); },
       );
       this.server.on('error', reject);
     });
+
+    this.handle.startAutoTick();
+    return result;
   }
 
   /**
    * Gracefully shut down the server.
    */
   async stop(): Promise<void> {
+    this.handle.stopAutoTick();
     this.handle.closeSseClients();
     if (this.server) {
       await new Promise<void>((resolve) => this.server!.close(() => resolve()));

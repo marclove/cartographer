@@ -309,133 +309,60 @@ The application server provides server-side interrupt support via `POST /api/int
 
 ---
 
-## Scheduler Error Handling
-
-`TreeScheduler` provides three error handling modes via the `onError` option:
-
-### `'stop'` (default)
-
-The scheduler stops on the first tick error:
-
-```typescript
-import { TreeScheduler } from "cartographer";
-
-const scheduler = new TreeScheduler({
-  tree,
-  schedule: { type: "interval", delayMs: 1000 },
-  onError: "stop", // default behavior
-});
-```
-
-### `'continue'`
-
-The scheduler logs the error via a `tick:error` event and keeps ticking:
-
-```typescript
-const scheduler = new TreeScheduler({
-  tree,
-  schedule: { type: "interval", delayMs: 1000 },
-  onError: "continue",
-  maxCycles: 10,
-});
-
-scheduler.events.on("tick:error", ({ error, runCount }) => {
-  console.error(`Tick ${runCount} failed:`, error.message);
-});
-
-await scheduler.start();
-// Continues ticking even after errors, up to maxCycles
-```
-
-### Error Callback
-
-A function that receives the error and run count, and returns `'continue'` or `'stop'`. This lets you implement conditional recovery — for example, tolerating a few errors but stopping after repeated failures:
-
-```typescript
-const scheduler = new TreeScheduler({
-  tree,
-  schedule: { type: "interval", delayMs: 1000 },
-  onError: (error, runCount) => {
-    console.error(`Error on run ${runCount}:`, error.message);
-    // Stop after 3 consecutive errors
-    return runCount < 3 ? "continue" : "stop";
-  },
-});
-```
-
-When the callback returns `'stop'`, the scheduler emits a `scheduler:stop` event with `reason: 'error'`.
-
-### Combining with stopOnStatus and maxCycles
-
-`stopOnStatus` takes precedence over `maxCycles` when the target status is reached first:
-
-```typescript
-const scheduler = new TreeScheduler({
-  tree,
-  schedule: { type: "interval", delayMs: 100 },
-  maxCycles: 10,
-  stopOnStatus: NodeStatus.SUCCESS,
-});
-
-await scheduler.start();
-// Stops at the first SUCCESS, even if maxCycles hasn't been reached.
-// scheduler.events 'scheduler:stop' reason will be 'stopOnStatus'.
-```
-
----
-
 ## Putting It All Together
 
 A production-grade resilient pipeline combines these patterns:
 
 ```typescript
-import { TreeBuilder, TreeScheduler, NodeStatus } from "cartographer";
+import { TreeBuilder, ActorServer, NodeStatus } from "cartographer";
 
-const tree = new TreeBuilder("resilient-pipeline")
-  .sequence("main", (b) => {
-    // Guard: only proceed if enabled
-    b.condition("is-enabled", (ctx) => ctx.blackboard.get("enabled") === true);
+function createTree() {
+  const tree = new TreeBuilder("resilient-pipeline")
+    .sequence("main", (b) => {
+      // Guard: only proceed if enabled
+      b.condition("is-enabled", (ctx) => ctx.blackboard.get("enabled") === true);
 
-    // Retry + timeout around the unreliable operation
-    b.retry("retry-fetch", { maxAttempts: 3, delayMs: 500 }, (b) => {
-      b.timeout("timeout-fetch", { timeoutMs: 5000 }, (b) => {
-        b.action("fetch-data", async (ctx) => {
-          const data = await fetchFromApi();
-          ctx.blackboard.set("data", data);
+      // Retry + timeout around the unreliable operation
+      b.retry("retry-fetch", { maxAttempts: 3, delayMs: 500 }, (b) => {
+        b.timeout("timeout-fetch", { timeoutMs: 5000 }, (b) => {
+          b.action("fetch-data", async (ctx) => {
+            const data = await fetchFromApi();
+            ctx.blackboard.set("data", data);
+            return NodeStatus.SUCCESS;
+          });
+        });
+      });
+
+      // Fallback processing
+      b.selector("process", (b) => {
+        b.action("fast-path", async (ctx) => {
+          const ok = await tryFastProcess(ctx.blackboard.get("data"));
+          return ok ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
+        });
+        b.action("slow-path", async (ctx) => {
+          await slowProcess(ctx.blackboard.get("data"));
           return NodeStatus.SUCCESS;
         });
       });
-    });
+    })
+    .build();
 
-    // Fallback processing
-    b.selector("process", (b) => {
-      b.action("fast-path", async (ctx) => {
-        const ok = await tryFastProcess(ctx.blackboard.get("data"));
-        return ok ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
-      });
-      b.action("slow-path", async (ctx) => {
-        await slowProcess(ctx.blackboard.get("data"));
-        return NodeStatus.SUCCESS;
-      });
-    });
-  })
-  .build();
+  tree.blackboard.set("enabled", true);
 
-tree.blackboard.set("enabled", true);
+  tree.events.on("node:error", ({ node, error }) => {
+    console.error(`[${node.name}]`, error.message);
+  });
 
-// Run on a schedule with error recovery
-const scheduler = new TreeScheduler({
-  tree,
-  schedule: { type: "interval", delayMs: 30_000 },
-  onError: "continue",
-  abortOnStop: true,
+  return tree;
+}
+
+// Run as a persistent service with auto-ticking every 30 seconds
+const server = new ActorServer({
+  createTree,
+  autoTick: { intervalMs: 30_000 },
 });
 
-tree.events.on("node:error", ({ node, error }) => {
-  console.error(`[${node.name}]`, error.message);
-});
-
-await scheduler.start();
+await server.start();
 ```
 
 ---
@@ -443,6 +370,6 @@ await scheduler.start();
 ## Next Steps
 
 - [Decorators](guide-decorators.md) — Full reference for Retry, Timeout, and other decorators.
-- [Scheduler](guide-scheduler.md) — Interval, cron, and one-shot scheduling.
+- [Application Server](guide-app-server.md) — Persistent services with auto-tick, HTTP API, and SSE events.
 - [Testing Behavior Trees](guide-testing.md) — How to test error handling and resilience patterns.
 - [Advanced Patterns](guide-advanced-patterns.md) — Custom nodes, strategies, and multi-tick workflows.

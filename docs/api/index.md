@@ -42,9 +42,6 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `TimeoutConfig`       | Configuration for `Timeout`                      |
 | `GuardConfig`         | Configuration for `Guard`                        |
 | `BehaviorTreeConfig`  | Top-level tree configuration                         |
-| `SchedulerConfig`     | Configuration for `TreeScheduler`                    |
-| `SchedulerEvents`     | Event map for scheduler lifecycle events             |
-| `TickLoopHandle`      | Handle returned by `BehaviorTree.start()`            |
 | `TreeLoggerOptions`   | Configuration for `createTreeLogger`                 |
 | `RunContext`          | Context provided to CLI tree factory functions       |
 | `TreeRunConfig`       | Configuration returned by CLI tree factory functions |
@@ -137,12 +134,6 @@ Re-exported from the internal type definitions. See individual reference pages f
 | -------------- | ----------------------------------------------------------------- |
 | `TreeRegistry` | Registry of named node factories for use with the builder API     |
 
-## [Scheduler](scheduler.md)
-
-| Export          | Description                                                  |
-| --------------- | ------------------------------------------------------------ |
-| `TreeScheduler` | Runs a behavior tree on a schedule (interval, cron, or once) |
-
 ## [Agent Integration](agent.md)
 
 | Export                         | Description                                                                                                                                   |
@@ -164,14 +155,9 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `ProcessResult`            | Result of `MessageProcessor.process()`                                   |
 | `ActorServer`              | HTTP server wrapping `MessageProcessor` with REST and SSE                |
 | `ActorServerOptions`       | Options for `ActorServer` constructor                                    |
-| `ObserverServer`           | Read-only HTTP server for observing a live behavior tree                 |
-| `ObserverServerOptions`    | Options for `ObserverServer` constructor                                 |
 | `createApp`                | Hono app factory for full actor functionality                            |
-| `AppOptions`               | Options for `createApp`                                                  |
+| `AppOptions`               | Options for `createApp` (includes `autoTick`)                            |
 | `AppHandle`                | Handle returned by `createApp` with app, processing, and lifecycle       |
-| `createObserverApp`        | Hono app factory for read-only tree observation                          |
-| `ObserverAppOptions`       | Options for `createObserverApp`                                          |
-| `ObserverHandle`           | Handle returned by `createObserverApp` with app and close                |
 | `EventBridge`              | Bridges tree events to state persistence and SSE delivery                |
 | `ActorMessage`             | Union of all message types                                               |
 | `TickMessage`              | Tick message type                                                        |

@@ -10,7 +10,7 @@ import type { TypedEventEmitter } from '../types.js';
  *
  * Throughout the framework, `EventEmitter<TreeEvents>` carries node lifecycle
  * events, agent activity, and strategy decisions across a tree tick. The same
- * class is used for `EventEmitter<SchedulerEvents>` in the scheduler.
+ * class is reusable for any typed event map.
  *
  * **Implementation details:**
  * - Listeners are stored in a `Map<eventName, Set<listener>>`. Because a `Set`

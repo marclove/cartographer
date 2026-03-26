@@ -8,7 +8,6 @@ import { ParallelNode } from '../composites/parallel.js';
 import { Retry } from '../decorators/retry.js';
 import { Timeout } from '../decorators/timeout.js';
 import { TreeBuilder } from '../builder/tree-builder.js';
-import { TreeScheduler } from '../scheduler/tree-scheduler.js';
 import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
 import {
   createContext,
@@ -75,7 +74,7 @@ describe('Deterministic Integration Tests', () => {
     expect(ctx.blackboard.get('pipeline')).toBe('complete');
   });
 
-  it('RUNNING resumption with Scheduler', async () => {
+  it('RUNNING resumption across multiple ticks', async () => {
     let tickCount = 0;
 
     const tree = new TreeBuilder('resumption-test')
@@ -98,40 +97,22 @@ describe('Deterministic Integration Tests', () => {
 
     tree.blackboard.set('enabled', true);
 
-    const scheduler = new TreeScheduler({
-      tree,
-      schedule: { type: 'interval', delayMs: 10 },
-      stopOnStatus: NodeStatus.SUCCESS,
-    });
+    let totalTicks = 0;
+    let status = await tree.tick();
+    totalTicks++;
+    while (status === NodeStatus.RUNNING) {
+      await flush();
+      status = await tree.tick();
+      totalTicks++;
+    }
 
-    const tickCompleteEvents: unknown[] = [];
-    scheduler.events.on('tick:complete', (data) => tickCompleteEvents.push(data));
-
-    await scheduler.start();
-
-    expect(scheduler.lastStatus).toBe(NodeStatus.SUCCESS);
+    expect(status).toBe(NodeStatus.SUCCESS);
     expect(tickCount).toBe(3);
     expect(tree.blackboard.get('work')).toBe('finished');
     expect(tree.blackboard.get('completed')).toBe(true);
-    // With the inflight model each logical action takes 2 scheduler ticks
-    // (start → RUNNING, then poll → result). The tree has three actions that
-    // each need at least one inflight cycle, plus multi-tick starts three
-    // separate inflight cycles:
-    //
-    //  Tick 1:  guard-check starts inflight                  → RUNNING
-    //  Tick 2:  guard-check polls SUCCESS (cached);
-    //           multi-tick starts inflight (tickCount=1)     → RUNNING
-    //  Tick 3:  guard-check cached; multi-tick polls RUNNING → RUNNING
-    //  Tick 4:  guard-check cached;
-    //           multi-tick starts inflight (tickCount=2)     → RUNNING
-    //  Tick 5:  guard-check cached; multi-tick polls RUNNING → RUNNING
-    //  Tick 6:  guard-check cached;
-    //           multi-tick starts inflight (tickCount=3)     → RUNNING
-    //  Tick 7:  guard-check cached; multi-tick polls SUCCESS (cached);
-    //           completion starts inflight                   → RUNNING
-    //  Tick 8:  guard-check cached; multi-tick cached;
-    //           completion polls SUCCESS                     → SUCCESS (stop)
-    expect(tickCompleteEvents).toHaveLength(8);
+    // With the inflight model each logical action takes 2 ticks
+    // (start → RUNNING, then poll → result). 8 ticks total.
+    expect(totalTicks).toBe(8);
   });
 
   it('Selector fallback with event tracing', async () => {

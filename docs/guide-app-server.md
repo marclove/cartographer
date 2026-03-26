@@ -2,7 +2,7 @@
 
 The application server turns Cartographer's behavior trees into persistent, message-driven services. Instead of ticking a tree in a loop, you define a tree factory and let the server handle state persistence, HTTP endpoints, and client communication.
 
-This guide covers the full stack: `MessageProcessor` for processing, `ActorServer` for HTTP, `ObserverServer` for read-only observation, `StateStore` for persistence, and the client SDK for browser/Node.js consumers.
+This guide covers the full stack: `MessageProcessor` for processing, `ActorServer` for HTTP, `StateStore` for persistence, and the client SDK for browser/Node.js consumers.
 
 ---
 
@@ -13,8 +13,7 @@ A Cartographer tree lives in memory and runs until its process ends. The applica
 1. A **tree factory** creates a fresh tree for every incoming message.
 2. **MessageProcessor** loads persisted state, hydrates the tree, processes one message to completion, then serializes and saves the result.
 3. **ActorServer** wraps MessageProcessor with an HTTP server — REST endpoints for sending messages, SSE for real-time events, and read endpoints for inspecting state.
-4. **ObserverServer** provides a read-only HTTP server for observing a live tree (no state persistence, no message queue).
-5. A **Client SDK** connects frontends to the server via fetch and EventSource.
+4. A **Client SDK** connects frontends to the server via fetch and EventSource.
 
 The tree itself is _transient_ — created per request, then discarded. The _state_ is durable, stored in a `StateStore` (in-memory for development, Redis for production).
 
@@ -209,6 +208,7 @@ const server = new ActorServer({
   context: { tenantId: "abc" }, // Optional: written to blackboard as context:*
   topologyPolicy: "fail", // Optional: 'fail' or 'reset' on tree shape change
   maxQueueDepth: 16, // Optional: max queued messages (default: CARTOGRAPHER_MAX_QUEUE_DEPTH env or 16)
+  autoTick: { intervalMs: 5000 }, // Optional: auto-tick interval
 });
 
 const { port } = await server.start();
@@ -319,45 +319,9 @@ source.addEventListener("message:interrupted", (e) => {
 
 ---
 
-## ObserverServer
+## Hono App Factory
 
-`ObserverServer` is a lightweight, read-only HTTP server for observing a live behavior tree. Unlike `ActorServer`, it has no state persistence, no message queue, and no write endpoints — it attaches directly to a running `BehaviorTree` instance and streams events in real time.
-
-Use `ObserverServer` when you want to inspect a tree that is being driven externally (e.g., by a `TreeScheduler` or manual ticks) without adding the overhead of a full `ActorServer`.
-
-```typescript
-import { BehaviorTree, ObserverServer, TreeScheduler } from "cartographer";
-
-const tree = new BehaviorTree({ name: "monitor", root: myRoot });
-
-const observer = new ObserverServer(tree, { port: 3147 });
-await observer.start();
-console.log("Observer running on http://localhost:3147");
-
-// Drive the tree externally
-const scheduler = new TreeScheduler(tree, { interval: 5000 });
-scheduler.start();
-
-// Events from every tick are streamed to connected SSE clients
-```
-
-### ObserverServer Endpoints
-
-| Method | Path             | Description                                                       |
-| ------ | ---------------- | ----------------------------------------------------------------- |
-| GET    | `/api/tree`      | Tree structure: name, serialized root.                            |
-| GET    | `/api/status`    | Tree metrics: tick count, cycle count, last status, uptime.       |
-| GET    | `/api/blackboard`| Live blackboard state as JSON.                                    |
-| GET    | `/api/nodes/:id` | Individual node detail. Includes agent metadata for `AgentNode`s. |
-| GET    | `/events`        | SSE event stream with snapshot and live events.                   |
-
-On SSE connection, the server sends a `snapshot` event with the current tree structure and blackboard. Event replay via `Last-Event-ID` is supported on reconnect.
-
----
-
-## Hono App Factories
-
-Both `ActorServer` and `ObserverServer` are thin wrappers around composable Hono app factories. If you need to mount a Cartographer API into an existing Hono server or apply custom middleware, use the factories directly.
+`ActorServer` is a thin wrapper around a composable Hono app factory. If you need to mount a Cartographer API into an existing Hono server or apply custom middleware, use the factory directly.
 
 ### createApp
 
@@ -379,22 +343,6 @@ root.route("/cartographer", handle.app);
 // Initialize and start processing
 await handle.initializeState();
 handle.drainQueue().catch(() => {});
-```
-
-### createObserverApp
-
-Returns an `ObserverHandle` with a read-only Hono app for tree observation.
-
-```typescript
-import { createObserverApp } from "cartographer";
-
-const handle = createObserverApp({ tree: myTree });
-
-// Mount into an existing server
-app.route("/observer", handle.app);
-
-// Cleanup when done
-handle.close();
 ```
 
 ---

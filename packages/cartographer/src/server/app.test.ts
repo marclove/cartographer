@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { serve } from '@hono/node-server';
 import type { Server } from 'node:http';
 import { createApp } from './app.js';
@@ -586,5 +586,134 @@ describe('createApp — bridgeTree', () => {
 
     handle.closeSseClients();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+});
+
+// ---------- Auto-tick tests ----------
+
+describe('createApp — autoTick', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('sends tick messages at the configured interval', async () => {
+    let tickCount = 0;
+    const handle = createApp({
+      createTree: () => {
+        const action = new ActionNode({
+          name: 'counter',
+          action: async () => { tickCount++; return NodeStatus.SUCCESS; },
+        });
+        return new BehaviorTree({ name: 'auto', root: action });
+      },
+      autoTick: { intervalMs: 100 },
+    });
+    await handle.initializeState();
+    handle.startAutoTick();
+
+    await vi.advanceTimersByTimeAsync(250);
+
+    handle.stopAutoTick();
+    expect(tickCount).toBe(2);
+  });
+
+  it('skips tick when previous is still in flight', async () => {
+    let tickCount = 0;
+    let resolvers: Array<() => void> = [];
+    const handle = createApp({
+      createTree: () => {
+        const action = new ActionNode({
+          name: 'slow',
+          action: () => new Promise<NodeStatus>((resolve) => {
+            tickCount++;
+            resolvers.push(() => resolve(NodeStatus.SUCCESS));
+          }),
+        });
+        return new BehaviorTree({ name: 'auto', root: action });
+      },
+      autoTick: { intervalMs: 50 },
+    });
+    await handle.initializeState();
+    handle.startAutoTick();
+
+    // First interval fires, starts a tick
+    await vi.advanceTimersByTimeAsync(50);
+    expect(tickCount).toBe(1);
+
+    // Second interval fires while first is still in flight — should skip
+    await vi.advanceTimersByTimeAsync(50);
+    expect(tickCount).toBe(1);
+
+    // Resolve the first tick
+    resolvers[0]();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Third interval fires, should start a new tick
+    await vi.advanceTimersByTimeAsync(50);
+    expect(tickCount).toBe(2);
+
+    resolvers[1]();
+    handle.stopAutoTick();
+  });
+
+  it('does nothing when autoTick option is not set', async () => {
+    const handle = createApp({ createTree: makeTree });
+    await handle.initializeState();
+    // Should be a no-op, not throw
+    handle.startAutoTick();
+    handle.stopAutoTick();
+  });
+
+  it('survives processMessage rejection and keeps ticking', async () => {
+    let tickCount = 0;
+    const handle = createApp({
+      createTree: () => {
+        const action = new ActionNode({
+          name: 'flaky',
+          action: async () => {
+            tickCount++;
+            if (tickCount === 1) throw new Error('boom');
+            return NodeStatus.SUCCESS;
+          },
+        });
+        return new BehaviorTree({ name: 'auto', root: action });
+      },
+      autoTick: { intervalMs: 100 },
+    });
+    await handle.initializeState();
+    handle.startAutoTick();
+
+    // First tick fires and the action throws — auto-tick should swallow it
+    await vi.advanceTimersByTimeAsync(100);
+    expect(tickCount).toBe(1);
+
+    // Second tick should still fire
+    await vi.advanceTimersByTimeAsync(100);
+    expect(tickCount).toBe(2);
+
+    handle.stopAutoTick();
+  });
+
+  it('stops cleanly via stopAutoTick', async () => {
+    let tickCount = 0;
+    const handle = createApp({
+      createTree: () => {
+        const action = new ActionNode({
+          name: 'counter',
+          action: async () => { tickCount++; return NodeStatus.SUCCESS; },
+        });
+        return new BehaviorTree({ name: 'auto', root: action });
+      },
+      autoTick: { intervalMs: 100 },
+    });
+    await handle.initializeState();
+    handle.startAutoTick();
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(tickCount).toBe(1);
+
+    handle.stopAutoTick();
+
+    await vi.advanceTimersByTimeAsync(300);
+    expect(tickCount).toBe(1);
   });
 });
