@@ -2,12 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { BehaviorTree } from '../core/behavior-tree.js';
 import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
-import { emitToClient } from '../nodes/emit-to-client.js';
+import { notify } from '../nodes/notify.js';
 import { NodeStatus } from '../types.js';
 import { setupTest, waitForEvent } from './helpers.js';
 
 describe('client:event SSE bridging', () => {
-  it('emitToClient events arrive via SSE', async () => {
+  it('notify events arrive via SSE', async () => {
     await using harness = await setupTest({
       createTree: () =>
         new BehaviorTree({
@@ -22,7 +22,7 @@ describe('client:event SSE bridging', () => {
                   return NodeStatus.SUCCESS;
                 },
               }),
-              emitToClient('ui:message', (ctx) => ({
+              notify('ui:message', (ctx) => ({
                 text: ctx.blackboard.get('greeting'),
               })),
             ],
@@ -43,7 +43,7 @@ describe('client:event SSE bridging', () => {
     expect(receivedEvents[0]).toEqual({ text: 'hello world' });
   });
 
-  it('multiple emitToClient events arrive in order', async () => {
+  it('multiple notify events arrive in order', async () => {
     await using harness = await setupTest({
       createTree: () =>
         new BehaviorTree({
@@ -78,12 +78,12 @@ describe('client:event SSE bridging', () => {
     expect(receivedEvents).toEqual([{ step: 1 }, { step: 2 }, { step: 3 }]);
   });
 
-  it('emitToClient also writes to blackboard (dual write)', async () => {
+  it('notify also writes to blackboard (dual write)', async () => {
     await using harness = await setupTest({
       createTree: () =>
         new BehaviorTree({
           name: 'dual-write',
-          root: emitToClient('ui:status', () => ({ ready: true })),
+          root: notify('ui:status', () => ({ ready: true })),
         }),
     });
 

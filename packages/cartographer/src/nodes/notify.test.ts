@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { emitToClient } from './emit-to-client.js';
+import { notify } from './notify.js';
 import { NodeStatus } from '../types.js';
 import type { TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
@@ -17,9 +17,9 @@ function createContext(): TreeContext {
 
 const flush = () => new Promise(r => setTimeout(r, 0));
 
-describe('EmitToClientNode', () => {
+describe('NotifyNode', () => {
   it('writes payload to blackboard under clientEvents: namespace', async () => {
-    const node = emitToClient('ui:show_review', () => ({ findings: 'some data' }));
+    const node = notify('ui:show_review', () => ({ findings: 'some data' }));
     const ctx = createContext();
 
     await node.tick(ctx); // starts inflight
@@ -30,7 +30,7 @@ describe('EmitToClientNode', () => {
   });
 
   it('emits client:event through the event system', async () => {
-    const node = emitToClient('ui:show_review', () => ({ findings: 'data' }));
+    const node = notify('ui:show_review', () => ({ findings: 'data' }));
     const ctx = createContext();
     const events: Array<{ name: string; data: unknown }> = [];
     ctx.events.on('client:event', (e) => events.push(e));
@@ -44,7 +44,7 @@ describe('EmitToClientNode', () => {
   });
 
   it('returns SUCCESS after emitting', async () => {
-    const node = emitToClient('test', () => ({}));
+    const node = notify('test', () => ({}));
     const ctx = createContext();
 
     await node.tick(ctx);
@@ -54,7 +54,7 @@ describe('EmitToClientNode', () => {
   });
 
   it('receives TreeContext in the data function', async () => {
-    const node = emitToClient('test', (ctx) => ({
+    const node = notify('test', (ctx) => ({
       value: ctx.blackboard.get('some:key'),
     }));
     const ctx = createContext();
@@ -68,8 +68,8 @@ describe('EmitToClientNode', () => {
   });
 
   it('produces stable content hash', () => {
-    const a = emitToClient('ui:review', () => ({}));
-    const b = emitToClient('ui:review', () => ({}));
+    const a = notify('ui:review', () => ({}));
+    const b = notify('ui:review', () => ({}));
     expect(a.contentHash()).toBe(b.contentHash());
   });
 });

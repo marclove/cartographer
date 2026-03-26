@@ -32,7 +32,7 @@ import {
   NodeStatus,
   receive,
   untilSuccess,
-  emitToClient,
+  notify,
 } from "cartographer";
 
 const server = new ActorServer({
@@ -51,7 +51,7 @@ const server = new ActorServer({
             },
           }),
           // Send findings to the client
-          emitToClient("ui:show_review", (ctx) => ({
+          notify("ui:show_review", (ctx) => ({
             findings: ctx.blackboard.get("analysis"),
           })),
           // Wait for user approval or rejection
@@ -524,7 +524,7 @@ client.on("message:processed", (data) => {
   console.log("Processing complete:", data);
 });
 
-// Listen for client events emitted by emitToClient nodes
+// Listen for client events emitted by notify nodes
 client.on("ui:show_review", (data) => {
   renderReviewPanel(data);
 });
@@ -586,7 +586,7 @@ const node = receive("approve", {
 });
 ```
 
-### emitToClient
+### notify
 
 Sends structured data to the client via a dual write:
 
@@ -594,9 +594,9 @@ Sends structured data to the client via a dual write:
 2. Emits a `client:event` event (real-time delivery via SSE).
 
 ```typescript
-import { emitToClient } from "cartographer";
+import { notify } from "cartographer";
 
-const node = emitToClient("ui:show_review", (ctx) => ({
+const node = notify("ui:show_review", (ctx) => ({
   findings: ctx.blackboard.get("analysis"),
   timestamp: Date.now(),
 }));

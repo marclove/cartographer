@@ -30,7 +30,7 @@ describe('multi-step action workflow', () => {
                     issues: ['missing input validation', 'no rate limiting'],
                   };
                   ctx.blackboard.set('analysis', analysis);
-                  // Dual-write: blackboard + SSE event (mirrors what emitToClient does)
+                  // Dual-write: blackboard + SSE event (mirrors what notify does)
                   ctx.blackboard.set('clientEvents:ui:findings', analysis);
                   ctx.events.emit('client:event', { name: 'ui:findings', data: analysis });
                   return NodeStatus.SUCCESS;
@@ -106,7 +106,7 @@ describe('multi-step action workflow', () => {
       issues: ['missing input validation', 'no rate limiting'],
     });
 
-    // Verify: findings also on blackboard (dual write from emitToClient)
+    // Verify: findings also on blackboard (dual write from notify)
     const bb1 = await harness.client.blackboard();
     expect(bb1['analysis']).toBeDefined();
 

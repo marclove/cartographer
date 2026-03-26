@@ -229,7 +229,7 @@ function AnalysisPanel() {
 
 ### `useClientEvent(name, handler)`
 
-Subscribes to events emitted by `emitToClient` nodes on the server. The event name must match the name used in the server-side tree.
+Subscribes to events emitted by `notify` nodes on the server. The event name must match the name used in the server-side tree.
 
 ```tsx
 import { useState } from "react";
@@ -465,7 +465,7 @@ expect(getByText("Analysis: All clear")).toBeDefined();
 | `useConnectionStatus()`         | Hook         | SSE connection state (`'connecting'`, `'connected'`, `'disconnected'`). |
 | `useTreeStatus()`               | Hook         | Latest tree tick result, or `null`.                                     |
 | `useCommand(name)`              | Hook         | Command handle with `send`, `sendAndWait`, and `pending`.               |
-| `useClientEvent(name, handler)` | Hook         | Subscribe to `emitToClient` events.                                     |
+| `useClientEvent(name, handler)` | Hook         | Subscribe to `notify` events.                                           |
 | `useTreeEvent(type, handler)`   | Hook         | Subscribe to raw SSE event types.                                       |
 | `createMockClient()`            | Test utility | Mock client with `emit()` for simulating SSE events.                    |
 | `TreeStatusInfo`                | Type         | Shape of the tree status object.                                        |

@@ -105,7 +105,7 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
       for (const handler of handlers) handler(data);
     }
     // Step 2: For client:event, also dispatch to handlers registered by the inner event name.
-    // The server's EmitToClientNode wraps custom events as { name: string, data: unknown },
+    // The server's NotifyNode wraps custom events as { name: string, data: unknown },
     // so on('ui:show_review', fn) works without the caller needing to know about the
     // client:event wrapper.
     if (type === 'client:event' && data && typeof data === 'object' && 'name' in data) {
@@ -442,7 +442,7 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
       // Register listeners for all known event types emitted by the ActorServer.
       // These cover several domains:
       //   - blackboard:*  — Data store mutations and reads
-      //   - client:event  — Application-defined events from EmitToClientNode
+      //   - client:event  — Application-defined events from NotifyNode
       //   - message:*     — Message lifecycle (processed, interrupted, failed)
       //   - node:*        — Node execution lifecycle (enter, exit, error)
       //   - tree:*        — Tree-level lifecycle (tick, init, reset, abort)

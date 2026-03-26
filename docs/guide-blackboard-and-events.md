@@ -374,7 +374,7 @@ Fired when an agent strategy makes a decision.
 
 ### `client:event`
 
-Fired by `emitToClient` nodes when they push data to the client. Used by the [application server](guide-app-server.md) SSE endpoint to deliver real-time updates.
+Fired by `notify` nodes when they push data to the client. Used by the [application server](guide-app-server.md) SSE endpoint to deliver real-time updates.
 
 ```typescript
 {

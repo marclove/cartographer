@@ -135,7 +135,7 @@ import {
   NodeStatus,
   receive,
   untilSuccess,
-  emitToClient,
+  notify,
 } from "cartographer";
 
 const server = new ActorServer({
@@ -149,7 +149,7 @@ const server = new ActorServer({
           // ...
 
           // Send findings to the connected client
-          emitToClient("show-review", (ctx) => ({
+          notify("show-review", (ctx) => ({
             findings: ctx.blackboard.get("analysis"),
           })),
 

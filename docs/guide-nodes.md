@@ -1,6 +1,6 @@
 # Leaf Nodes
 
-Leaf nodes sit at the edges of a behavior tree. They do the actual work -- checking conditions, performing actions, or delegating to an AI agent. This guide covers the built-in leaf node types (including the application server nodes `receive` and `emitToClient`) and explains how to create custom nodes by extending `BaseNode`.
+Leaf nodes sit at the edges of a behavior tree. They do the actual work -- checking conditions, performing actions, or delegating to an AI agent. This guide covers the built-in leaf node types (including the application server nodes `receive` and `notify`) and explains how to create custom nodes by extending `BaseNode`.
 
 ---
 
@@ -150,16 +150,16 @@ The `mapPayload` callback runs after the action key is consumed, letting you ext
 
 ---
 
-## EmitToClientNode
+## NotifyNode
 
 Sends structured data to the client via a dual write. Designed for the [application server](guide-app-server.md) where trees need to push UI updates to connected clients.
 
 ### Factory
 
 ```typescript
-import { emitToClient } from "cartographer";
+import { notify } from "cartographer";
 
-const node = emitToClient("ui:show_review", (ctx) => ({
+const node = notify("ui:show_review", (ctx) => ({
   findings: ctx.blackboard.get("analysis"),
 }));
 ```
@@ -173,7 +173,7 @@ When ticked, the node:
 3. Emits a `client:event` event through the event system (real-time SSE delivery).
 4. Returns `SUCCESS`.
 
-`EmitToClientNode` extends `ActionNode`, so it uses the standard inflight pattern -- `RUNNING` on first tick, `SUCCESS` on the second after the action completes.
+`NotifyNode` extends `ActionNode`, so it uses the standard inflight pattern -- `RUNNING` on first tick, `SUCCESS` on the second after the action completes.
 
 ---
 

@@ -4,7 +4,7 @@ import { ActionNode } from '../nodes/action.js';
 import { ConditionNode } from '../nodes/condition.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { Retry } from '../decorators/retry.js';
-import { emitToClient } from '../nodes/emit-to-client.js';
+import { notify } from '../nodes/notify.js';
 import { receive } from '../nodes/receive.js';
 import { untilSuccess } from '../decorators/until-success.js';
 import { NodeStatus } from '../types.js';
@@ -22,7 +22,7 @@ function wizardStep(
     child: new SequenceNode({
       name: `step-${stepNumber}`,
       children: [
-        emitToClient('ui:form', () => ({ step: stepNumber, fields })),
+        notify('ui:form', () => ({ step: stepNumber, fields })),
         untilSuccess(
           receive(`step-${stepNumber}`, {
             mapPayload: (payload, bb) => {
@@ -84,7 +84,7 @@ describe('client-event-driven wizard', () => {
                     plan: step3?.plan,
                   };
                   ctx.blackboard.set('account', account);
-                  // Dual-write: blackboard + SSE event (mirrors what emitToClient does)
+                  // Dual-write: blackboard + SSE event (mirrors what notify does)
                   ctx.blackboard.set('clientEvents:ui:confirmation', account);
                   ctx.events.emit('client:event', { name: 'ui:confirmation', data: account });
                   return NodeStatus.SUCCESS;

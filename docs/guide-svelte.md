@@ -226,7 +226,7 @@ Use `sendAndWait` when subsequent logic depends on the tree run finishing:
 
 ### `onClientEvent(name, handler)`
 
-Subscribes to events emitted by `emitToClient` nodes on the server. The event name must match the name used in the server-side tree.
+Subscribes to events emitted by `notify` nodes on the server. The event name must match the name used in the server-side tree.
 
 ```svelte
 <script lang="ts">
@@ -470,7 +470,7 @@ client.emit("snapshot", { blackboard: { status: "ready" } });
 | `getConnectionStatus()`        | Function     | Reactive ref for SSE connection state.                            |
 | `getTreeStatus()`              | Function     | Reactive ref for the latest tree tick result.                     |
 | `createCommand(name)`          | Function     | Reactive command handle with `send`, `sendAndWait`, and `pending`. |
-| `onClientEvent(name, handler)` | Function     | Subscribe to `emitToClient` events.                               |
+| `onClientEvent(name, handler)` | Function     | Subscribe to `notify` events.                                     |
 | `onTreeEvent(type, handler)`   | Function     | Subscribe to raw SSE event types.                                 |
 | `createMockClient()`           | Test utility | Mock client with `emit()` for simulating SSE events.              |
 | `createTestContext()`          | Test utility | Mock client + reactive state, pre-wired.                          |

@@ -4,7 +4,7 @@ import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { ParallelNode } from '../composites/parallel.js';
 import { DefaultParallelStrategy } from '../strategies/default-parallel.js';
-import { emitToClient } from '../nodes/emit-to-client.js';
+import { notify } from '../nodes/notify.js';
 import { receive } from '../nodes/receive.js';
 import { untilSuccess } from '../decorators/until-success.js';
 import { NodeStatus } from '../types.js';
@@ -14,7 +14,7 @@ function reviewerBranch(reviewerName: string, reviewerId: string) {
   return new SequenceNode({
     name: `reviewer-${reviewerId}`,
     children: [
-      emitToClient(`ui:review-request`, () => ({
+      notify(`ui:review-request`, () => ({
         reviewer: reviewerName,
         reviewerId,
       })),

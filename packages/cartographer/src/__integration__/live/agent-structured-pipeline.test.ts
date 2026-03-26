@@ -5,7 +5,7 @@ import { AgentNode } from '../../nodes/agent.js';
 import { ConditionNode } from '../../nodes/condition.js';
 import { SequenceNode } from '../../composites/sequence.js';
 import { SelectorNode } from '../../composites/selector.js';
-import { emitToClient } from '../../nodes/emit-to-client.js';
+import { notify } from '../../nodes/notify.js';
 import { receive } from '../../nodes/receive.js';
 import { untilSuccess } from '../../decorators/until-success.js';
 import { NodeStatus } from '../../types.js';
@@ -89,7 +89,7 @@ describe('agent structured pipeline (live)', () => {
                           ctx.blackboard.set('published', true);
                           ctx.blackboard.set('publish-mode', 'auto');
                           const output = ctx.blackboard.get('classifier:classify:output');
-                          // Dual-write: blackboard + SSE event (mirrors what emitToClient does)
+                          // Dual-write: blackboard + SSE event (mirrors what notify does)
                           ctx.blackboard.set('clientEvents:ui:published', output);
                           ctx.events.emit('client:event', { name: 'ui:published', data: output });
                           return NodeStatus.SUCCESS;
@@ -102,7 +102,7 @@ describe('agent structured pipeline (live)', () => {
                   new SequenceNode({
                     name: 'low-confidence',
                     children: [
-                      emitToClient('ui:needs-review', (ctx) =>
+                      notify('ui:needs-review', (ctx) =>
                         ctx.blackboard.get('classifier:classify:output'),
                       ),
                       untilSuccess(

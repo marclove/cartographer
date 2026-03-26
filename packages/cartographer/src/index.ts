@@ -152,7 +152,7 @@ export type { ObserverAppOptions, ObserverHandle } from './server/observer-app.j
 // New nodes
 export { untilSuccess, UntilSuccess } from './decorators/until-success.js';
 export { receive, ReceiveNode } from './nodes/receive.js';
-export { emitToClient, EmitToClientNode } from './nodes/emit-to-client.js';
+export { notify, NotifyNode } from './nodes/notify.js';
 
 // Serialization
 export { serializeTree, restoreTree, buildHashIndex } from './core/serialization.js';

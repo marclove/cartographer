@@ -4,7 +4,7 @@ import { ActionNode } from '../nodes/action.js';
 import { SequenceNode } from '../composites/sequence.js';
 import { SelectorNode } from '../composites/selector.js';
 import { Guard } from '../decorators/guard.js';
-import { emitToClient } from '../nodes/emit-to-client.js';
+import { notify } from '../nodes/notify.js';
 import { receive } from '../nodes/receive.js';
 import { untilSuccess } from '../decorators/until-success.js';
 import { NodeStatus } from '../types.js';
@@ -84,7 +84,7 @@ describe('selector preemption reactive', () => {
                           return NodeStatus.SUCCESS;
                         },
                       }),
-                      emitToClient('ui:rollback-complete', (ctx) => ({
+                      notify('ui:rollback-complete', (ctx) => ({
                         reverted: ctx.blackboard.get('reverted'),
                         error: ctx.blackboard.get('error'),
                       })),

@@ -55,7 +55,7 @@ describe('agent interrupt and redirect (live)', () => {
                   const topic = ctx.blackboard.get('research:topic');
                   const report = { topic, output };
                   ctx.blackboard.set('report', report);
-                  // Dual-write: blackboard + SSE event (mirrors what emitToClient does)
+                  // Dual-write: blackboard + SSE event (mirrors what notify does)
                   ctx.blackboard.set('clientEvents:ui:report', report);
                   ctx.events.emit('client:event', { name: 'ui:report', data: report });
                   return NodeStatus.SUCCESS;

@@ -2,7 +2,7 @@ import { onDestroy } from 'svelte';
 import { getClient } from './context.js';
 
 /**
- * Subscribes to a named event emitted by an `EmitToClientNode` on the server.
+ * Subscribes to a named event emitted by an `NotifyNode` on the server.
  *
  * Events are delivered over the `client:event` SSE channel. The underlying
  * client SDK dispatches by event name, so no additional filtering is needed.
@@ -16,7 +16,7 @@ import { getClient } from './context.js';
  * component initialization inside a `<Cartographer>` provider.
  *
  * @param name - The event name to listen for (must match the name used by the
- *   server-side `EmitToClientNode`).
+ *   server-side `NotifyNode`).
  * @param handler - Callback invoked with the event payload each time the
  *   named event arrives. Captured at initialization; not updated on re-render.
  */

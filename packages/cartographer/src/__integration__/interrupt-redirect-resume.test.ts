@@ -50,7 +50,7 @@ describe('interrupt-redirect-resume', () => {
                   const analysis = ctx.blackboard.get('analysis');
                   const report = `Report on "${topic}": ${analysis}`;
                   ctx.blackboard.set('report', report);
-                  // Dual-write: blackboard + SSE event (mirrors what emitToClient does)
+                  // Dual-write: blackboard + SSE event (mirrors what notify does)
                   ctx.blackboard.set('clientEvents:ui:report', { report });
                   ctx.events.emit('client:event', { name: 'ui:report', data: { report } });
                   return NodeStatus.SUCCESS;

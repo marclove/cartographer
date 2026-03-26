@@ -270,10 +270,10 @@ const node = receive(name: string, options?: ReceiveOptions);
 
 ---
 
-## EmitToClientNode
+## NotifyNode
 
 ```typescript
-import { emitToClient, EmitToClientNode } from "cartographer";
+import { notify, NotifyNode } from "cartographer";
 ```
 
 Action node that sends structured data to connected clients via dual write (blackboard + event).
@@ -281,7 +281,7 @@ Action node that sends structured data to connected clients via dual write (blac
 ### Factory
 
 ```typescript
-const node = emitToClient(name: string, dataFn: (ctx: TreeContext) => unknown);
+const node = notify(name: string, dataFn: (ctx: TreeContext) => unknown);
 ```
 
 ### Behavior
