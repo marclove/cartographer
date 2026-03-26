@@ -358,57 +358,41 @@ expect(c.getTicks()).toBe(1);
 
 ---
 
-## Testing with the Scheduler
+## Testing with ActorServer
 
-`TreeScheduler` provides two options that make tests deterministic:
-
-- **`maxCycles`** — Stop after a fixed number of completed cycles (terminal statuses, not RUNNING ticks).
-- **`stopOnStatus`** — Stop when the tree returns a specific status.
+For integration tests that exercise the full HTTP stack, create an `ActorServer` on a random port and use the client SDK or fetch directly:
 
 ```typescript
-import { TreeBuilder, TreeScheduler, NodeStatus } from "cartographer";
+import { TreeBuilder, ActorServer, NodeStatus } from "cartographer";
 
 let tickCount = 0;
 
-const tree = new TreeBuilder("scheduler-test")
-  .action("work", (ctx) => {
-    tickCount++;
-    if (tickCount < 3) return NodeStatus.RUNNING;
-    ctx.blackboard.set("done", true);
-    return NodeStatus.SUCCESS;
-  })
-  .build();
-
-const scheduler = new TreeScheduler({
-  tree,
-  schedule: { type: "interval", delayMs: 10 },
-  stopOnStatus: NodeStatus.SUCCESS,
+const server = new ActorServer({
+  createTree: () =>
+    new TreeBuilder("server-test")
+      .action("work", (ctx) => {
+        tickCount++;
+        if (tickCount < 3) return NodeStatus.RUNNING;
+        ctx.blackboard.set("done", true);
+        return NodeStatus.SUCCESS;
+      })
+      .build(),
+  port: 0, // random available port
 });
 
-await scheduler.start();
+const { port } = await server.start();
 
-expect(scheduler.lastStatus).toBe(NodeStatus.SUCCESS);
-expect(tickCount).toBe(3);
-expect(tree.blackboard.get("done")).toBe(true);
-```
+// Send tick messages programmatically
+let result = await server.processMessage({ type: "tick" });
+expect(result?.treeStatus).toBe("running");
 
-### `maxCycles` vs tick count
+result = await server.processMessage({ type: "tick" });
+expect(result?.treeStatus).toBe("running");
 
-`maxCycles` counts only completed cycles — ticks that return a terminal status (SUCCESS or FAILURE). RUNNING ticks do not increment the counter. This means `maxCycles: 3` may require more than 3 scheduler ticks if some ticks return RUNNING.
+result = await server.processMessage({ type: "tick" });
+expect(result?.treeStatus).toBe("success");
 
-### Scheduler Event Assertions
-
-Use scheduler events to verify lifecycle ordering:
-
-```typescript
-const eventLog: string[] = [];
-scheduler.events.on("tick:start", () => eventLog.push("start"));
-scheduler.events.on("tick:complete", () => eventLog.push("complete"));
-scheduler.events.on("scheduler:stop", () => eventLog.push("stop"));
-
-await scheduler.start();
-
-expect(eventLog).toEqual(["start", "complete", "stop"]);
+await server.stop();
 ```
 
 ---

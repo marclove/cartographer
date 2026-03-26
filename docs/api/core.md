@@ -60,41 +60,11 @@ import { BehaviorTree } from "cartographer";
 | `interrupt`       | `(): void`                                                                 | Cancel in-flight work without destroying cycle state or session registry. No `reset()` needed. Emits `tree:interrupt`. |
 | `hasInflightWork` | `(): boolean`                                                              | Returns `true` if any node in the tree has unsettled async work.                                        |
 | `settled`         | `(): Promise<void>`                                                        | Resolves when all in-flight work across the tree has settled.                                           |
-| `start`           | `(options: { intervalMs: number; signal?: AbortSignal }): TickLoopHandle`  | Start a reactive tick loop. Returns a handle to stop it.                                                |
-
 ### Example
 
 ```typescript
 const tree = new BehaviorTree({ name: "my-tree", root: myRootNode });
 const { status, blackboard } = await tree.run();
-```
-
----
-
-## TickLoopHandle
-
-```typescript
-import type { TickLoopHandle } from "cartographer";
-```
-
-Handle returned by `BehaviorTree.start()` for stopping the tick loop.
-
-```typescript
-interface TickLoopHandle {
-  stop(): Promise<void>;
-}
-```
-
-| Method | Signature | Description |
-| ------ | --------- | ----------- |
-| `stop` | `(): Promise<void>` | Stop the tick loop and wait for any in-flight tick to complete. |
-
-### Example
-
-```typescript
-const handle = tree.start({ intervalMs: 100 });
-// ... later
-await handle.stop();
 ```
 
 ---

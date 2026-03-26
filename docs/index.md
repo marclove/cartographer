@@ -10,7 +10,7 @@ Cartographer also includes an **application server** that turns behavior trees i
 
 - **Content pipelines** -- Orchestrate multi-step generation, review, and publishing workflows where some steps are deterministic and others require LLM judgment.
 - **Interactive applications** -- Build message-driven apps where AI agents and human users collaborate through shared state, using the application server with REST, SSE, and a client SDK.
-- **Monitoring and alerting** -- Schedule trees on intervals or cron expressions to poll systems, evaluate conditions, and take corrective action.
+- **Monitoring and alerting** -- Run trees as persistent services with auto-ticking to poll systems, evaluate conditions, and take corrective action.
 - **Multi-agent coordination** -- Run several AgentNodes in parallel or sequence, each with its own tools and system prompt, coordinated by composite nodes.
 - **Classification and routing** -- Use condition nodes and selectors to route inputs through different processing branches based on structured or LLM-driven evaluation.
 
@@ -24,7 +24,7 @@ Your background determines the fastest path through these docs.
 | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | **New to behavior trees**                         | Read [Concepts](concepts.md) for BT fundamentals, then [Getting Started](getting-started.md) to build your first tree.                        |
 | **Familiar with BTs but new to Claude Agent SDK** | Skim [Getting Started](getting-started.md), then jump to [Agent Integration](guide-agent-integration.md) for AgentNode modes and MCP tooling. |
-| **Building a message-driven application?**        | Start with [Application Server](guide-app-server.md) for MessageProcessor, ActorServer, ObserverServer, StateStore, and the client SDK.       |
+| **Building a message-driven application?**        | Start with [Application Server](guide-app-server.md) for MessageProcessor, ActorServer, StateStore, and the client SDK.                       |
 | **Connecting a Svelte frontend?**                 | See [Svelte Integration](guide-svelte.md) for reactive bindings to a running ActorServer.                                                     |
 | **Connecting a React frontend?**                  | See [React Integration](guide-react.md) for hooks that bind to a running ActorServer.                                                         |
 | **Looking for API details**                       | Go directly to the [API Reference](api/index.md).                                                                                             |
@@ -44,12 +44,11 @@ Your background determines the fastest path through these docs.
 - [Agent Integration](guide-agent-integration.md) -- AgentNode modes, agent strategies, and MCP tool configuration.
 - [Elicitation](guide-elicitation.md) -- Handling MCP server input requests at tree, subtree, and node levels.
 - [TreeContext and Context Layering](guide-context.md) -- How TreeContext propagates through the tree and how to override fields per subtree.
-- [Scheduler](guide-scheduler.md) -- TreeScheduler: interval, cron, and one-shot scheduling.
 - [CLI Runner](guide-cli.md) -- Running, inspecting, and scaffolding trees from the command line.
 - [Error Handling and Resilience](guide-error-handling.md) -- Error containment, retry/timeout stacking, abort signals, and scheduler error recovery.
 - [Testing Behavior Trees](guide-testing.md) -- Test contexts, helper functions, event verification, and multi-tick test patterns.
 - [Advanced Patterns](guide-advanced-patterns.md) -- Custom nodes, custom strategies, multi-tick resumption internals, parallel policies, and advanced blackboard patterns.
-- [Application Server](guide-app-server.md) -- MessageProcessor, ActorServer, ObserverServer, StateStore, client SDK, SSE events, serialization, and content hashing.
+- [Application Server](guide-app-server.md) -- MessageProcessor, ActorServer, StateStore, client SDK, SSE events, serialization, and content hashing.
 - [Svelte Integration](guide-svelte.md) -- Svelte 5 bindings: reactive blackboard, tree status, actions, and event subscriptions.
 - [React Integration](guide-react.md) -- React hooks: blackboard, tree status, actions, and event subscriptions.
 
@@ -68,8 +67,7 @@ Your background determines the fastest path through these docs.
 - [Strategies](api/strategies.md) -- Default and agent strategies, strategy interfaces.
 - [Builder](api/builder.md) -- `TreeBuilder`, `CompositeBuilder`, `SingleChildBuilder`.
 - [Config](api/config.md) -- `TreeRegistry`.
-- [Scheduler](api/scheduler.md) -- `TreeScheduler`, `SchedulerConfig`, `SchedulerEvents`.
-- [Actor](api/actor.md) -- `MessageProcessor`, `ActorServer`, `ObserverServer`, `ActorMessage`, `StateStore`, `InMemoryStateStore`, `RedisStateStore`.
+- [Actor](api/actor.md) -- `MessageProcessor`, `ActorServer`, `ActorMessage`, `StateStore`, `InMemoryStateStore`, `RedisStateStore`.
 - [Client](api/client.md) -- `createCartographerClient`, `CartographerClient`, `QueueFullError`.
 - [Serialization](api/serialization.md) -- `serializeTree`, `restoreTree`, `buildHashIndex`, `computeContentHash`.
 - [CLI](api/cli.md) -- `RunContext`, `TreeRunConfig`, `FormatterOptions`, `createFormatter`.

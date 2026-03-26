@@ -82,60 +82,11 @@ Processes a message programmatically without going through the REST API. Returns
 
 #### `bridgeTree(tree: BehaviorTree): void`
 
-Subscribes to a tree's events and forwards them through the SSE pipeline. Use this when an external tree (e.g., driven by `TreeScheduler`) should stream events to connected SSE clients.
+Subscribes to a tree's events and forwards them through the SSE pipeline. Use this when an external tree should stream events to connected SSE clients.
 
 ---
 
-## ObserverServer
-
-Read-only HTTP server for observing a live behavior tree. No state persistence, no message queue, no write endpoints.
-
-```typescript
-import { ObserverServer } from "cartographer";
-```
-
-### Constructor
-
-```typescript
-new ObserverServer(tree: BehaviorTree, options?: ObserverServerOptions)
-```
-
-### ObserverServerOptions
-
-| Field                 | Type     | Default | Description                          |
-| --------------------- | -------- | ------- | ------------------------------------ |
-| `port`                | `number` | `3147`  | Listen port.                         |
-| `eventStreamCapacity` | `number` | `500`   | Maximum events retained for replay.  |
-
-### Properties
-
-| Property | Type   | Description                                             |
-| -------- | ------ | ------------------------------------------------------- |
-| `app`    | `Hono` | Underlying Hono application. Mountable via `app.fetch`. |
-
-### Methods
-
-#### `start(): Promise<{ port: number }>`
-
-Starts the HTTP server. Returns the actual listening port.
-
-#### `close(): Promise<void>`
-
-Unsubscribes from tree events and shuts down the server.
-
-### Endpoints
-
-| Method | Path              | Description                                                       |
-| ------ | ----------------- | ----------------------------------------------------------------- |
-| GET    | `/api/tree`       | Tree structure: name, serialized root.                            |
-| GET    | `/api/status`     | Tree metrics: tick count, cycle count, last status, uptime.       |
-| GET    | `/api/blackboard` | Live blackboard state as JSON.                                    |
-| GET    | `/api/nodes/:id`  | Individual node detail. Includes agent metadata for `AgentNode`s. |
-| GET    | `/events`         | SSE event stream with snapshot and live events.                   |
-
----
-
-## Hono App Factories
+## Hono App Factory
 
 ### createApp
 
@@ -154,6 +105,7 @@ import { createApp } from "cartographer";
 | `context`        | `Record<string, unknown>` | `{}`                                       | Injected into blackboard as `context:*` on init. |
 | `topologyPolicy` | `'fail' \| 'reset'`       | `'fail'`                                   | Topology mismatch handling.                      |
 | `maxQueueDepth`  | `number`                  | `CARTOGRAPHER_MAX_QUEUE_DEPTH` env or `16` | Maximum queued messages.                         |
+| `autoTick`       | `{ intervalMs: number }`  | —                                          | Enable auto-ticking at the specified interval.   |
 
 #### AppHandle
 
@@ -168,28 +120,8 @@ import { createApp } from "cartographer";
 | `initializeState` | `() => Promise<void>`                                             | Initialize state store with tree factory defaults. |
 | `drainQueue`      | `() => Promise<void>`                                             | Process the next queued message, if any.           |
 | `closeSseClients` | `() => void`                                                      | Close all connected SSE clients.                   |
-
-### createObserverApp
-
-Factory function that creates a read-only Hono app for tree observation.
-
-```typescript
-import { createObserverApp } from "cartographer";
-```
-
-#### ObserverAppOptions
-
-| Field                 | Type            | Default | Description                         |
-| --------------------- | --------------- | ------- | ----------------------------------- |
-| `tree`                | `BehaviorTree`  | (required) | The tree to observe.             |
-| `eventStreamCapacity` | `number`        | `500`   | Maximum events retained for replay. |
-
-#### ObserverHandle
-
-| Field   | Type         | Description                                            |
-| ------- | ------------ | ------------------------------------------------------ |
-| `app`   | `Hono`       | The Hono application with read-only routes mounted.    |
-| `close` | `() => void` | Unsubscribes from tree events and closes SSE clients.  |
+| `startAutoTick`   | `() => void`                                                      | Start the auto-tick interval (if `autoTick` was configured). |
+| `stopAutoTick`    | `() => void`                                                      | Stop the auto-tick interval.                       |
 
 ---
 

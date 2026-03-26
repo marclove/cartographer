@@ -34,20 +34,14 @@ Configuration returned by the user's tree factory function.
 ```typescript
 interface TreeRunConfig {
   tree: BehaviorTree;
-  schedule?: SchedulerConfig['schedule'];
-  maxCycles?: number;
-  stopOnStatus?: NodeStatus;
-  onError?: SchedulerConfig['onError'];
+  autoTick?: { intervalMs: number };
 }
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `tree` | `BehaviorTree` | (required) | The constructed behavior tree to run. |
-| `schedule` | `{ type: 'cron'; expression: string } \| { type: 'interval'; delayMs: number } \| { type: 'once' }` | — | Optional schedule. Omit for a single run. |
-| `maxCycles` | `number` | — | Maximum number of completed cycles (terminal statuses; only meaningful with a schedule). |
-| `stopOnStatus` | `NodeStatus` | — | Stop scheduler when tree returns this status. |
-| `onError` | `'stop' \| 'continue' \| ((error: Error, runCount: number) => 'stop' \| 'continue')` | — | Error handling policy for scheduled runs. |
+| `autoTick` | `{ intervalMs: number }` | — | Optional auto-tick interval. When set, the server automatically sends tick messages at this interval. Omit for on-demand ticking only. |
 
 ---
 

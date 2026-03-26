@@ -45,7 +45,7 @@ console.log(status);    // 'success'
 console.log(blackboard); // { greeting: 'Hello, Cartographer!' }
 ```
 
-`tree.run()` ticks the tree once and returns the resulting status along with a snapshot of the blackboard. For repeated execution, see the [Scheduler guide](guide-scheduler.md).
+`tree.run()` ticks the tree once and returns the resulting status along with a snapshot of the blackboard. For repeated execution, see the [Application Server guide](guide-app-server.md) to run your tree as a persistent service with auto-ticking.
 
 ### Programmatic Approach
 
