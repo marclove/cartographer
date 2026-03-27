@@ -397,4 +397,66 @@ describe('MessageProcessor - sessions', () => {
     const saved2 = await store.getState('default');
     expect(saved2!.sessions).toEqual({});
   });
+
+  it('applies context to blackboard on first message (no stored state)', async () => {
+    const store = new InMemoryStateStore();
+    const actor = new MessageProcessor({
+      createTree: () => new BehaviorTree({
+        name: 'test',
+        root: new ActionNode({
+          name: 'check',
+          action: async (ctx) => {
+            expect(ctx.blackboard.get('context:tenant')).toBe('acme');
+            expect(ctx.blackboard.get('context:env')).toBe('prod');
+            return NodeStatus.SUCCESS;
+          },
+        }),
+      }),
+      stateStore: store,
+      stateKey: 'new-session',
+      context: { tenant: 'acme', env: 'prod' },
+    });
+
+    const result = await actor.process({ type: 'tick' });
+    expect(result.treeStatus).toBe(NodeStatus.SUCCESS);
+
+    const saved = await store.getState('new-session');
+    expect(saved!.blackboard['context:tenant']).toBe('acme');
+    expect(saved!.blackboard['context:env']).toBe('prod');
+  });
+
+  it('does not reapply context when stored state exists', async () => {
+    const store = new InMemoryStateStore();
+
+    // Use the same tree factory for seeding and processing to avoid topology mismatch
+    const makeTestTree = () => new BehaviorTree({
+      name: 'test',
+      root: new ActionNode({ name: 'noop', action: async () => NodeStatus.SUCCESS }),
+    });
+
+    // Pre-populate state (simulating a session that already ran once)
+    const seedTree = makeTestTree();
+    const { serializeTree } = await import('../core/serialization.js');
+    await store.saveState('existing-session', {
+      blackboard: { 'context:tenant': 'original', userKey: 'preserved' },
+      treeState: serializeTree(seedTree.root, seedTree.rootHash),
+      createdAt: Date.now(),
+      lastMessageAt: Date.now(),
+    });
+
+    const actor = new MessageProcessor({
+      createTree: makeTestTree,
+      stateStore: store,
+      stateKey: 'existing-session',
+      context: { tenant: 'overridden' },
+    });
+
+    const result = await actor.process({ type: 'tick' });
+    expect(result.treeStatus).toBe(NodeStatus.SUCCESS);
+
+    // Verify context was NOT reapplied — original values should be preserved
+    const saved = await store.getState('existing-session');
+    expect(saved!.blackboard['context:tenant']).toBe('original');
+    expect(saved!.blackboard['userKey']).toBe('preserved');
+  });
 });

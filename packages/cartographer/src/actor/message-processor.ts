@@ -26,6 +26,8 @@ export interface MessageProcessorOptions {
   topologyPolicy?: 'fail' | 'reset';
   /** Optional event bridge for streaming tree events to connected clients. */
   eventBridge?: EventBridge;
+  /** Key-value pairs to apply as `context:{key}` on the blackboard for new sessions. */
+  context?: Record<string, unknown>;
 }
 
 /**
@@ -82,6 +84,7 @@ export class MessageProcessor {
   private stateKey: string;
   private topologyPolicy: 'fail' | 'reset';
   private eventBridge?: EventBridge;
+  private context: Record<string, unknown>;
   private interruptController: AbortController | null = null;
 
   /**
@@ -95,6 +98,7 @@ export class MessageProcessor {
     this.stateKey = options.stateKey;
     this.topologyPolicy = options.topologyPolicy ?? 'fail';
     this.eventBridge = options.eventBridge;
+    this.context = options.context ?? {};
   }
 
   /**
@@ -154,6 +158,11 @@ export class MessageProcessor {
       }
       restoreTree(tree.root, tree.rootHash, stored.treeState, this.topologyPolicy);
       tree.restoreSessionRegistry(stored.sessions ?? {});
+    } else {
+      // New session — apply context values
+      for (const [key, value] of Object.entries(this.context)) {
+        tree.blackboard.set(`context:${key}`, value);
+      }
     }
 
     // Handle held state: tick messages are no-ops, command/write clear held,
