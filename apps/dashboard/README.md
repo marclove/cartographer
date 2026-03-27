@@ -82,6 +82,7 @@ import { ActorServer } from 'cartographer';
 
 const server = new ActorServer({
   createTree: () => myTreeFactory(),
+  sessionId: 'default',
   port: 3147,
 });
 const { port } = await server.start();

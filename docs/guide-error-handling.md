@@ -359,6 +359,7 @@ function createTree() {
 // Run as a persistent service with auto-ticking every 30 seconds
 const server = new ActorServer({
   createTree,
+  sessionId: "default",
   autoTick: { intervalMs: 30_000 },
 });
 

@@ -5,10 +5,10 @@
 ```typescript
 import { createCartographerClient } from 'cartographer';
 
-const client = createCartographerClient(baseUrl: string): CartographerClient;
+const client = createCartographerClient(baseUrl: string, options?: CartographerClientOptions): CartographerClient;
 ```
 
-Creates a client connected to an `ActorServer` at the given URL.
+Creates a client connected to an `ActorServer` at the given URL. The optional `options` parameter configures cross-origin credentials and other client behavior.
 
 ---
 
@@ -118,3 +118,16 @@ class QueueFullError extends Error {
   message: 'Server message queue is full';
 }
 ```
+
+---
+
+## CartographerClientOptions
+
+```typescript
+interface CartographerClientOptions {
+  /** Include credentials (cookies) in cross-origin requests. Default: 'same-origin'. */
+  credentials?: 'include' | 'omit' | 'same-origin';
+}
+```
+
+Passed as the second argument to `createCartographerClient`. The `credentials` value is forwarded to all `fetch()` calls and sets `withCredentials` on the `EventSource` SSE connection. Use `'include'` when the client and server are on different origins and cookies need to be sent (common with cookie-based auth).

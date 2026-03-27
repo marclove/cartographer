@@ -131,6 +131,7 @@ describe('ActorServer dashboard integration', () => {
   beforeAll(async () => {
     server = new ActorServer({
       createTree: makeTree,
+      sessionId: 'default',
       port: 0,
     });
     ({ port } = await server.start());

@@ -21,6 +21,7 @@ function createTree() {
 beforeAll(async () => {
   server = new ActorServer({
     createTree,
+    sessionId: 'default',
     port: 0,
   });
   ({ port } = await server.start());

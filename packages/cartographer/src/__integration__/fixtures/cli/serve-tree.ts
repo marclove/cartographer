@@ -10,5 +10,6 @@ export default function (_ctx: RunContext): TreeRunConfig {
         action: () => NodeStatus.SUCCESS,
       }),
     }),
+    sessionId: 'default',
   };
 }

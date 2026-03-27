@@ -9,8 +9,6 @@ import type { ProcessResult } from '../actor/message-processor.js';
 import { InMemoryStateStore } from '../state/in-memory-state-store.js';
 import { InProcessEventStream } from './event-stream.js';
 import { serializeTree, serializeNodeRef, serializeEvent } from './serializers.js';
-import { serializeTree as serializeTreeState } from '../core/serialization.js';
-import { blackboardToRecord } from './blackboard-utils.js';
 import { AgentNode } from '../nodes/agent.js';
 import type { BTreeNode } from '../types.js';
 import { MessageProcessor } from '../actor/message-processor.js';
@@ -41,15 +39,12 @@ export interface AppOptions {
   topologyPolicy?: 'fail' | 'reset';
   maxQueueDepth?: number;
   autoTick?: { intervalMs: number };
-  /**
-   * Extract session ID from the Hono request context.
-   * Default: reads `c.get('sessionId')`, falls back to `'default'`.
-   */
-  resolveSessionId?: (c: any) => string | Promise<string>;
+  /** Session key — static string or resolver function extracting from the Hono request context. */
+  sessionId: string | ((c: any) => string | Promise<string>);
   /**
    * How long (in ms) to keep an idle session's in-memory event stream
    * after the last SSE client disconnects. Evicts unused replay buffers
-   * to bound memory in multi-session deployments.
+   * to bound memory.
    * Default: 300_000 (5 minutes). Set to 0 to disable eviction.
    */
   streamEvictionMs?: number;
@@ -82,13 +77,10 @@ export interface AppHandle {
 }
 
 export function createApp(options: AppOptions): AppHandle {
-  if (options.resolveSessionId && options.autoTick) {
-    throw new Error(
-      'autoTick and resolveSessionId cannot be used together. '
-      + 'Multi-session mode is request-driven. Use external triggers '
-      + '(cron, webhooks) to tick individual sessions.'
-    );
-  }
+  const resolveSession: (c: any) => string | Promise<string> =
+    typeof options.sessionId === 'string'
+      ? () => options.sessionId as string
+      : options.sessionId;
 
   const createTreeFn = options.createTree;
   const stateStore = options.stateStore ?? new InMemoryStateStore();
@@ -190,21 +182,17 @@ export function createApp(options: AppOptions): AppHandle {
 
   // Session resolution middleware
   app.use('*', async (c, next) => {
-    // Skip session resolution for session-independent endpoints
     const path = c.req.path;
     if (path === '/_platform/health' || path === '/api/status' || path === '/api/tree' || path.startsWith('/api/nodes/')) {
       return next();
     }
 
-    const sessionId = options.resolveSessionId
-      ? await options.resolveSessionId(c)
-      : ((c as any).get('sessionId') as string | undefined) ?? 'default';
-
-    if (!sessionId) {
+    const sid = await resolveSession(c);
+    if (!sid) {
       return c.json({ error: 'Unauthorized: session ID required', status: 401 }, 401);
     }
 
-    (c as any).set('sessionId', sessionId);
+    (c as any).set('sessionId', sid);
     await next();
   });
 
@@ -409,26 +397,6 @@ export function createApp(options: AppOptions): AppHandle {
   // Lifecycle
   async function initializeState() {
     stats.startedAt = Date.now();
-    // Only eagerly initialize state in single-session mode
-    if (options.resolveSessionId) return;
-
-    const existing = await stateStore.getState('default');
-    if (!existing) {
-      const tree = createTreeFn();
-      _readTree = tree;
-      for (const [key, value] of Object.entries(context)) {
-        tree.blackboard.set(`context:${key}`, value);
-      }
-      const bb = blackboardToRecord(tree.blackboard);
-      const treeState = serializeTreeState(tree.root, tree.rootHash);
-      await stateStore.saveState('default', {
-        blackboard: bb,
-        treeState,
-        treeStructure: serializeTree(tree.root),
-        createdAt: Date.now(),
-        lastMessageAt: Date.now(),
-      });
-    }
   }
 
   // Message processing core
@@ -512,14 +480,19 @@ export function createApp(options: AppOptions): AppHandle {
     executeMessage(msg, sessionKey, requestId, bridge).catch(() => {});
   }
 
-  function bridgeTree(tree: BehaviorTree): void {
-    if (options.resolveSessionId) {
-      throw new Error('bridgeTree() is not supported in multi-session mode');
+  function requireStaticSessionId(caller: string): string {
+    if (typeof options.sessionId !== 'string') {
+      throw new Error(`${caller} requires a static sessionId string, not a resolver function`);
     }
+    return options.sessionId;
+  }
+
+  function bridgeTree(tree: BehaviorTree): void {
+    const key = requireStaticSessionId('bridgeTree()');
     tree.events.onAny((type, data) => {
       const serialized = serializeEvent(type as any, data as any);
       trackEvent({ type, data: serialized });
-      const stream = getOrCreateStream('default');
+      const stream = getOrCreateStream(key);
       stream.push(type, serialized);
     });
   }
@@ -542,11 +515,12 @@ export function createApp(options: AppOptions): AppHandle {
 
   function startAutoTick(): void {
     if (!options.autoTick || autoTickTimer) return;
+    const key = requireStaticSessionId('startAutoTick()');
     autoTickTimer = setInterval(async () => {
       if (autoTickInFlight) return;
       autoTickInFlight = true;
       try {
-        await processMessage({ type: 'tick' }, 'default');
+        await processMessage({ type: 'tick' }, key);
       } catch {
         // Swallow transient errors (e.g. StateStore connection loss) so the
         // server stays alive and retries on the next interval.
@@ -569,14 +543,9 @@ export function createApp(options: AppOptions): AppHandle {
 
   async function start(): Promise<void> {
     await initializeState();
-    if (options.resolveSessionId) {
-      // Multi-session: drain queued messages for all known sessions
-      const keys = await stateStore.listKeys();
-      for (const key of keys) {
-        drainQueue(key).catch(() => {});
-      }
-    } else {
-      drainQueue('default').catch(() => {});
+    const keys = await stateStore.listKeys();
+    for (const key of keys) {
+      drainQueue(key).catch(() => {});
     }
   }
 

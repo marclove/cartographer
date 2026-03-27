@@ -34,7 +34,7 @@ export default function (ctx: RunContext): TreeRunConfig {
     }),
   });
 
-  return { tree };
+  return { tree, sessionId: '{{NAME}}' };
 }
 `;
 

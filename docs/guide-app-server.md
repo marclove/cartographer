@@ -63,6 +63,7 @@ const server = new ActorServer({
         ],
       }),
     }),
+  sessionId: "default",
   port: 3148,
 });
 
@@ -203,6 +204,7 @@ const result = await processPromise;
 ```typescript
 const server = new ActorServer({
   createTree: () => myTreeFactory(), // Required: tree factory
+  sessionId: "default", // Required: static key or resolver function
   stateStore: new InMemoryStateStore(), // Optional (default: InMemoryStateStore)
   port: 3148, // Optional (default: PORT env var or 3148)
   context: { tenantId: "abc" }, // Optional: written to blackboard as context:*
@@ -218,9 +220,7 @@ console.log(`Listening on port ${port}`);
 await server.stop();
 ```
 
-The `context` option injects key-value pairs into the blackboard on initialization, prefixed with `context:`. Use it to pass deployment metadata like tenant IDs.
-
-`ActorServer` currently manages a single session with the hardcoded state key `'default'`. All state, locks, and events are stored under this key. Multi-session support is not yet available at the server level, though `MessageProcessor` accepts any `stateKey`.
+The `context` option injects key-value pairs into the blackboard, prefixed with `context:`. Context is applied lazily when a session processes its first message. Use it to pass deployment metadata like tenant IDs or user preferences.
 
 ### Endpoints
 
@@ -317,6 +317,65 @@ source.addEventListener("message:interrupted", (e) => {
 });
 ```
 
+### Session Resolution
+
+The `sessionId` option (required) determines which session key is used for each request. It accepts either a static string or a resolver function.
+
+For a single-user application, pass a static string:
+
+```typescript
+const server = new ActorServer({
+  createTree: () => myTreeFactory(),
+  sessionId: "default",
+});
+```
+
+For per-user sessions, pass a resolver function that extracts the session key from the Hono request context. Cartographer is auth-agnostic — it provides the integration surface for connecting session identity to your existing auth system.
+
+```typescript
+const server = new ActorServer({
+  createTree: () => myTreeFactory(),
+  stateStore: new RedisStateStore({ redis }),
+  sessionId: async (c) => {
+    const session = c.get("session");
+    if (!session?.userId) return ""; // returning falsy triggers a 401
+    return `user:${session.userId}`;
+  },
+});
+```
+
+The resolver runs as middleware on every request (except health and tree-structure endpoints, which are session-independent). It can be synchronous or async. Returning a falsy value results in a `401 Unauthorized` response.
+
+The same tree factory is used for all sessions (uniform topology). Per-user customization is handled through the `context` option, which writes key-value pairs as `context:{key}` on the blackboard when a session processes its first message:
+
+```typescript
+const server = new ActorServer({
+  createTree: () => myTreeFactory(),
+  stateStore: new RedisStateStore({ redis }),
+  sessionId: async (c) => c.get("session")?.userId,
+  context: { plan: "enterprise" },
+});
+// Each session's blackboard starts with context:plan = 'enterprise'
+// The tree can read it: ctx.blackboard.get('context:plan')
+```
+
+When `autoTick` is configured, it ticks the static session key (or `'default'` when `sessionId` is a resolver). Other sessions are request-driven — use external triggers like webhooks or cron jobs for background ticking of specific sessions.
+
+#### Stream Eviction
+
+The server maintains an in-memory event replay buffer per session for SSE reconnection support. The `streamEvictionMs` option controls how long an idle session's buffer is kept in memory after the last SSE client disconnects. Defaults to 5 minutes (`300_000`ms). Set to `0` to disable eviction entirely.
+
+```typescript
+const server = new ActorServer({
+  createTree: () => myTreeFactory(),
+  stateStore: new RedisStateStore({ redis }),
+  sessionId: async (c) => c.get("session")?.userId,
+  streamEvictionMs: 600_000, // 10 minutes
+});
+```
+
+Activity resets the eviction timer — if a new SSE client connects or a message is processed for the session before the timer fires, the buffer is preserved. Eviction only removes the in-memory replay buffer; persisted state in the `StateStore` is unaffected.
+
 ---
 
 ## Hono App Factory
@@ -333,6 +392,7 @@ import { Hono } from "hono";
 
 const handle = createApp({
   createTree: () => myTreeFactory(),
+  sessionId: "default",
   stateStore: myStore,
 });
 
@@ -341,9 +401,10 @@ const root = new Hono();
 root.route("/cartographer", handle.app);
 
 // Initialize and start processing
-await handle.initializeState();
-handle.drainQueue().catch(() => {});
+await handle.start();
 ```
+
+`handle.start()` initializes the server and drains queued messages for all known sessions. For fine-grained control, `drainQueue(sessionKey)` accepts the session key to drain.
 
 ### Mounting into Express or Fastify
 
@@ -357,6 +418,7 @@ import { createApp } from "cartographer";
 
 const handle = createApp({
   createTree: () => myTreeFactory(),
+  sessionId: "default",
   stateStore: myStore,
   autoTick: { intervalMs: 5000 },
 });
@@ -384,6 +446,7 @@ import { createApp } from "cartographer";
 
 const handle = createApp({
   createTree: () => myTreeFactory(),
+  sessionId: "default",
   stateStore: myStore,
 });
 
@@ -436,6 +499,7 @@ const store = new RedisStateStore({
 
 const server = new ActorServer({
   createTree: () => myTreeFactory(),
+  sessionId: "default",
   stateStore: store,
 });
 ```
@@ -475,6 +539,24 @@ import { createCartographerClient } from "cartographer";
 
 const client = createCartographerClient("http://localhost:3148");
 ```
+
+### Cross-Origin Credentials
+
+When the client and server are on different origins (common when auth cookies need to be forwarded), pass the `credentials` option:
+
+```typescript
+const client = createCartographerClient("https://api.example.com", {
+  credentials: "include", // Send cookies cross-origin
+});
+```
+
+| Value | Behavior |
+| --- | --- |
+| `'same-origin'` | Send cookies only for same-origin requests (default) |
+| `'include'` | Always send cookies, even cross-origin |
+| `'omit'` | Never send cookies |
+
+The `credentials` setting applies to all `fetch()` calls (POST and GET) and sets `withCredentials` on the `EventSource` SSE connection.
 
 ### Sending Messages
 

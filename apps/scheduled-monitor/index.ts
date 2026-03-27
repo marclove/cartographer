@@ -16,6 +16,7 @@ export default function (ctx: RunContext): TreeRunConfig {
 
   return {
     tree,
+    sessionId: 'health-monitor',
     autoTick: { intervalMs: 1_000 },
   };
 }

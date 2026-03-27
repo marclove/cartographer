@@ -40,7 +40,7 @@ describe('CartographerClient interrupt/resume', () => {
 
   it('interrupt() returns { interrupted: true } when processing', async () => {
     const store = new InMemoryStateStore();
-    server = new ActorServer({ createTree: makeSlowTree, stateStore: store, port: 0 });
+    server = new ActorServer({ createTree: makeSlowTree, sessionId: 'default', stateStore: store, port: 0 });
     const { port } = await server.start();
     client = createCartographerClient(`http://localhost:${port}`);
 
@@ -60,7 +60,7 @@ describe('CartographerClient interrupt/resume', () => {
   });
 
   it('interrupt() returns { interrupted: false } when idle', async () => {
-    server = new ActorServer({ createTree: makeFastTree, port: 0 });
+    server = new ActorServer({ createTree: makeFastTree, sessionId: 'default', port: 0 });
     const { port } = await server.start();
     client = createCartographerClient(`http://localhost:${port}`);
 
@@ -70,7 +70,7 @@ describe('CartographerClient interrupt/resume', () => {
 
   it('resume() clears held state', async () => {
     const store = new InMemoryStateStore();
-    server = new ActorServer({ createTree: makeFastTree, stateStore: store, port: 0 });
+    server = new ActorServer({ createTree: makeFastTree, sessionId: 'default', stateStore: store, port: 0 });
     const { port } = await server.start();
     client = createCartographerClient(`http://localhost:${port}`);
 
@@ -93,7 +93,7 @@ describe('CartographerClient interrupt/resume', () => {
   });
 
   it('resume() returns { resumed: false } when not held', async () => {
-    server = new ActorServer({ createTree: makeFastTree, port: 0 });
+    server = new ActorServer({ createTree: makeFastTree, sessionId: 'default', port: 0 });
     const { port } = await server.start();
     client = createCartographerClient(`http://localhost:${port}`);
 
@@ -103,7 +103,7 @@ describe('CartographerClient interrupt/resume', () => {
 
   it('interruptAndCommand() waits for SSE confirmation before sending command', async () => {
     const store = new InMemoryStateStore();
-    server = new ActorServer({ createTree: makeSlowTree, stateStore: store, port: 0 });
+    server = new ActorServer({ createTree: makeSlowTree, sessionId: 'default', stateStore: store, port: 0 });
     const { port } = await server.start();
     client = createCartographerClient(`http://localhost:${port}`);
 
@@ -121,7 +121,7 @@ describe('CartographerClient interrupt/resume', () => {
   });
 
   it('interruptAndCommand() sends command directly when nothing is processing', async () => {
-    server = new ActorServer({ createTree: makeFastTree, port: 0 });
+    server = new ActorServer({ createTree: makeFastTree, sessionId: 'default', port: 0 });
     const { port } = await server.start();
     client = createCartographerClient(`http://localhost:${port}`);
 

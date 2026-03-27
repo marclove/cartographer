@@ -12,11 +12,12 @@ import { MessageProcessor } from "cartographer";
 
 | Field            | Type                 | Default    | Description                                                        |
 | ---------------- | -------------------- | ---------- | ------------------------------------------------------------------ |
-| `createTree`     | `() => BehaviorTree` | (required) | Factory that creates a fresh tree for each message.                |
-| `stateStore`     | `StateStore`         | (required) | Backing store for state persistence.                               |
-| `stateKey`       | `string`             | (required) | Key under which session state is stored.                           |
-| `topologyPolicy` | `'fail' \| 'reset'`  | `'fail'`   | What to do when stored root hash doesn't match the factory's tree. |
-| `eventBridge`    | `EventBridge`        | —          | Optional bridge for streaming tree events to connected clients.    |
+| `createTree`     | `() => BehaviorTree`      | (required) | Factory that creates a fresh tree for each message.                |
+| `stateStore`     | `StateStore`              | (required) | Backing store for state persistence.                               |
+| `stateKey`       | `string`                  | (required) | Key under which session state is stored.                           |
+| `topologyPolicy` | `'fail' \| 'reset'`       | `'fail'`   | What to do when stored root hash doesn't match the factory's tree. |
+| `eventBridge`    | `EventBridge`             | —          | Optional bridge for streaming tree events to connected clients.    |
+| `context`        | `Record<string, unknown>` | —          | Key-value pairs applied as `context:{key}` on the blackboard when no stored state exists (new session). |
 
 ### Methods
 
@@ -55,7 +56,7 @@ import { ActorServer } from "cartographer";
 | ------ | -------- | -------------------- | ------------ |
 | `port` | `number` | `PORT` env or `3148` | Listen port. |
 
-See [AppOptions](#appoptions) for the remaining fields (`createTree`, `stateStore`, `context`, `topologyPolicy`, `maxQueueDepth`).
+See [AppOptions](#appoptions) for the remaining fields (`createTree`, `sessionId`, `stateStore`, `context`, `topologyPolicy`, `maxQueueDepth`, `autoTick`, `streamEvictionMs`).
 
 ### Properties
 
@@ -76,13 +77,13 @@ Initializes state and starts the HTTP server. Returns the actual listening port.
 
 Gracefully shuts down the server.
 
-#### `processMessage(msg: ActorMessage): Promise<ProcessResult | QueuedResult | null>`
+#### `processMessage(msg: ActorMessage, sessionKey: string): Promise<ProcessResult | QueuedResult | null>`
 
-Processes a message programmatically without going through the REST API. Returns `null` if the queue is full.
+Processes a message programmatically without going through the REST API. The `sessionKey` parameter identifies which session to process against. Returns `null` if the queue is full.
 
 #### `bridgeTree(tree: BehaviorTree): void`
 
-Subscribes to a tree's events and forwards them through the SSE pipeline. Use this when an external tree should stream events to connected SSE clients.
+Subscribes to a tree's events and forwards them through the static session's SSE stream. Use this when an external tree should stream events to connected SSE clients.
 
 ---
 
@@ -98,14 +99,16 @@ import { createApp } from "cartographer";
 
 #### AppOptions
 
-| Field            | Type                      | Default                                    | Description                                      |
-| ---------------- | ------------------------- | ------------------------------------------ | ------------------------------------------------ |
-| `createTree`     | `() => BehaviorTree`      | (required)                                 | Tree factory function.                           |
-| `stateStore`     | `StateStore`              | `InMemoryStateStore`                       | Backing store.                                   |
-| `context`        | `Record<string, unknown>` | `{}`                                       | Injected into blackboard as `context:*` on init. |
-| `topologyPolicy` | `'fail' \| 'reset'`       | `'fail'`                                   | Topology mismatch handling.                      |
-| `maxQueueDepth`  | `number`                  | `CARTOGRAPHER_MAX_QUEUE_DEPTH` env or `16` | Maximum queued messages.                         |
-| `autoTick`       | `{ intervalMs: number }`  | —                                          | Enable auto-ticking at the specified interval.   |
+| Field                | Type                               | Default                                    | Description                                      |
+| -------------------- | ---------------------------------- | ------------------------------------------ | ------------------------------------------------ |
+| `createTree`         | `() => BehaviorTree`               | (required)                                 | Tree factory function.                           |
+| `stateStore`         | `StateStore`                       | `InMemoryStateStore`                       | Backing store.                                   |
+| `context`            | `Record<string, unknown>`          | `{}`                                       | Injected into blackboard as `context:*` on init. |
+| `topologyPolicy`     | `'fail' \| 'reset'`                | `'fail'`                                   | Topology mismatch handling.                      |
+| `maxQueueDepth`      | `number`                           | `CARTOGRAPHER_MAX_QUEUE_DEPTH` env or `16` | Maximum queued messages.                         |
+| `sessionId`          | `string \| (c: Context) => string \| Promise<string>` | (required)              | Session key — static string or resolver function. |
+| `autoTick`           | `{ intervalMs: number }`           | —                                          | Ticks the static session key at the specified interval. |
+| `streamEvictionMs`   | `number`                           | `300_000` (5 min)                          | Idle session stream TTL. `0` disables eviction.  |
 
 #### AppHandle
 
@@ -115,10 +118,10 @@ import { createApp } from "cartographer";
 | `stateStore`      | `StateStore`                                                      | Resolved state store instance.                     |
 | `topologyPolicy`  | `'fail' \| 'reset'`                                               | Resolved topology policy.                          |
 | `maxQueueDepth`   | `number`                                                          | Resolved max queue depth.                          |
-| `processMessage`  | `(msg: ActorMessage) => Promise<ProcessResult \| QueuedResult \| null>` | Process a message programmatically.          |
-| `bridgeTree`      | `(tree: BehaviorTree) => void`                                    | Forward external tree events to SSE clients.       |
-| `initializeState` | `() => Promise<void>`                                             | Initialize state store with tree factory defaults. |
-| `drainQueue`      | `() => Promise<void>`                                             | Process the next queued message, if any.           |
+| `processMessage`  | `(msg: ActorMessage, sessionKey: string) => Promise<ProcessResult \| QueuedResult \| null>` | Process a message programmatically.          |
+| `bridgeTree`      | `(tree: BehaviorTree) => void`                                    | Forward external tree events to the static session's SSE stream. |
+| `initializeState` | `() => Promise<void>`                                             | Sets the server start timestamp. |
+| `drainQueue`      | `(sessionKey: string) => Promise<void>`                           | Process the next queued message for the given session. |
 | `closeSseClients` | `() => void`                                                      | Close all connected SSE clients.                   |
 | `startAutoTick`   | `() => void`                                                      | Start the auto-tick interval (if `autoTick` was configured). |
 | `stopAutoTick`    | `() => void`                                                      | Stop the auto-tick interval.                       |
