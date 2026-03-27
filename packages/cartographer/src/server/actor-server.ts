@@ -80,7 +80,7 @@ export class ActorServer {
    * Gracefully shut down the server.
    */
   async stop(): Promise<void> {
-    this.handle.stop();
+    await this.handle.stop();
     if (this.server) {
       await new Promise<void>((resolve) => this.server!.close(() => resolve()));
     }

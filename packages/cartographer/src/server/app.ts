@@ -1,19 +1,22 @@
 import { Hono } from 'hono';
 import { getRequestListener } from '@hono/node-server';
 import { streamSSE } from 'hono/streaming';
-import type { SSEStreamingApi } from 'hono/streaming';
 import type { BehaviorTree } from '../core/behavior-tree.js';
 import type { StateStore } from '../state/state-store.js';
 import type { ActorMessage } from '../actor/types.js';
 import type { ProcessResult } from '../actor/message-processor.js';
 import { InMemoryStateStore } from '../state/in-memory-state-store.js';
-import { InProcessEventStream } from './event-stream.js';
 import { serializeTree, serializeNodeRef } from './serializers.js';
 import { AgentNode } from '../nodes/agent.js';
 import type { BTreeNode } from '../types.js';
-import { MessageProcessor } from '../actor/message-processor.js';
 import { EventBridge } from './event-bridge.js';
+import { createSessionStreams } from './session-streams.js';
+import { createMessagePipeline } from './message-pipeline.js';
+import type { QueuedResult } from './message-pipeline.js';
 
+export type { QueuedResult } from './message-pipeline.js';
+
+/** Accumulated tick/cycle statistics exposed via `GET /api/status`. */
 interface StatusState {
   tickCount: number;
   cycleCount: number;
@@ -22,6 +25,7 @@ interface StatusState {
   startedAt: number;
 }
 
+/** Depth-first search for a node by its unique ID within a tree. */
 function findNodeById(root: BTreeNode, id: string): BTreeNode | undefined {
   const stack: BTreeNode[] = [root];
   while (stack.length > 0) {
@@ -32,13 +36,48 @@ function findNodeById(root: BTreeNode, id: string): BTreeNode | undefined {
   return undefined;
 }
 
+/**
+ * Configuration for {@link createApp}.
+ *
+ * Only `createTree` and `sessionId` are required. Everything else has sensible
+ * defaults suitable for single-process, in-memory development.
+ */
 export interface AppOptions {
+  /** Factory that produces a fresh {@link BehaviorTree} instance. Called once per message processing cycle. */
   createTree: () => BehaviorTree;
+  /**
+   * Persistence backend for tree state, locks, events, and the message queue.
+   * Defaults to an {@link InMemoryStateStore} when omitted.
+   */
   stateStore?: StateStore;
+  /**
+   * Key-value pairs written to the blackboard before the first tick of each
+   * session. Useful for injecting configuration or credentials that every
+   * tree execution needs.
+   */
   context?: Record<string, unknown>;
+  /**
+   * What to do when the persisted node state no longer matches the tree structure
+   * (e.g. after a code deploy changes the tree).
+   *
+   * - `'fail'` (default) — reject the message with an error.
+   * - `'reset'` — silently discard stale node state and start fresh.
+   */
   topologyPolicy?: 'fail' | 'reset';
+  /**
+   * Maximum number of messages that can be queued while one is being processed.
+   * When the queue is full, new messages receive a 429 response.
+   * Defaults to the `CARTOGRAPHER_MAX_QUEUE_DEPTH` env var, or `16`.
+   */
   maxQueueDepth?: number;
-  /** Session key — static string or resolver function extracting from the Hono request context. */
+  /**
+   * Session key — a static string for single-session deployments, or a resolver
+   * function that extracts the key from each incoming Hono request context
+   * (e.g. from an auth token or header).
+   *
+   * Routes that require a session (`/events`, `/api/messages`, `/api/blackboard`, etc.)
+   * return 401 when the resolver returns a falsy value.
+   */
   sessionId: string | ((c: any) => string | Promise<string>);
   /**
    * How long (in ms) to keep an idle session's in-memory event stream
@@ -49,29 +88,76 @@ export interface AppOptions {
   streamEvictionMs?: number;
 }
 
-export interface QueuedResult {
-  queued: true;
-  messageId: string;
-  position: number;
-}
-
+/**
+ * The object returned by {@link createApp}. Provides both the Hono application
+ * (for HTTP serving) and programmatic methods for message processing and
+ * lifecycle management.
+ *
+ * For most deployments, call {@link start} once and let the HTTP routes drive
+ * processing. Use {@link processMessage} when you need to inject messages
+ * programmatically from within the same process (e.g. from a test harness or
+ * an embedding application).
+ */
 export interface AppHandle {
+  /** The Hono application instance. Mount via `app.fetch` or pass to a Node.js HTTP server. */
   app: Hono;
+  /** The persistence backend in use (either the one provided in options or the default in-memory store). */
   stateStore: StateStore;
+  /** The active topology policy. See {@link AppOptions.topologyPolicy}. */
   topologyPolicy: 'fail' | 'reset';
+  /** The active queue depth limit. See {@link AppOptions.maxQueueDepth}. */
   maxQueueDepth: number;
+  /**
+   * Process a message programmatically without going through the REST API.
+   * Acquires the session lock (or queues) just like an HTTP request would.
+   *
+   * @returns The tree's {@link ProcessResult} on success, a {@link QueuedResult}
+   *   if the message was queued behind an in-flight message, or `null` if the
+   *   queue is full.
+   */
   processMessage: (msg: ActorMessage, sessionKey: string) => Promise<ProcessResult | QueuedResult | null>;
+  /** Resets the stats clock. Called automatically by {@link start}. */
   initializeState: () => Promise<void>;
+  /** Attempts to process the next queued message for the given session. */
   drainQueue: (sessionKey: string) => Promise<void>;
-  closeSseClients: () => void;
+  /** Closes every active SSE connection and clears all in-memory event streams. */
+  closeSseClients: () => Promise<void>;
   /** Returns a Node.js HTTP request listener for mounting into Express, Fastify, or `http.createServer`. */
   nodeHandler: () => ReturnType<typeof getRequestListener>;
-  /** Initializes state and drains any queued messages. */
+  /** Initializes state and drains any queued messages that survived a restart. */
   start: () => Promise<void>;
-  /** Closes all SSE clients. */
-  stop: () => void;
+  /** Closes all SSE clients and cancels pending eviction timers. Alias for {@link closeSseClients}. */
+  stop: () => Promise<void>;
 }
 
+/**
+ * Creates a Hono-based HTTP application that exposes a behavior tree as a
+ * REST + SSE API with session-scoped message processing and state persistence.
+ *
+ * This is the composition root for the server module. It wires together:
+ * - **Session streams** — per-session SSE event buffers with TTL-based eviction
+ * - **Message pipeline** — lock-based serial message processing with queuing
+ * - **HTTP routes** — REST endpoints for tree inspection, message submission,
+ *   interrupt/resume, and real-time SSE streaming
+ *
+ * The returned {@link AppHandle} can be served directly via `@hono/node-server`,
+ * mounted into an existing server via {@link AppHandle.nodeHandler}, or wrapped
+ * by {@link ActorServer} for a batteries-included standalone deployment.
+ *
+ * @example
+ * ```ts
+ * import { createApp } from 'cartographer';
+ * import { serve } from '@hono/node-server';
+ *
+ * const handle = createApp({
+ *   createTree: () => myTree,
+ *   sessionId: 'default',
+ * });
+ *
+ * await handle.start();
+ * serve({ fetch: handle.app.fetch, port: 3148 });
+ * ```
+ */
 export function createApp(options: AppOptions): AppHandle {
   const resolveSession: (c: any) => string | Promise<string> =
     typeof options.sessionId === 'string'
@@ -82,61 +168,13 @@ export function createApp(options: AppOptions): AppHandle {
   const stateStore = options.stateStore ?? new InMemoryStateStore();
   const context = options.context ?? {};
   const streamEvictionMs = options.streamEvictionMs ?? 300_000;
-  const sessionStreams = new Map<string, InProcessEventStream>();
-  const sessionSseClients = new Map<string, Set<SSEStreamingApi>>();
-  const streamEvictionTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const topologyPolicy = options.topologyPolicy ?? 'fail';
+  const maxQueueDepth = options.maxQueueDepth ?? parseInt(process.env.CARTOGRAPHER_MAX_QUEUE_DEPTH ?? '16', 10);
   const stats: StatusState = { tickCount: 0, cycleCount: 0, lastStatus: null, lastDurationMs: null, startedAt: 0 };
 
-  function getOrCreateStream(sessionKey: string): InProcessEventStream {
-    // Cancel any pending eviction — this session is active
-    const timer = streamEvictionTimers.get(sessionKey);
-    if (timer) {
-      clearTimeout(timer);
-      streamEvictionTimers.delete(sessionKey);
-    }
+  const streams = createSessionStreams({ streamEvictionMs });
 
-    let stream = sessionStreams.get(sessionKey);
-    if (!stream) {
-      stream = new InProcessEventStream(500);
-      sessionStreams.set(sessionKey, stream);
-    }
-    return stream;
-  }
-
-  function scheduleStreamEviction(sessionKey: string): void {
-    if (streamEvictionMs <= 0) return;
-    // Don't evict if SSE clients are still connected
-    const clients = sessionSseClients.get(sessionKey);
-    if (clients && clients.size > 0) return;
-
-    const timer = setTimeout(() => {
-      streamEvictionTimers.delete(sessionKey);
-      // Only evict if still no SSE clients
-      const currentClients = sessionSseClients.get(sessionKey);
-      if (!currentClients || currentClients.size === 0) {
-        sessionStreams.delete(sessionKey);
-      }
-    }, streamEvictionMs);
-    streamEvictionTimers.set(sessionKey, timer);
-  }
-
-  function getOrCreateClientSet(sessionKey: string): Set<SSEStreamingApi> {
-    let clients = sessionSseClients.get(sessionKey);
-    if (!clients) {
-      clients = new Set();
-      sessionSseClients.set(sessionKey, clients);
-    }
-    return clients;
-  }
-
-  function cleanupClientSetIfEmpty(sessionKey: string): void {
-    const clients = sessionSseClients.get(sessionKey);
-    if (!clients || clients.size === 0) {
-      sessionSseClients.delete(sessionKey);
-      scheduleStreamEviction(sessionKey);
-    }
-  }
-
+  /** Updates tick/cycle counters from `tree:tick` events for the `/api/status` endpoint. */
   function trackEvent(event: { type: string; data: Record<string, unknown> }): void {
     if (event.type === 'tree:tick') {
       stats.tickCount++;
@@ -148,28 +186,33 @@ export function createApp(options: AppOptions): AppHandle {
     }
   }
 
-  const topologyPolicy = options.topologyPolicy ?? 'fail';
-  const maxQueueDepth = options.maxQueueDepth ?? parseInt(process.env.CARTOGRAPHER_MAX_QUEUE_DEPTH ?? '16', 10);
-  const activeProcessors = new Map<string, { actor: MessageProcessor; messageId: string }>();
-
-  function generateRequestId(): string {
-    return `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  }
-
+  /** Wires an {@link EventBridge} so events flow to both the stats tracker and the session's SSE stream. */
   function createBridge(sessionKey: string, messageId?: string): EventBridge {
     return new EventBridge(stateStore, sessionKey, messageId, (event) => {
       trackEvent(event);
-      const stream = getOrCreateStream(sessionKey);
+      const stream = streams.getOrCreateStream(sessionKey);
       stream.push(event.type, event.data);
     });
   }
 
+  const pipeline = createMessagePipeline({
+    createTree: createTreeFn,
+    stateStore,
+    topologyPolicy,
+    maxQueueDepth,
+    context,
+    createBridge,
+    scheduleStreamEviction: streams.scheduleStreamEviction,
+  });
+
+  /** Lazily instantiates and caches a single tree for read-only route handlers. */
   let _readTree: BehaviorTree | null = null;
   function readTree(): BehaviorTree {
     if (!_readTree) _readTree = createTreeFn();
     return _readTree;
   }
 
+  /** Extracts the resolved session key that the middleware stored on the Hono context. */
   function sessionId(c: any): string {
     return c.get('sessionId') as string;
   }
@@ -255,7 +298,7 @@ export function createApp(options: AppOptions): AppHandle {
     const sid = sessionId(c);
     const tree = readTree();
     const state = await stateStore.getState(sid);
-    const sessionStream = getOrCreateStream(sid);
+    const sessionStream = streams.getOrCreateStream(sid);
     const snapshot = {
       tree: serializeTree(tree.root),
       blackboard: state?.blackboard ?? {},
@@ -305,13 +348,13 @@ export function createApp(options: AppOptions): AppHandle {
       });
 
       // 4. Track SSE client per session
-      const clients = getOrCreateClientSet(sid);
+      const clients = streams.getOrCreateClientSet(sid);
       clients.add(stream);
 
       stream.onAbort(() => {
         unsubscribe();
         clients.delete(stream);
-        cleanupClientSetIfEmpty(sid);
+        streams.cleanupClientSetIfEmpty(sid);
       });
 
       // Block until aborted
@@ -330,14 +373,14 @@ export function createApp(options: AppOptions): AppHandle {
       return c.json({ error: 'Command message requires name', status: 400 }, 400);
     }
     const msg: ActorMessage = { ...body };
-    const prep = await acquireOrQueue(msg, sid, body.id);
+    const prep = await pipeline.acquireOrQueue(msg, sid, body.id);
     if (prep.queued) {
       return prep.queueFull
         ? c.json({ error: 'Queue full', status: 429 }, 429)
         : c.json({ id: prep.bridge.messageId, status: 'queued', position: prep.position }, 202);
     }
     const response = c.json({ id: prep.bridge.messageId, status: 'processing' }, 202);
-    executeMessage(msg, sid, prep.requestId, prep.bridge).catch(() => {});
+    pipeline.executeMessage(msg, sid, prep.requestId, prep.bridge).catch(() => {});
     return response;
   });
 
@@ -346,14 +389,14 @@ export function createApp(options: AppOptions): AppHandle {
     const name = c.req.param('name');
     const payload = await c.req.json().catch(() => null);
     const msg: ActorMessage = { type: 'command', name, payload };
-    const prep = await acquireOrQueue(msg, sid);
+    const prep = await pipeline.acquireOrQueue(msg, sid);
     if (prep.queued) {
       return prep.queueFull
         ? c.json({ error: 'Queue full', status: 429 }, 429)
         : c.json({ id: prep.bridge.messageId, status: 'queued', position: prep.position }, 202);
     }
     const response = c.json({ id: prep.bridge.messageId, status: 'processing' }, 202);
-    executeMessage(msg, sid, prep.requestId, prep.bridge).catch(() => {});
+    pipeline.executeMessage(msg, sid, prep.requestId, prep.bridge).catch(() => {});
     return response;
   });
 
@@ -363,20 +406,20 @@ export function createApp(options: AppOptions): AppHandle {
     const body = await c.req.json().catch(() => null);
     const value = body?.value;
     const msg: ActorMessage = { type: 'write', key, value };
-    const prep = await acquireOrQueue(msg, sid);
+    const prep = await pipeline.acquireOrQueue(msg, sid);
     if (prep.queued) {
       return prep.queueFull
         ? c.json({ error: 'Queue full', status: 429 }, 429)
         : c.json({ id: prep.bridge.messageId, status: 'queued', position: prep.position }, 202);
     }
     const response = c.json({ id: prep.bridge.messageId, status: 'processing' }, 202);
-    executeMessage(msg, sid, prep.requestId, prep.bridge).catch(() => {});
+    pipeline.executeMessage(msg, sid, prep.requestId, prep.bridge).catch(() => {});
     return response;
   });
 
   app.post('/api/interrupt', (c) => {
     const sid = sessionId(c);
-    const active = activeProcessors.get(sid);
+    const active = pipeline.activeProcessors.get(sid);
     if (active) {
       active.actor.requestInterrupt();
       return c.json({ interrupted: true, messageId: active.messageId });
@@ -395,101 +438,6 @@ export function createApp(options: AppOptions): AppHandle {
     stats.startedAt = Date.now();
   }
 
-  // Message processing core
-  async function acquireOrQueue(
-    msg: ActorMessage,
-    sessionKey: string,
-    messageId?: string,
-  ): Promise<
-    | { queued: false; requestId: string; bridge: EventBridge }
-    | { queued: true; bridge: EventBridge; position: number; queueFull: false }
-    | { queued: true; bridge: EventBridge; position: number; queueFull: true }
-  > {
-    const requestId = generateRequestId();
-    const acquired = await stateStore.acquireLock(sessionKey, requestId, 30000);
-    const bridge = createBridge(sessionKey, messageId);
-    msg.id = bridge.messageId;
-    if (acquired) return { queued: false, requestId, bridge };
-    try {
-      const { position } = await stateStore.enqueueMessage(sessionKey, msg, maxQueueDepth);
-      await bridge.emitQueued(position);
-      return { queued: true, bridge, position, queueFull: false };
-    } catch {
-      return { queued: true, bridge, position: -1, queueFull: true };
-    }
-  }
-
-  async function executeMessage(
-    msg: ActorMessage,
-    sessionKey: string,
-    requestId: string,
-    bridge: EventBridge,
-  ): Promise<ProcessResult> {
-    const heartbeat = setInterval(async () => {
-      try { await stateStore.renewLock(sessionKey, requestId, 30000); } catch {}
-    }, 10000);
-
-    try {
-      const actor = new MessageProcessor({
-        createTree: createTreeFn,
-        stateStore,
-        stateKey: sessionKey,
-        topologyPolicy,
-        eventBridge: bridge,
-        context,
-      });
-      activeProcessors.set(sessionKey, { actor, messageId: bridge.messageId });
-      const result = await actor.process(msg);
-      if (result.interrupted) await bridge.emitInterrupted();
-      await bridge.emitProcessed(String(result.treeStatus));
-      return result;
-    } catch (error) {
-      await bridge.emitFailed(error instanceof Error ? error.message : String(error));
-      return { treeStatus: 'error', error: error instanceof Error ? error.message : String(error) };
-    } finally {
-      activeProcessors.delete(sessionKey);
-      clearInterval(heartbeat);
-      await stateStore.releaseLock(sessionKey, requestId);
-      drainQueue(sessionKey).catch(() => {});
-      scheduleStreamEviction(sessionKey);
-    }
-  }
-
-  async function processMessage(msg: ActorMessage, sessionKey: string): Promise<ProcessResult | QueuedResult | null> {
-    const prep = await acquireOrQueue(msg, sessionKey, msg.id);
-    if (prep.queued) return prep.queueFull ? null : { queued: true, messageId: prep.bridge.messageId, position: prep.position };
-    return executeMessage(msg, sessionKey, prep.requestId, prep.bridge);
-  }
-
-  async function drainQueue(sessionKey: string): Promise<void> {
-    const requestId = generateRequestId();
-    const acquired = await stateStore.acquireLock(sessionKey, requestId, 30000);
-    if (!acquired) return;
-    const msg = await stateStore.dequeueMessage(sessionKey);
-    if (!msg) {
-      await stateStore.releaseLock(sessionKey, requestId);
-      return;
-    }
-    const bridge = createBridge(sessionKey, msg.id);
-    msg.id = bridge.messageId;
-    await bridge.emitDequeued();
-    executeMessage(msg, sessionKey, requestId, bridge).catch(() => {});
-  }
-
-  function closeSseClients(): void {
-    for (const [, clients] of sessionSseClients) {
-      for (const client of clients) {
-        client.close();
-      }
-    }
-    for (const timer of streamEvictionTimers.values()) {
-      clearTimeout(timer);
-    }
-    sessionSseClients.clear();
-    sessionStreams.clear();
-    streamEvictionTimers.clear();
-  }
-
   function nodeHandler() {
     return getRequestListener(app.fetch);
   }
@@ -500,13 +448,25 @@ export function createApp(options: AppOptions): AppHandle {
     const queuedKeys = await stateStore.listQueuedKeys();
     const allKeys = [...new Set([...stateKeys, ...queuedKeys])];
     for (const key of allKeys) {
-      drainQueue(key).catch(() => {});
+      pipeline.drainQueue(key).catch(() => {});
     }
   }
 
-  function stop(): void {
-    closeSseClients();
+  async function stop(): Promise<void> {
+    await streams.closeSseClients();
   }
 
-  return { app, stateStore, topologyPolicy, maxQueueDepth, processMessage, initializeState, drainQueue, closeSseClients, nodeHandler, start, stop };
+  return {
+    app,
+    stateStore,
+    topologyPolicy,
+    maxQueueDepth,
+    processMessage: pipeline.processMessage,
+    initializeState,
+    drainQueue: pipeline.drainQueue,
+    closeSseClients: streams.closeSseClients,
+    nodeHandler,
+    start,
+    stop,
+  };
 }
