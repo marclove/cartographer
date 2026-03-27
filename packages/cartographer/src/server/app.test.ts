@@ -800,3 +800,90 @@ describe('createApp — lifecycle helpers', () => {
     vi.useRealTimers();
   });
 });
+
+describe('createApp — session resolution', () => {
+  it('resolveSessionId sets session on context for downstream routes', async () => {
+    const handle = createApp({
+      createTree: makeTree,
+      resolveSessionId: () => 'user-42',
+    });
+    // Don't call initializeState — multi-session mode skips eager init
+    // Blackboard for 'user-42' should be empty since no state exists
+    const res = await handle.app.request('/api/blackboard');
+    expect(res.status).toBe(200);
+  });
+
+  it('falls back to default when no resolver is provided', async () => {
+    const handle = createApp({ createTree: makeTree });
+    await handle.initializeState();
+
+    const res = await handle.app.request('/api/blackboard');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toBeDefined();
+  });
+
+  it('returns 401 when resolver returns empty string', async () => {
+    const handle = createApp({
+      createTree: makeTree,
+      resolveSessionId: () => '',
+    });
+
+    const res = await handle.app.request('/api/blackboard');
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 401 when resolver returns null', async () => {
+    const handle = createApp({
+      createTree: makeTree,
+      resolveSessionId: () => null as unknown as string,
+    });
+
+    const res = await handle.app.request('/api/blackboard');
+    expect(res.status).toBe(401);
+  });
+
+  it('supports async resolveSessionId', async () => {
+    const handle = createApp({
+      createTree: makeTree,
+      resolveSessionId: async () => 'async-user',
+    });
+
+    const res = await handle.app.request('/api/blackboard');
+    expect(res.status).toBe(200);
+  });
+
+  it('health endpoint skips session resolution', async () => {
+    const handle = createApp({
+      createTree: makeTree,
+      resolveSessionId: () => '',  // would 401 on session-scoped routes
+    });
+
+    const res = await handle.app.request('/_platform/health');
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('createApp — auto-tick mutual exclusion', () => {
+  it('throws when both resolveSessionId and autoTick are configured', () => {
+    expect(() => createApp({
+      createTree: makeTree,
+      resolveSessionId: () => 'user-1',
+      autoTick: { intervalMs: 100 },
+    })).toThrow(/autoTick.*resolveSessionId/);
+  });
+
+  it('allows autoTick without resolveSessionId', () => {
+    expect(() => createApp({
+      createTree: makeTree,
+      autoTick: { intervalMs: 100 },
+    })).not.toThrow();
+  });
+
+  it('allows resolveSessionId without autoTick', () => {
+    expect(() => createApp({
+      createTree: makeTree,
+      resolveSessionId: () => 'user-1',
+    })).not.toThrow();
+  });
+});

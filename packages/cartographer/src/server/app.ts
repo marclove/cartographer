@@ -43,6 +43,11 @@ export interface AppOptions {
   topologyPolicy?: 'fail' | 'reset';
   maxQueueDepth?: number;
   autoTick?: { intervalMs: number };
+  /**
+   * Extract session ID from the Hono request context.
+   * Default: reads `c.get('sessionId')`, falls back to `'default'`.
+   */
+  resolveSessionId?: (c: any) => string | Promise<string>;
 }
 
 export interface QueuedResult {
@@ -72,6 +77,14 @@ export interface AppHandle {
 }
 
 export function createApp(options: AppOptions): AppHandle {
+  if (options.resolveSessionId && options.autoTick) {
+    throw new Error(
+      'autoTick and resolveSessionId cannot be used together. '
+      + 'Multi-session mode is request-driven. Use external triggers '
+      + '(cron, webhooks) to tick individual sessions.'
+    );
+  }
+
   const createTreeFn = options.createTree;
   const stateStore = options.stateStore ?? new InMemoryStateStore();
   const context = options.context ?? {};
@@ -115,6 +128,26 @@ export function createApp(options: AppOptions): AppHandle {
   }
 
   const app = new Hono();
+
+  // Session resolution middleware
+  app.use('*', async (c, next) => {
+    // Skip session resolution for session-independent endpoints
+    const path = c.req.path;
+    if (path === '/_platform/health' || path === '/api/status' || path === '/api/tree' || path.startsWith('/api/nodes/')) {
+      return next();
+    }
+
+    const sessionId = options.resolveSessionId
+      ? await options.resolveSessionId(c)
+      : ((c as any).get('sessionId') as string | undefined) ?? 'default';
+
+    if (!sessionId) {
+      return c.json({ error: 'Unauthorized: session ID required', status: 401 }, 401);
+    }
+
+    (c as any).set('sessionId', sessionId);
+    await next();
+  });
 
   // Global error handler
   app.onError((err, c) => {
