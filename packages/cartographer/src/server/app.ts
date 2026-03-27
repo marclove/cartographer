@@ -16,7 +16,6 @@ import type { BTreeNode } from '../types.js';
 import { MessageProcessor } from '../actor/message-processor.js';
 import { EventBridge } from './event-bridge.js';
 
-
 interface StatusState {
   tickCount: number;
   cycleCount: number;
@@ -141,6 +140,10 @@ export function createApp(options: AppOptions): AppHandle {
     return _readTree;
   }
 
+  function sessionId(c: any): string {
+    return c.get('sessionId') as string;
+  }
+
   const app = new Hono();
 
   // Session resolution middleware
@@ -195,8 +198,8 @@ export function createApp(options: AppOptions): AppHandle {
   });
 
   app.get('/api/blackboard', async (c) => {
-    const sessionId = (c as any).get('sessionId') as string;
-    const state = await stateStore.getState(sessionId);
+    const sid = sessionId(c);
+    const state = await stateStore.getState(sid);
     return c.json(state?.blackboard ?? {});
   });
 
@@ -223,10 +226,10 @@ export function createApp(options: AppOptions): AppHandle {
 
   // SSE streaming
   app.get('/events', async (c) => {
-    const sessionId = (c as any).get('sessionId') as string;
+    const sid = sessionId(c);
     const tree = readTree();
-    const state = await stateStore.getState(sessionId);
-    const sessionStream = getOrCreateStream(sessionId);
+    const state = await stateStore.getState(sid);
+    const sessionStream = getOrCreateStream(sid);
     const snapshot = {
       tree: serializeTree(tree.root),
       blackboard: state?.blackboard ?? {},
@@ -276,17 +279,17 @@ export function createApp(options: AppOptions): AppHandle {
       });
 
       // 4. Track SSE client per session
-      let clients = sessionSseClients.get(sessionId);
+      let clients = sessionSseClients.get(sid);
       if (!clients) {
         clients = new Set();
-        sessionSseClients.set(sessionId, clients);
+        sessionSseClients.set(sid, clients);
       }
       clients.add(stream);
 
       stream.onAbort(() => {
         unsubscribe();
         clients!.delete(stream);
-        removeClientSet(sessionId);
+        removeClientSet(sid);
       });
 
       // Block until aborted
@@ -296,7 +299,7 @@ export function createApp(options: AppOptions): AppHandle {
 
   // POST routes
   app.post('/api/messages', async (c) => {
-    const sessionId = (c as any).get('sessionId') as string;
+    const sid = sessionId(c);
     const body = await c.req.json().catch(() => null);
     if (!body || !body.type) {
       return c.json({ error: 'Missing message type', status: 400 }, 400);
@@ -305,53 +308,53 @@ export function createApp(options: AppOptions): AppHandle {
       return c.json({ error: 'Command message requires name', status: 400 }, 400);
     }
     const msg: ActorMessage = { ...body };
-    const prep = await acquireOrQueue(msg, sessionId, body.id);
+    const prep = await acquireOrQueue(msg, sid, body.id);
     if (prep.queued) {
       return prep.queueFull
         ? c.json({ error: 'Queue full', status: 429 }, 429)
         : c.json({ id: prep.bridge.messageId, status: 'queued', position: prep.position }, 202);
     }
     const response = c.json({ id: prep.bridge.messageId, status: 'processing' }, 202);
-    executeMessage(msg, sessionId, prep.requestId, prep.bridge).catch(() => {});
+    executeMessage(msg, sid, prep.requestId, prep.bridge).catch(() => {});
     return response;
   });
 
   app.post('/api/commands/:name', async (c) => {
-    const sessionId = (c as any).get('sessionId') as string;
+    const sid = sessionId(c);
     const name = c.req.param('name');
     const payload = await c.req.json().catch(() => null);
     const msg: ActorMessage = { type: 'command', name, payload };
-    const prep = await acquireOrQueue(msg, sessionId);
+    const prep = await acquireOrQueue(msg, sid);
     if (prep.queued) {
       return prep.queueFull
         ? c.json({ error: 'Queue full', status: 429 }, 429)
         : c.json({ id: prep.bridge.messageId, status: 'queued', position: prep.position }, 202);
     }
     const response = c.json({ id: prep.bridge.messageId, status: 'processing' }, 202);
-    executeMessage(msg, sessionId, prep.requestId, prep.bridge).catch(() => {});
+    executeMessage(msg, sid, prep.requestId, prep.bridge).catch(() => {});
     return response;
   });
 
   app.post('/api/blackboard/:key', async (c) => {
-    const sessionId = (c as any).get('sessionId') as string;
+    const sid = sessionId(c);
     const key = c.req.param('key');
     const body = await c.req.json().catch(() => null);
     const value = body?.value;
     const msg: ActorMessage = { type: 'write', key, value };
-    const prep = await acquireOrQueue(msg, sessionId);
+    const prep = await acquireOrQueue(msg, sid);
     if (prep.queued) {
       return prep.queueFull
         ? c.json({ error: 'Queue full', status: 429 }, 429)
         : c.json({ id: prep.bridge.messageId, status: 'queued', position: prep.position }, 202);
     }
     const response = c.json({ id: prep.bridge.messageId, status: 'processing' }, 202);
-    executeMessage(msg, sessionId, prep.requestId, prep.bridge).catch(() => {});
+    executeMessage(msg, sid, prep.requestId, prep.bridge).catch(() => {});
     return response;
   });
 
   app.post('/api/interrupt', (c) => {
-    const sessionId = (c as any).get('sessionId') as string;
-    const active = activeProcessors.get(sessionId);
+    const sid = sessionId(c);
+    const active = activeProcessors.get(sid);
     if (active) {
       active.actor.requestInterrupt();
       return c.json({ interrupted: true, messageId: active.messageId });
@@ -360,8 +363,8 @@ export function createApp(options: AppOptions): AppHandle {
   });
 
   app.post('/api/resume', async (c) => {
-    const sessionId = (c as any).get('sessionId') as string;
-    const resumed = await stateStore.clearHeld(sessionId);
+    const sid = sessionId(c);
+    const resumed = await stateStore.clearHeld(sid);
     return c.json({ resumed });
   });
 
