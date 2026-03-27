@@ -188,3 +188,57 @@ describe('QueueFullError', () => {
     await expect(client.command('test')).rejects.toThrow(QueueFullError);
   });
 });
+
+describe('createCartographerClient — credentials', () => {
+  it('passes credentials to fetch when configured', async () => {
+    let capturedInit: RequestInit | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (_url: any, init?: RequestInit) => {
+      capturedInit = init;
+      return new Response(JSON.stringify({ id: 'msg-1', status: 'processing' }), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }));
+
+    const client = createCartographerClient('http://localhost:3000', {
+      credentials: 'include',
+    });
+    await client.command('test', {});
+
+    expect(capturedInit?.credentials).toBe('include');
+  });
+
+  it('defaults credentials to same-origin', async () => {
+    let capturedInit: RequestInit | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (_url: any, init?: RequestInit) => {
+      capturedInit = init;
+      return new Response(JSON.stringify({ id: 'msg-1', status: 'processing' }), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }));
+
+    const client = createCartographerClient('http://localhost:3000');
+    await client.command('test', {});
+
+    expect(capturedInit?.credentials).toBe('same-origin');
+  });
+
+  it('passes credentials to GET requests', async () => {
+    let capturedInit: RequestInit | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (_url: any, init?: RequestInit) => {
+      capturedInit = init;
+      return new Response(JSON.stringify({}), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }));
+
+    const client = createCartographerClient('http://localhost:3000', {
+      credentials: 'include',
+    });
+    await client.blackboard();
+
+    expect(capturedInit?.credentials).toBe('include');
+  });
+});

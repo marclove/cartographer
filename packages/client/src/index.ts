@@ -1,6 +1,6 @@
-import { QueueFullError, type CartographerClient, type SendResponse } from './types.js';
+import { QueueFullError, type CartographerClient, type SendResponse, type CartographerClientOptions } from './types.js';
 
-export { QueueFullError, type CartographerClient, type SendResponse } from './types.js';
+export { QueueFullError, type CartographerClient, type SendResponse, type CartographerClientOptions } from './types.js';
 
 /**
  * Creates a client connected to an ActorServer at the given URL.
@@ -21,7 +21,8 @@ export { QueueFullError, type CartographerClient, type SendResponse } from './ty
  * `EventSource` API for SSE. In Node.js, `EventSource` requires either a polyfill
  * or the `--experimental-eventsource` flag (Node 22+).
  */
-export function createCartographerClient(baseUrl: string): CartographerClient {
+export function createCartographerClient(baseUrl: string, options?: CartographerClientOptions): CartographerClient {
+  const credentials = options?.credentials ?? 'same-origin';
   // Holds the active SSE connection, or null when disconnected.
   // Typed as `any` to avoid importing the EventSource type, which varies
   // between browser and Node.js environments.
@@ -59,6 +60,7 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      credentials,
     });
     if (res.status === 429) throw new QueueFullError();
     if (res.status === 400) {
@@ -76,7 +78,7 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
    * server state without modifying it.
    */
   async function get(path: string): Promise<unknown> {
-    const res = await fetch(`${baseUrl}${path}`);
+    const res = await fetch(`${baseUrl}${path}`, { credentials });
     return res.json();
   }
 
@@ -245,7 +247,7 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
      * running tick directly, so 409 Conflict does not apply.
      */
     async interrupt() {
-      const res = await fetch(`${baseUrl}/api/interrupt`, { method: 'POST' });
+      const res = await fetch(`${baseUrl}/api/interrupt`, { method: 'POST', credentials });
       return res.json() as Promise<{ interrupted: boolean; messageId?: string }>;
     },
 
@@ -260,7 +262,7 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
      * the server's processing state.
      */
     async resume() {
-      const res = await fetch(`${baseUrl}/api/resume`, { method: 'POST' });
+      const res = await fetch(`${baseUrl}/api/resume`, { method: 'POST', credentials });
       return res.json() as Promise<{ resumed: boolean }>;
     },
 
@@ -433,7 +435,9 @@ export function createCartographerClient(baseUrl: string): CartographerClient {
       // EventSource not available in this runtime — fail silently rather than
       // crashing, since HTTP-only methods still work without SSE
       if (typeof globalThis.EventSource === 'undefined') return;
-      eventSource = new EventSource(`${baseUrl}/events`);
+      eventSource = new EventSource(`${baseUrl}/events`, {
+        withCredentials: credentials === 'include',
+      } as any);
       // The snapshot event delivers full state on initial connection, enabling
       // clients to hydrate immediately rather than waiting for incremental events
       eventSource.addEventListener('snapshot', (e: any) => {

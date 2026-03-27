@@ -71,3 +71,9 @@ export interface CartographerClient {
   /** Close the SSE connection. */
   disconnect(): void;
 }
+
+/** Options for configuring the Cartographer client. */
+export interface CartographerClientOptions {
+  /** Include credentials (cookies) in cross-origin requests. Default: 'same-origin'. */
+  credentials?: 'include' | 'omit' | 'same-origin';
+}
