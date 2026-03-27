@@ -91,8 +91,8 @@ export class ActorServer {
   /**
    * Process a message programmatically without going through the REST API.
    */
-  async processMessage(msg: ActorMessage): Promise<ProcessResult | QueuedResult | null> {
-    return this.handle.processMessage(msg);
+  async processMessage(msg: ActorMessage, sessionKey: string): Promise<ProcessResult | QueuedResult | null> {
+    return this.handle.processMessage(msg, sessionKey);
   }
 
   /**

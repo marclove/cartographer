@@ -236,7 +236,7 @@ describe('createApp — message processing', () => {
 
   describe('processMessage (programmatic)', () => {
     it('processes a tick message and returns result', async () => {
-      const result = await handle.processMessage({ type: 'tick' });
+      const result = await handle.processMessage({ type: 'tick' }, 'default');
       expect(result).toBeDefined();
       expect((result as any).queued).toBeUndefined();
       expect((result as any).treeStatus).toBeDefined();
@@ -254,9 +254,9 @@ describe('createApp — message processing', () => {
       });
       await slowHandle.initializeState();
 
-      const first = slowHandle.processMessage({ type: 'tick' });
+      const first = slowHandle.processMessage({ type: 'tick' }, 'default');
       await new Promise((r) => setTimeout(r, 20));
-      const second = await slowHandle.processMessage({ type: 'tick' });
+      const second = await slowHandle.processMessage({ type: 'tick' }, 'default');
 
       expect(second).toBeDefined();
       expect((second as any).queued).toBe(true);
@@ -277,11 +277,11 @@ describe('createApp — message processing', () => {
       });
       await slowHandle.initializeState();
 
-      const first = slowHandle.processMessage({ type: 'tick' });
+      const first = slowHandle.processMessage({ type: 'tick' }, 'default');
       await new Promise((r) => setTimeout(r, 20));
 
-      await slowHandle.processMessage({ type: 'tick' });
-      const overflow = await slowHandle.processMessage({ type: 'tick' });
+      await slowHandle.processMessage({ type: 'tick' }, 'default');
+      const overflow = await slowHandle.processMessage({ type: 'tick' }, 'default');
       expect(overflow).toBeNull();
 
       await first;
@@ -356,7 +356,7 @@ describe('createApp — message processing', () => {
     });
 
     it('replays events on reconnect via Last-Event-ID', async () => {
-      await handle.processMessage({ type: 'tick' });
+      await handle.processMessage({ type: 'tick' }, 'default');
 
       const res = await fetch(`http://localhost:${port}/events`, {
         headers: { 'Last-Event-ID': '0' },
@@ -798,5 +798,350 @@ describe('createApp — lifecycle helpers', () => {
     expect(tickCount).toBe(countBeforeStop);
 
     vi.useRealTimers();
+  });
+});
+
+describe('createApp — session resolution', () => {
+  it('resolveSessionId sets session on context for downstream routes', async () => {
+    const handle = createApp({
+      createTree: makeTree,
+      resolveSessionId: () => 'user-42',
+    });
+    // Don't call initializeState — multi-session mode skips eager init
+    // Blackboard for 'user-42' should be empty since no state exists
+    const res = await handle.app.request('/api/blackboard');
+    expect(res.status).toBe(200);
+  });
+
+  it('falls back to default when no resolver is provided', async () => {
+    const handle = createApp({ createTree: makeTree });
+    await handle.initializeState();
+
+    const res = await handle.app.request('/api/blackboard');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toBeDefined();
+  });
+
+  it('returns 401 when resolver returns empty string', async () => {
+    const handle = createApp({
+      createTree: makeTree,
+      resolveSessionId: () => '',
+    });
+
+    const res = await handle.app.request('/api/blackboard');
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 401 when resolver returns null', async () => {
+    const handle = createApp({
+      createTree: makeTree,
+      resolveSessionId: () => null as unknown as string,
+    });
+
+    const res = await handle.app.request('/api/blackboard');
+    expect(res.status).toBe(401);
+  });
+
+  it('supports async resolveSessionId', async () => {
+    const handle = createApp({
+      createTree: makeTree,
+      resolveSessionId: async () => 'async-user',
+    });
+
+    const res = await handle.app.request('/api/blackboard');
+    expect(res.status).toBe(200);
+  });
+
+  it('health endpoint skips session resolution', async () => {
+    const handle = createApp({
+      createTree: makeTree,
+      resolveSessionId: () => '',  // would 401 on session-scoped routes
+    });
+
+    const res = await handle.app.request('/_platform/health');
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('createApp — auto-tick mutual exclusion', () => {
+  it('throws when both resolveSessionId and autoTick are configured', () => {
+    expect(() => createApp({
+      createTree: makeTree,
+      resolveSessionId: () => 'user-1',
+      autoTick: { intervalMs: 100 },
+    })).toThrow(/autoTick.*resolveSessionId/);
+  });
+
+  it('allows autoTick without resolveSessionId', () => {
+    expect(() => createApp({
+      createTree: makeTree,
+      autoTick: { intervalMs: 100 },
+    })).not.toThrow();
+  });
+
+  it('allows resolveSessionId without autoTick', () => {
+    expect(() => createApp({
+      createTree: makeTree,
+      resolveSessionId: () => 'user-1',
+    })).not.toThrow();
+  });
+});
+
+describe('createApp — per-session interrupt', () => {
+  it('interrupt for session A does not affect session B', async () => {
+    const store = new InMemoryStateStore();
+    const handle = createApp({
+      createTree: makeSlowTree,
+      stateStore: store,
+      resolveSessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
+    });
+
+    let server!: ReturnType<typeof serve>;
+    let port!: number;
+    await new Promise<void>((resolve) => {
+      server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
+        port = info.port;
+        resolve();
+      });
+    });
+
+    // Start a slow message for session B
+    fetch(`http://localhost:${port}/api/commands/go`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-session-id': 'session-b',
+      },
+      body: JSON.stringify({}),
+    });
+    await new Promise(r => setTimeout(r, 50));
+
+    // Interrupt session A — should NOT interrupt session B
+    const res = await fetch(`http://localhost:${port}/api/interrupt`, {
+      method: 'POST',
+      headers: { 'x-session-id': 'session-a' },
+    });
+    const body = await res.json();
+    expect(body.interrupted).toBe(false);
+
+    // Session B should still be processing (not interrupted)
+    const resB = await fetch(`http://localhost:${port}/api/interrupt`, {
+      method: 'POST',
+      headers: { 'x-session-id': 'session-b' },
+    });
+    const bodyB = await resB.json() as any;
+    expect(bodyB.interrupted).toBe(true);
+
+    await new Promise(r => setTimeout(r, 50));
+    handle.closeSseClients();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+});
+
+describe('createApp — multi-session integration', () => {
+  function makeCounterTree(): BehaviorTree {
+    return new BehaviorTree({
+      name: 'counter',
+      root: new ActionNode({
+        name: 'increment',
+        action: async (ctx) => {
+          const count = (ctx.blackboard.get('count') as number) ?? 0;
+          ctx.blackboard.set('count', count + 1);
+          return NodeStatus.SUCCESS;
+        },
+      }),
+    });
+  }
+
+  it('two sessions maintain independent blackboard state', async () => {
+    const store = new InMemoryStateStore();
+    const handle = createApp({
+      createTree: makeCounterTree,
+      stateStore: store,
+      resolveSessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
+    });
+
+    let server!: ReturnType<typeof serve>;
+    let port!: number;
+    await new Promise<void>((resolve) => {
+      server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
+        port = info.port;
+        resolve();
+      });
+    });
+
+    // Tick session A three times
+    for (let i = 0; i < 3; i++) {
+      await fetch(`http://localhost:${port}/api/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-session-id': 'session-a' },
+        body: JSON.stringify({ type: 'tick' }),
+      });
+      await new Promise(r => setTimeout(r, 50));
+    }
+
+    // Tick session B once
+    await fetch(`http://localhost:${port}/api/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-session-id': 'session-b' },
+      body: JSON.stringify({ type: 'tick' }),
+    });
+    await new Promise(r => setTimeout(r, 50));
+
+    // Verify independent state
+    const bbA = await fetch(`http://localhost:${port}/api/blackboard`, {
+      headers: { 'x-session-id': 'session-a' },
+    }).then(r => r.json());
+    expect(bbA.count).toBe(3);
+
+    const bbB = await fetch(`http://localhost:${port}/api/blackboard`, {
+      headers: { 'x-session-id': 'session-b' },
+    }).then(r => r.json());
+    expect(bbB.count).toBe(1);
+
+    handle.closeSseClients();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it('new session gets context values on first message', async () => {
+    const store = new InMemoryStateStore();
+    const handle = createApp({
+      createTree: () => new BehaviorTree({
+        name: 'test',
+        root: new ActionNode({ name: 'noop', action: async () => NodeStatus.SUCCESS }),
+      }),
+      stateStore: store,
+      context: { tenant: 'acme', env: 'staging' },
+      resolveSessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
+    });
+
+    let server!: ReturnType<typeof serve>;
+    let port!: number;
+    await new Promise<void>((resolve) => {
+      server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
+        port = info.port;
+        resolve();
+      });
+    });
+
+    // Send first message to a new session
+    await fetch(`http://localhost:${port}/api/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-session-id': 'new-user' },
+      body: JSON.stringify({ type: 'tick' }),
+    });
+    await new Promise(r => setTimeout(r, 50));
+
+    // Verify context values were applied
+    const bb = await fetch(`http://localhost:${port}/api/blackboard`, {
+      headers: { 'x-session-id': 'new-user' },
+    }).then(r => r.json());
+    expect(bb['context:tenant']).toBe('acme');
+    expect(bb['context:env']).toBe('staging');
+
+    handle.closeSseClients();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it('resume is scoped to the resolved session', async () => {
+    const store = new InMemoryStateStore();
+    const handle = createApp({
+      createTree: makeTree,
+      stateStore: store,
+      resolveSessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
+    });
+
+    let server!: ReturnType<typeof serve>;
+    let port!: number;
+    await new Promise<void>((resolve) => {
+      server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
+        port = info.port;
+        resolve();
+      });
+    });
+
+    // Create state for session A by sending a tick
+    await fetch(`http://localhost:${port}/api/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-session-id': 'session-a' },
+      body: JSON.stringify({ type: 'tick' }),
+    });
+    await new Promise(r => setTimeout(r, 50));
+
+    // Set held manually
+    const stateA = await store.getState('session-a');
+    await store.saveState('session-a', { ...stateA!, held: true });
+
+    // Resume session A
+    const res = await fetch(`http://localhost:${port}/api/resume`, {
+      method: 'POST',
+      headers: { 'x-session-id': 'session-a' },
+    });
+    const body = await res.json() as any;
+    expect(body.resumed).toBe(true);
+
+    // Verify session A is no longer held
+    const updatedA = await store.getState('session-a');
+    expect(updatedA?.held).toBeFalsy();
+
+    handle.closeSseClients();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it('single-session mode works identically to previous behavior', async () => {
+    const store = new InMemoryStateStore();
+    const handle = createApp({
+      createTree: makeTree,
+      stateStore: store,
+      context: { mode: 'single' },
+    });
+    await handle.initializeState();
+
+    // Verify eager initialization
+    const state = await store.getState('default');
+    expect(state).not.toBeNull();
+    expect(state!.blackboard['context:mode']).toBe('single');
+
+    // processMessage still works with 'default'
+    const result = await handle.processMessage({ type: 'tick' }, 'default');
+    expect(result).toBeDefined();
+    expect((result as any).treeStatus).toBeDefined();
+  });
+
+  it('start() drains queued messages for all sessions in multi-session mode', async () => {
+    const store = new InMemoryStateStore();
+
+    // Simulate queued messages left from a previous server instance
+    // by manually enqueuing messages for two different sessions
+    await store.enqueueMessage('session-x', { type: 'tick' }, 16);
+    await store.enqueueMessage('session-y', { type: 'tick' }, 16);
+
+    // We also need state to exist for listKeys to return these sessions
+    // saveState implicitly registers the key
+    const seedTree = makeTree();
+    const { serializeTree: serializeTreeFn } = await import('../core/serialization.js');
+    const seedState = {
+      blackboard: {},
+      treeState: serializeTreeFn(seedTree.root, seedTree.rootHash),
+      createdAt: Date.now(),
+      lastMessageAt: Date.now(),
+    };
+    await store.saveState('session-x', seedState);
+    await store.saveState('session-y', seedState);
+
+    const handle = createApp({
+      createTree: makeTree,
+      stateStore: store,
+      resolveSessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
+    });
+
+    await handle.start();
+    // Give drain time to process
+    await new Promise(r => setTimeout(r, 100));
+
+    // Both queues should be drained
+    expect(await store.getQueueSize('session-x')).toBe(0);
+    expect(await store.getQueueSize('session-y')).toBe(0);
   });
 });

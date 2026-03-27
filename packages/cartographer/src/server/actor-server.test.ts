@@ -476,7 +476,7 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
     await new Promise(r => setTimeout(r, 50));
 
     // processMessage should return queued result
-    const result = await server.processMessage({ type: 'tick' });
+    const result = await server.processMessage({ type: 'tick' }, 'default');
     expect(result).not.toBeNull();
     expect(result).toHaveProperty('queued', true);
     expect(result).toHaveProperty('messageId');
@@ -497,11 +497,11 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
     await new Promise(r => setTimeout(r, 50));
 
     // First processMessage fills the queue
-    const first = await server.processMessage({ type: 'tick' });
+    const first = await server.processMessage({ type: 'tick' }, 'default');
     expect(first).toHaveProperty('queued', true);
 
     // Second processMessage should return null (queue full)
-    const second = await server.processMessage({ type: 'tick' });
+    const second = await server.processMessage({ type: 'tick' }, 'default');
     expect(second).toBeNull();
   });
 

@@ -164,7 +164,7 @@ describe('GET /events — live event streaming', () => {
 
     // Give the SSE connection a moment to establish, then tick
     await new Promise((r) => setTimeout(r, 50));
-    await server.processMessage({ type: 'tick' });
+    await server.processMessage({ type: 'tick' }, 'default');
 
     const events = await eventsPromise;
     expect(events.length).toBeGreaterThanOrEqual(2);
@@ -179,7 +179,7 @@ describe('GET /events — live event streaming', () => {
   it('live events include a node:enter event for each entered node', async () => {
     const eventsPromise = collectSSEEvents(`http://localhost:${port}/events`, 4);
     await new Promise((r) => setTimeout(r, 50));
-    await server.processMessage({ type: 'tick' });
+    await server.processMessage({ type: 'tick' }, 'default');
     const events = await eventsPromise;
 
     const enterEvents = events.filter((e) => e.event === 'node:enter');
@@ -195,7 +195,7 @@ describe('GET /events — incrementing IDs', () => {
   it('live events have monotonically increasing IDs', async () => {
     const eventsPromise = collectSSEEvents(`http://localhost:${port}/events`, 6);
     await new Promise((r) => setTimeout(r, 50));
-    await server.processMessage({ type: 'tick' });
+    await server.processMessage({ type: 'tick' }, 'default');
     const events = await eventsPromise;
 
     const ids = events.map((e) => Number(e.id));
@@ -210,14 +210,14 @@ describe('GET /events — incrementing IDs', () => {
 describe('GET /events — Last-Event-ID reconnection', () => {
   it('replays missed events when reconnecting with Last-Event-ID', async () => {
     // Tick the tree so events are buffered
-    await server.processMessage({ type: 'tick' });
+    await server.processMessage({ type: 'tick' }, 'default');
 
     // Connect fresh to get current snapshot id
     const initial = await collectSSEEvents(`http://localhost:${port}/events`, 1);
     const snapshotId = initial[0].id!;
 
     // Tick again to generate more buffered events
-    await server.processMessage({ type: 'tick' });
+    await server.processMessage({ type: 'tick' }, 'default');
 
     // Reconnect with Last-Event-ID set to the snapshot's id
     const reconnected = await collectSSEEvents(
