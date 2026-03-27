@@ -887,3 +887,54 @@ describe('createApp — auto-tick mutual exclusion', () => {
     })).not.toThrow();
   });
 });
+
+describe('createApp — per-session interrupt', () => {
+  it('interrupt for session A does not affect session B', async () => {
+    const store = new InMemoryStateStore();
+    const handle = createApp({
+      createTree: makeSlowTree,
+      stateStore: store,
+      resolveSessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
+    });
+
+    let server!: ReturnType<typeof serve>;
+    let port!: number;
+    await new Promise<void>((resolve) => {
+      server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
+        port = info.port;
+        resolve();
+      });
+    });
+
+    // Start a slow message for session B
+    fetch(`http://localhost:${port}/api/commands/go`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-session-id': 'session-b',
+      },
+      body: JSON.stringify({}),
+    });
+    await new Promise(r => setTimeout(r, 50));
+
+    // Interrupt session A — should NOT interrupt session B
+    const res = await fetch(`http://localhost:${port}/api/interrupt`, {
+      method: 'POST',
+      headers: { 'x-session-id': 'session-a' },
+    });
+    const body = await res.json();
+    expect(body.interrupted).toBe(false);
+
+    // Session B should still be processing (not interrupted)
+    const resB = await fetch(`http://localhost:${port}/api/interrupt`, {
+      method: 'POST',
+      headers: { 'x-session-id': 'session-b' },
+    });
+    const bodyB = await resB.json() as any;
+    expect(bodyB.interrupted).toBe(true);
+
+    await new Promise(r => setTimeout(r, 50));
+    handle.closeSseClients();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+});

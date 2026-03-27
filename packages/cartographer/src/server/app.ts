@@ -87,13 +87,25 @@ export function createApp(options: AppOptions): AppHandle {
   const createTreeFn = options.createTree;
   const stateStore = options.stateStore ?? new InMemoryStateStore();
   const context = options.context ?? {};
-  const eventStream = new InProcessEventStream(500);
+  const sessionStreams = new Map<string, InProcessEventStream>();
+  const sessionSseClients = new Map<string, Set<SSEStreamingApi>>();
   const stats: StatusState = { tickCount: 0, cycleCount: 0, lastStatus: null, lastDurationMs: null, startedAt: 0 };
-  const sseClients = new Set<SSEStreamingApi>();
 
-  function forwardEvent(event: { type: string; data: Record<string, unknown> }): void {
-    trackEvent(event);
-    eventStream.push(event.type, event.data);
+  function getOrCreateStream(sessionKey: string): InProcessEventStream {
+    let stream = sessionStreams.get(sessionKey);
+    if (!stream) {
+      stream = new InProcessEventStream(500);
+      sessionStreams.set(sessionKey, stream);
+    }
+    return stream;
+  }
+
+  function removeStreamIfEmpty(sessionKey: string): void {
+    const clients = sessionSseClients.get(sessionKey);
+    if (!clients || clients.size === 0) {
+      sessionStreams.delete(sessionKey);
+      sessionSseClients.delete(sessionKey);
+    }
   }
 
   function trackEvent(event: { type: string; data: Record<string, unknown> }): void {
@@ -109,15 +121,18 @@ export function createApp(options: AppOptions): AppHandle {
 
   const topologyPolicy = options.topologyPolicy ?? 'fail';
   const maxQueueDepth = options.maxQueueDepth ?? parseInt(process.env.CARTOGRAPHER_MAX_QUEUE_DEPTH ?? '16', 10);
-  let activeActor: MessageProcessor | null = null;
-  let activeMessageId: string | null = null;
+  const activeProcessors = new Map<string, { actor: MessageProcessor; messageId: string }>();
 
   function generateRequestId(): string {
     return `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
   function createBridge(sessionKey: string, messageId?: string): EventBridge {
-    return new EventBridge(stateStore, sessionKey, messageId, (event) => forwardEvent(event));
+    return new EventBridge(stateStore, sessionKey, messageId, (event) => {
+      trackEvent(event);
+      const stream = getOrCreateStream(sessionKey);
+      stream.push(event.type, event.data);
+    });
   }
 
   let _readTree: BehaviorTree | null = null;
@@ -211,10 +226,11 @@ export function createApp(options: AppOptions): AppHandle {
     const sessionId = (c as any).get('sessionId') as string;
     const tree = readTree();
     const state = await stateStore.getState(sessionId);
+    const sessionStream = getOrCreateStream(sessionId);
     const snapshot = {
       tree: serializeTree(tree.root),
       blackboard: state?.blackboard ?? {},
-      stats: { ...stats, asOfEventId: eventStream.latestId },
+      stats: { ...stats, asOfEventId: sessionStream.latestId },
     };
 
     return streamSSE(c, async (stream) => {
@@ -227,10 +243,9 @@ export function createApp(options: AppOptions): AppHandle {
 
       // 2. Replay missed events
       const lastId = c.req.header('Last-Event-ID');
-      const sinceId = lastId ?? '0'; // always replay on connect for cartographer
-      const missed = eventStream.replaySince(sinceId);
+      const sinceId = lastId ?? '0';
+      const missed = sessionStream.replaySince(sinceId);
       if (missed === null) {
-        // Buffer gap — resend snapshot
         await stream.writeSSE({
           event: 'snapshot',
           data: JSON.stringify(snapshot),
@@ -248,7 +263,7 @@ export function createApp(options: AppOptions): AppHandle {
 
       // 3. Subscribe to live events via serial write queue
       let writePromise = Promise.resolve();
-      const unsubscribe = eventStream.subscribe((entry) => {
+      const unsubscribe = sessionStream.subscribe((entry) => {
         writePromise = writePromise
           .then(() =>
             stream.writeSSE({
@@ -260,12 +275,19 @@ export function createApp(options: AppOptions): AppHandle {
           .catch(() => {});
       });
 
-      // 4. Keep alive until client disconnects
+      // 4. Track SSE client per session
+      let clients = sessionSseClients.get(sessionId);
+      if (!clients) {
+        clients = new Set();
+        sessionSseClients.set(sessionId, clients);
+      }
+      clients.add(stream);
+
       stream.onAbort(() => {
         unsubscribe();
-        sseClients.delete(stream);
+        clients!.delete(stream);
+        removeStreamIfEmpty(sessionId);
       });
-      sseClients.add(stream);
 
       // Block until aborted
       await new Promise(() => {});
@@ -328,10 +350,11 @@ export function createApp(options: AppOptions): AppHandle {
   });
 
   app.post('/api/interrupt', (c) => {
-    if (activeActor) {
-      const messageId = activeMessageId;
-      activeActor.requestInterrupt();
-      return c.json({ interrupted: true, messageId });
+    const sessionId = (c as any).get('sessionId') as string;
+    const active = activeProcessors.get(sessionId);
+    if (active) {
+      active.actor.requestInterrupt();
+      return c.json({ interrupted: true, messageId: active.messageId });
     }
     return c.json({ interrupted: false });
   });
@@ -410,8 +433,7 @@ export function createApp(options: AppOptions): AppHandle {
         eventBridge: bridge,
         context,
       });
-      activeActor = actor;
-      activeMessageId = bridge.messageId;
+      activeProcessors.set(sessionKey, { actor, messageId: bridge.messageId });
       const result = await actor.process(msg);
       if (result.interrupted) await bridge.emitInterrupted();
       await bridge.emitProcessed(String(result.treeStatus));
@@ -420,8 +442,7 @@ export function createApp(options: AppOptions): AppHandle {
       await bridge.emitFailed(error instanceof Error ? error.message : String(error));
       return { treeStatus: 'error', error: error instanceof Error ? error.message : String(error) };
     } finally {
-      activeActor = null;
-      activeMessageId = null;
+      activeProcessors.delete(sessionKey);
       clearInterval(heartbeat);
       await stateStore.releaseLock(sessionKey, requestId);
       drainQueue(sessionKey).catch(() => {});
@@ -452,14 +473,21 @@ export function createApp(options: AppOptions): AppHandle {
   function bridgeTree(tree: BehaviorTree): void {
     tree.events.onAny((type, data) => {
       const serialized = serializeEvent(type as any, data as any);
-      forwardEvent({ type, data: serialized });
+      trackEvent({ type, data: serialized });
+      const stream = sessionStreams.get('default');
+      if (stream) {
+        stream.push(type, serialized);
+      }
     });
   }
   function closeSseClients(): void {
-    for (const client of sseClients) {
-      client.close();
+    for (const [, clients] of sessionSseClients) {
+      for (const client of clients) {
+        client.close();
+      }
     }
-    sseClients.clear();
+    sessionSseClients.clear();
+    sessionStreams.clear();
   }
 
   let autoTickTimer: ReturnType<typeof setInterval> | null = null;
