@@ -99,11 +99,19 @@ export function createApp(options: AppOptions): AppHandle {
     return stream;
   }
 
-  function removeClientSet(sessionKey: string): void {
+  function getOrCreateClientSet(sessionKey: string): Set<SSEStreamingApi> {
+    let clients = sessionSseClients.get(sessionKey);
+    if (!clients) {
+      clients = new Set();
+      sessionSseClients.set(sessionKey, clients);
+    }
+    return clients;
+  }
+
+  function cleanupClientSetIfEmpty(sessionKey: string): void {
     const clients = sessionSseClients.get(sessionKey);
     if (!clients || clients.size === 0) {
       sessionSseClients.delete(sessionKey);
-      // Keep the stream alive — its ring buffer holds events for replay on reconnect
     }
   }
 
@@ -279,17 +287,13 @@ export function createApp(options: AppOptions): AppHandle {
       });
 
       // 4. Track SSE client per session
-      let clients = sessionSseClients.get(sid);
-      if (!clients) {
-        clients = new Set();
-        sessionSseClients.set(sid, clients);
-      }
+      const clients = getOrCreateClientSet(sid);
       clients.add(stream);
 
       stream.onAbort(() => {
         unsubscribe();
-        clients!.delete(stream);
-        removeClientSet(sid);
+        clients.delete(stream);
+        cleanupClientSetIfEmpty(sid);
       });
 
       // Block until aborted
@@ -474,13 +478,14 @@ export function createApp(options: AppOptions): AppHandle {
   }
 
   function bridgeTree(tree: BehaviorTree): void {
+    if (options.resolveSessionId) {
+      throw new Error('bridgeTree() is not supported in multi-session mode');
+    }
     tree.events.onAny((type, data) => {
       const serialized = serializeEvent(type as any, data as any);
       trackEvent({ type, data: serialized });
-      const stream = sessionStreams.get('default');
-      if (stream) {
-        stream.push(type, serialized);
-      }
+      const stream = getOrCreateStream('default');
+      stream.push(type, serialized);
     });
   }
   function closeSseClients(): void {
