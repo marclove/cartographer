@@ -24,6 +24,7 @@ Your background determines the fastest path through these docs.
 | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | **New to behavior trees**                         | Read [Concepts](concepts.md) for BT fundamentals, then [Getting Started](getting-started.md) to build your first tree.                        |
 | **Familiar with BTs but new to Claude Agent SDK** | Skim [Getting Started](getting-started.md), then jump to [Agent Integration](guide-agent-integration.md) for AgentNode modes and MCP tooling. |
+| **Adding Cartographer to an existing app?**       | Read [Integrating into an Existing App](guide-existing-app-integration.md) for a full walkthrough with Express, React, Zustand, and Postgres. |
 | **Building a message-driven application?**        | Start with [Application Server](guide-app-server.md) for MessageProcessor, ActorServer, StateStore, and the client SDK.                       |
 | **Connecting a Svelte frontend?**                 | See [Svelte Integration](guide-svelte.md) for reactive bindings to a running ActorServer.                                                     |
 | **Connecting a React frontend?**                  | See [React Integration](guide-react.md) for hooks that bind to a running ActorServer.                                                         |
@@ -48,6 +49,7 @@ Your background determines the fastest path through these docs.
 - [Error Handling and Resilience](guide-error-handling.md) -- Error containment, retry/timeout stacking, abort signals, and scheduler error recovery.
 - [Testing Behavior Trees](guide-testing.md) -- Test contexts, helper functions, event verification, and multi-tick test patterns.
 - [Advanced Patterns](guide-advanced-patterns.md) -- Custom nodes, custom strategies, multi-tick resumption internals, parallel policies, and advanced blackboard patterns.
+- [Integrating into an Existing App](guide-existing-app-integration.md) -- Full walkthrough: adding Cartographer to an Express + React + Zustand + Postgres stack with human-in-the-loop AI workflows.
 - [Application Server](guide-app-server.md) -- MessageProcessor, ActorServer, StateStore, client SDK, SSE events, serialization, and content hashing.
 - [Svelte Integration](guide-svelte.md) -- Svelte 5 bindings: reactive blackboard, tree status, actions, and event subscriptions.
 - [React Integration](guide-react.md) -- React hooks: blackboard, tree status, actions, and event subscriptions.
