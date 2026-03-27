@@ -58,7 +58,7 @@ describe('GET /api/status', () => {
   });
 
   it('reflects status after a tick', async () => {
-    await server.processMessage({ type: 'tick' });
+    await server.processMessage({ type: 'tick' }, 'default');
     const res = await fetch(`http://localhost:${port}/api/status`);
     const body = await res.json();
     expect(body.tickCount).toBeGreaterThanOrEqual(1);

@@ -236,7 +236,7 @@ describe('createApp — message processing', () => {
 
   describe('processMessage (programmatic)', () => {
     it('processes a tick message and returns result', async () => {
-      const result = await handle.processMessage({ type: 'tick' });
+      const result = await handle.processMessage({ type: 'tick' }, 'default');
       expect(result).toBeDefined();
       expect((result as any).queued).toBeUndefined();
       expect((result as any).treeStatus).toBeDefined();
@@ -254,9 +254,9 @@ describe('createApp — message processing', () => {
       });
       await slowHandle.initializeState();
 
-      const first = slowHandle.processMessage({ type: 'tick' });
+      const first = slowHandle.processMessage({ type: 'tick' }, 'default');
       await new Promise((r) => setTimeout(r, 20));
-      const second = await slowHandle.processMessage({ type: 'tick' });
+      const second = await slowHandle.processMessage({ type: 'tick' }, 'default');
 
       expect(second).toBeDefined();
       expect((second as any).queued).toBe(true);
@@ -277,11 +277,11 @@ describe('createApp — message processing', () => {
       });
       await slowHandle.initializeState();
 
-      const first = slowHandle.processMessage({ type: 'tick' });
+      const first = slowHandle.processMessage({ type: 'tick' }, 'default');
       await new Promise((r) => setTimeout(r, 20));
 
-      await slowHandle.processMessage({ type: 'tick' });
-      const overflow = await slowHandle.processMessage({ type: 'tick' });
+      await slowHandle.processMessage({ type: 'tick' }, 'default');
+      const overflow = await slowHandle.processMessage({ type: 'tick' }, 'default');
       expect(overflow).toBeNull();
 
       await first;
@@ -356,7 +356,7 @@ describe('createApp — message processing', () => {
     });
 
     it('replays events on reconnect via Last-Event-ID', async () => {
-      await handle.processMessage({ type: 'tick' });
+      await handle.processMessage({ type: 'tick' }, 'default');
 
       const res = await fetch(`http://localhost:${port}/events`, {
         headers: { 'Last-Event-ID': '0' },
