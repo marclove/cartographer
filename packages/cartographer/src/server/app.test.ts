@@ -1226,24 +1226,50 @@ describe('createApp — stream eviction', () => {
     expect(events.length).toBeGreaterThan(1);
   });
 
-  it('defaults to no eviction when streamEvictionMs is not set', async () => {
+  it('defaults to 5-minute eviction when streamEvictionMs is not set', async () => {
     const handle = createApp({
       createTree: makeTree,
     });
     await handle.initializeState();
 
-    // Process a message
     await handle.processMessage({ type: 'tick' }, 'default');
 
-    // Advance time significantly — stream should NOT be evicted
+    // Advance 4 minutes — stream should still exist (default is 5 min)
+    await vi.advanceTimersByTimeAsync(4 * 60 * 1000);
+
+    vi.useRealTimers();
+    const res = await handle.app.request('/events');
+    const reader = res.body!.getReader();
+    const { value } = await reader.read();
+    const text = new TextDecoder().decode(value);
+    await reader.cancel();
+    const data = JSON.parse(text.split('data: ')[1].split('\n')[0]);
+    const latestId = parseInt(data.stats.asOfEventId, 10);
+    // Stream still has events from the tick (not evicted yet)
+    expect(latestId).toBeGreaterThan(0);
+  });
+
+  it('disables eviction when streamEvictionMs is 0', async () => {
+    const handle = createApp({
+      createTree: makeTree,
+      streamEvictionMs: 0,
+    });
+    await handle.initializeState();
+
+    await handle.processMessage({ type: 'tick' }, 'default');
+
+    // Advance time well past any reasonable TTL
     await vi.advanceTimersByTimeAsync(600_000);
 
-    // Replay should still work
+    // Stream should still exist — eviction is disabled
     vi.useRealTimers();
-    const res = await handle.app.request('/events', {
-      headers: { 'Last-Event-ID': '0' },
-    });
-    const events = await readSseEvents(res, 3, 1000);
-    expect(events.length).toBeGreaterThan(1);
+    const res = await handle.app.request('/events');
+    const reader = res.body!.getReader();
+    const { value } = await reader.read();
+    const text = new TextDecoder().decode(value);
+    await reader.cancel();
+    const data = JSON.parse(text.split('data: ')[1].split('\n')[0]);
+    const latestId = parseInt(data.stats.asOfEventId, 10);
+    expect(latestId).toBeGreaterThan(0);
   });
 });

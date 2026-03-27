@@ -48,9 +48,9 @@ export interface AppOptions {
   resolveSessionId?: (c: any) => string | Promise<string>;
   /**
    * How long (in ms) to keep an idle session's in-memory event stream
-   * after the last SSE client disconnects. Set to enable eviction of
-   * unused replay buffers in multi-session deployments.
-   * Default: no eviction (streams live until server shutdown).
+   * after the last SSE client disconnects. Evicts unused replay buffers
+   * to bound memory in multi-session deployments.
+   * Default: 300_000 (5 minutes). Set to 0 to disable eviction.
    */
   streamEvictionMs?: number;
 }
@@ -93,6 +93,7 @@ export function createApp(options: AppOptions): AppHandle {
   const createTreeFn = options.createTree;
   const stateStore = options.stateStore ?? new InMemoryStateStore();
   const context = options.context ?? {};
+  const streamEvictionMs = options.streamEvictionMs ?? 300_000;
   const sessionStreams = new Map<string, InProcessEventStream>();
   const sessionSseClients = new Map<string, Set<SSEStreamingApi>>();
   const streamEvictionTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -115,7 +116,7 @@ export function createApp(options: AppOptions): AppHandle {
   }
 
   function scheduleStreamEviction(sessionKey: string): void {
-    if (!options.streamEvictionMs) return;
+    if (streamEvictionMs <= 0) return;
     // Don't evict if SSE clients are still connected
     const clients = sessionSseClients.get(sessionKey);
     if (clients && clients.size > 0) return;
@@ -127,7 +128,7 @@ export function createApp(options: AppOptions): AppHandle {
       if (!currentClients || currentClients.size === 0) {
         sessionStreams.delete(sessionKey);
       }
-    }, options.streamEvictionMs);
+    }, streamEvictionMs);
     streamEvictionTimers.set(sessionKey, timer);
   }
 
