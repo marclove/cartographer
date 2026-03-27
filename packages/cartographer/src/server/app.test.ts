@@ -1108,4 +1108,40 @@ describe('createApp — multi-session integration', () => {
     expect(result).toBeDefined();
     expect((result as any).treeStatus).toBeDefined();
   });
+
+  it('start() drains queued messages for all sessions in multi-session mode', async () => {
+    const store = new InMemoryStateStore();
+
+    // Simulate queued messages left from a previous server instance
+    // by manually enqueuing messages for two different sessions
+    await store.enqueueMessage('session-x', { type: 'tick' }, 16);
+    await store.enqueueMessage('session-y', { type: 'tick' }, 16);
+
+    // We also need state to exist for listKeys to return these sessions
+    // saveState implicitly registers the key
+    const seedTree = makeTree();
+    const { serializeTree: serializeTreeFn } = await import('../core/serialization.js');
+    const seedState = {
+      blackboard: {},
+      treeState: serializeTreeFn(seedTree.root, seedTree.rootHash),
+      createdAt: Date.now(),
+      lastMessageAt: Date.now(),
+    };
+    await store.saveState('session-x', seedState);
+    await store.saveState('session-y', seedState);
+
+    const handle = createApp({
+      createTree: makeTree,
+      stateStore: store,
+      resolveSessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
+    });
+
+    await handle.start();
+    // Give drain time to process
+    await new Promise(r => setTimeout(r, 100));
+
+    // Both queues should be drained
+    expect(await store.getQueueSize('session-x')).toBe(0);
+    expect(await store.getQueueSize('session-y')).toBe(0);
+  });
 });

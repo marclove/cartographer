@@ -522,7 +522,15 @@ export function createApp(options: AppOptions): AppHandle {
 
   async function start(): Promise<void> {
     await initializeState();
-    drainQueue('default').catch(() => {});
+    if (options.resolveSessionId) {
+      // Multi-session: drain queued messages for all known sessions
+      const keys = await stateStore.listKeys();
+      for (const key of keys) {
+        drainQueue(key).catch(() => {});
+      }
+    } else {
+      drainQueue('default').catch(() => {});
+    }
   }
 
   function stop(): void {
