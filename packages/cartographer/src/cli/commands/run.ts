@@ -1,5 +1,6 @@
 import { ActorServer } from '../../server/actor-server.js';
 import { createFormatter } from '../formatter.js';
+import { TreeRunConfig } from '../types.js';
 import { loadEnvFile, loadTreeModule, startDashboard } from './shared.js';
 
 export interface RunOptions {
@@ -25,7 +26,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
   const runContext = { env, args };
   const factory = await loadTreeModule(file);
 
-  let config;
+  let config: TreeRunConfig;
   try {
     config = factory(runContext);
   } catch (err) {

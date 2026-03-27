@@ -122,6 +122,11 @@ import { createApp } from "cartographer";
 | `closeSseClients` | `() => void`                                                      | Close all connected SSE clients.                   |
 | `startAutoTick`   | `() => void`                                                      | Start the auto-tick interval (if `autoTick` was configured). |
 | `stopAutoTick`    | `() => void`                                                      | Stop the auto-tick interval.                       |
+| `nodeHandler`     | `() => (req, res) => Promise<void>`                               | Returns a Node HTTP listener for Express/Fastify.  |
+| `start`           | `() => Promise<void>`                                             | Initializes state and drains queue.                |
+| `stop`            | `() => void`                                                      | Stops auto-tick and closes SSE clients.            |
+
+See [Mounting into Express or Fastify](../guide-app-server.md#mounting-into-express-or-fastify) for framework integration examples and SSE compatibility notes.
 
 ---
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { serve } from '@hono/node-server';
+import { createServer } from 'node:http';
 import type { Server } from 'node:http';
 import { createApp } from './app.js';
 import type { AppHandle } from './app.js';
@@ -715,5 +716,87 @@ describe('createApp — autoTick', () => {
 
     await vi.advanceTimersByTimeAsync(300);
     expect(tickCount).toBe(1);
+  });
+});
+
+describe('createApp — lifecycle helpers', () => {
+  it('nodeHandler() returns a working Node HTTP request listener', async () => {
+    const handle = createApp({ createTree: makeTree });
+    await handle.initializeState();
+
+    const handler = handle.nodeHandler();
+    expect(typeof handler).toBe('function');
+
+    const server = createServer(handler);
+    const port = await new Promise<number>((resolve) => {
+      server.listen(0, () => {
+        resolve((server.address() as { port: number }).port);
+      });
+    });
+
+    try {
+      const res = await fetch(`http://localhost:${port}/_platform/health`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.status).toBe('ok');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('start() initializes state but does not start auto-tick', async () => {
+    vi.useFakeTimers();
+    let tickCount = 0;
+    const store = new InMemoryStateStore();
+    const handle = createApp({
+      createTree: () => {
+        const action = new ActionNode({
+          name: 'counter',
+          action: async () => { tickCount++; return NodeStatus.SUCCESS; },
+        });
+        return new BehaviorTree({ name: 'lifecycle', root: action });
+      },
+      stateStore: store,
+      autoTick: { intervalMs: 50 },
+    });
+
+    await handle.start();
+
+    const state = await store.getState('default');
+    expect(state).not.toBeNull();
+
+    // auto-tick should NOT be running — caller starts it after server bind
+    await vi.advanceTimersByTimeAsync(100);
+    expect(tickCount).toBe(0);
+
+    vi.useRealTimers();
+  });
+
+  it('stop() halts auto-tick and closes SSE clients', async () => {
+    vi.useFakeTimers();
+    let tickCount = 0;
+    const handle = createApp({
+      createTree: () => {
+        const action = new ActionNode({
+          name: 'counter',
+          action: async () => { tickCount++; return NodeStatus.SUCCESS; },
+        });
+        return new BehaviorTree({ name: 'lifecycle', root: action });
+      },
+      autoTick: { intervalMs: 50 },
+    });
+
+    await handle.start();
+    handle.startAutoTick();
+    await vi.advanceTimersByTimeAsync(100);
+    const countBeforeStop = tickCount;
+    expect(countBeforeStop).toBeGreaterThanOrEqual(1);
+
+    handle.stop();
+
+    await vi.advanceTimersByTimeAsync(200);
+    expect(tickCount).toBe(countBeforeStop);
+
+    vi.useRealTimers();
   });
 });

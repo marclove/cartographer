@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { getRequestListener } from '@hono/node-server';
 import { streamSSE } from 'hono/streaming';
 import type { SSEStreamingApi } from 'hono/streaming';
 import type { BehaviorTree } from '../core/behavior-tree.js';
@@ -62,6 +63,12 @@ export interface AppHandle {
   closeSseClients: () => void;
   startAutoTick: () => void;
   stopAutoTick: () => void;
+  /** Returns a Node.js HTTP request listener for mounting into Express, Fastify, or `http.createServer`. */
+  nodeHandler: () => ReturnType<typeof getRequestListener>;
+  /** Initializes state and drains any queued messages. Call `startAutoTick()` separately after your server is listening. */
+  start: () => Promise<void>;
+  /** Stops auto-tick and closes all SSE clients. */
+  stop: () => void;
 }
 
 export function createApp(options: AppOptions): AppHandle {
@@ -437,5 +444,19 @@ export function createApp(options: AppOptions): AppHandle {
     }
   }
 
-  return { app, stateStore, topologyPolicy, maxQueueDepth, processMessage, bridgeTree, initializeState, drainQueue, closeSseClients, startAutoTick, stopAutoTick };
+  function nodeHandler() {
+    return getRequestListener(app.fetch);
+  }
+
+  async function start(): Promise<void> {
+    await initializeState();
+    drainQueue().catch(() => {});
+  }
+
+  function stop(): void {
+    stopAutoTick();
+    closeSseClients();
+  }
+
+  return { app, stateStore, topologyPolicy, maxQueueDepth, processMessage, bridgeTree, initializeState, drainQueue, closeSseClients, startAutoTick, stopAutoTick, nodeHandler, start, stop };
 }

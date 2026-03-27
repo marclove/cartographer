@@ -345,6 +345,65 @@ await handle.initializeState();
 handle.drainQueue().catch(() => {});
 ```
 
+### Mounting into Express or Fastify
+
+`handle.nodeHandler()` returns a standard Node HTTP request listener that works with Express, Fastify, or any framework that accepts `(req, res) => void` handlers. `handle.start()` and `handle.stop()` compose the lifecycle calls so you don't have to manage them individually.
+
+**Express:**
+
+```typescript
+import express from "express";
+import { createApp } from "cartographer";
+
+const handle = createApp({
+  createTree: () => myTreeFactory(),
+  stateStore: myStore,
+  autoTick: { intervalMs: 5000 },
+});
+
+const app = express();
+app.use("/cartographer", handle.nodeHandler());
+
+await handle.start();
+const server = app.listen(3000, () => {
+  handle.startAutoTick();
+});
+
+process.on("SIGTERM", () => {
+  handle.stop();
+  server.close();
+});
+```
+
+**Fastify** (requires `@fastify/middie` for Express-style middleware support):
+
+```typescript
+import Fastify from "fastify";
+import middie from "@fastify/middie";
+import { createApp } from "cartographer";
+
+const handle = createApp({
+  createTree: () => myTreeFactory(),
+  stateStore: myStore,
+});
+
+const fastify = Fastify();
+await fastify.register(middie);
+fastify.use("/cartographer", handle.nodeHandler());
+
+await handle.start();
+await fastify.listen({ port: 3000 });
+handle.startAutoTick();
+
+fastify.addHook("onClose", () => {
+  handle.stop();
+});
+```
+
+**SSE streaming note:** The `/events` endpoint uses Server-Sent Events via `ReadableStream`. Response compression middleware (Express `compression()`, Fastify `@fastify/compress`) will buffer the stream and prevent real-time delivery. Either exclude the Cartographer mount path from compression or filter out `text/event-stream` responses. The same applies to reverse proxies — set `proxy_buffering off` for the events path.
+
+`start()` calls `initializeState()` and `drainQueue()`. `startAutoTick()` is called separately after the server is listening. `stop()` calls `stopAutoTick()` and `closeSseClients()`. The individual methods remain available on `AppHandle` for fine-grained control.
+
 ---
 
 ## StateStore

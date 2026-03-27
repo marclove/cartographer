@@ -64,8 +64,7 @@ export class ActorServer {
    * Initialize state (if needed) and start the HTTP server.
    */
   async start(): Promise<{ port: number }> {
-    await this.handle.initializeState();
-    this.handle.drainQueue().catch(() => {});
+    await this.handle.start();
 
     const result = await new Promise<{ port: number }>((resolve, reject) => {
       this.server = serve(
@@ -83,8 +82,7 @@ export class ActorServer {
    * Gracefully shut down the server.
    */
   async stop(): Promise<void> {
-    this.handle.stopAutoTick();
-    this.handle.closeSseClients();
+    this.handle.stop();
     if (this.server) {
       await new Promise<void>((resolve) => this.server!.close(() => resolve()));
     }
