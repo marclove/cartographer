@@ -100,11 +100,11 @@ export function createApp(options: AppOptions): AppHandle {
     return stream;
   }
 
-  function removeStreamIfEmpty(sessionKey: string): void {
+  function removeClientSet(sessionKey: string): void {
     const clients = sessionSseClients.get(sessionKey);
     if (!clients || clients.size === 0) {
-      sessionStreams.delete(sessionKey);
       sessionSseClients.delete(sessionKey);
+      // Keep the stream alive — its ring buffer holds events for replay on reconnect
     }
   }
 
@@ -286,7 +286,7 @@ export function createApp(options: AppOptions): AppHandle {
       stream.onAbort(() => {
         unsubscribe();
         clients!.delete(stream);
-        removeStreamIfEmpty(sessionId);
+        removeClientSet(sessionId);
       });
 
       // Block until aborted
