@@ -46,6 +46,13 @@ export interface AppOptions {
    * Default: reads `c.get('sessionId')`, falls back to `'default'`.
    */
   resolveSessionId?: (c: any) => string | Promise<string>;
+  /**
+   * How long (in ms) to keep an idle session's in-memory event stream
+   * after the last SSE client disconnects. Set to enable eviction of
+   * unused replay buffers in multi-session deployments.
+   * Default: no eviction (streams live until server shutdown).
+   */
+  streamEvictionMs?: number;
 }
 
 export interface QueuedResult {
@@ -88,15 +95,40 @@ export function createApp(options: AppOptions): AppHandle {
   const context = options.context ?? {};
   const sessionStreams = new Map<string, InProcessEventStream>();
   const sessionSseClients = new Map<string, Set<SSEStreamingApi>>();
+  const streamEvictionTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const stats: StatusState = { tickCount: 0, cycleCount: 0, lastStatus: null, lastDurationMs: null, startedAt: 0 };
 
   function getOrCreateStream(sessionKey: string): InProcessEventStream {
+    // Cancel any pending eviction — this session is active
+    const timer = streamEvictionTimers.get(sessionKey);
+    if (timer) {
+      clearTimeout(timer);
+      streamEvictionTimers.delete(sessionKey);
+    }
+
     let stream = sessionStreams.get(sessionKey);
     if (!stream) {
       stream = new InProcessEventStream(500);
       sessionStreams.set(sessionKey, stream);
     }
     return stream;
+  }
+
+  function scheduleStreamEviction(sessionKey: string): void {
+    if (!options.streamEvictionMs) return;
+    // Don't evict if SSE clients are still connected
+    const clients = sessionSseClients.get(sessionKey);
+    if (clients && clients.size > 0) return;
+
+    const timer = setTimeout(() => {
+      streamEvictionTimers.delete(sessionKey);
+      // Only evict if still no SSE clients
+      const currentClients = sessionSseClients.get(sessionKey);
+      if (!currentClients || currentClients.size === 0) {
+        sessionStreams.delete(sessionKey);
+      }
+    }, options.streamEvictionMs);
+    streamEvictionTimers.set(sessionKey, timer);
   }
 
   function getOrCreateClientSet(sessionKey: string): Set<SSEStreamingApi> {
@@ -112,6 +144,7 @@ export function createApp(options: AppOptions): AppHandle {
     const clients = sessionSseClients.get(sessionKey);
     if (!clients || clients.size === 0) {
       sessionSseClients.delete(sessionKey);
+      scheduleStreamEviction(sessionKey);
     }
   }
 
@@ -453,6 +486,7 @@ export function createApp(options: AppOptions): AppHandle {
       clearInterval(heartbeat);
       await stateStore.releaseLock(sessionKey, requestId);
       drainQueue(sessionKey).catch(() => {});
+      scheduleStreamEviction(sessionKey);
     }
   }
 
@@ -494,8 +528,12 @@ export function createApp(options: AppOptions): AppHandle {
         client.close();
       }
     }
+    for (const timer of streamEvictionTimers.values()) {
+      clearTimeout(timer);
+    }
     sessionSseClients.clear();
     sessionStreams.clear();
+    streamEvictionTimers.clear();
   }
 
   let autoTickTimer: ReturnType<typeof setInterval> | null = null;

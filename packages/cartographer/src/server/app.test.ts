@@ -1145,3 +1145,105 @@ describe('createApp — multi-session integration', () => {
     expect(await store.getQueueSize('session-y')).toBe(0);
   });
 });
+
+describe('createApp — stream eviction', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('evicts idle session streams after streamEvictionMs', async () => {
+    const store = new InMemoryStateStore();
+    const handle = createApp({
+      createTree: makeTree,
+      stateStore: store,
+      streamEvictionMs: 1000,
+    });
+    await handle.initializeState();
+
+    // Process a message — creates stream, events get IDs like 1, 2, 3...
+    await handle.processMessage({ type: 'tick' }, 'default');
+
+    // Connect SSE to get the latest event ID (proves stream has events)
+    const res1 = await handle.app.request('/events');
+    const reader1 = res1.body!.getReader();
+    const { value: v1 } = await reader1.read();
+    const text1 = new TextDecoder().decode(v1);
+    await reader1.cancel();
+    const idMatch = text1.match(/id: (\d+)/);
+    expect(idMatch).not.toBeNull();
+    const lastIdBeforeEviction = parseInt(idMatch![1], 10);
+    expect(lastIdBeforeEviction).toBe(0); // snapshot id
+
+    // Advance time past eviction TTL — stream gets deleted
+    await vi.advanceTimersByTimeAsync(1500);
+
+    // Process another message — creates a FRESH stream with IDs starting from 1
+    await handle.processMessage({ type: 'tick' }, 'default');
+
+    // The fresh stream's events start from 1 again (old stream's IDs are gone)
+    const res2 = await handle.app.request('/events');
+    const reader2 = res2.body!.getReader();
+    const { value: v2 } = await reader2.read();
+    const text2 = new TextDecoder().decode(v2);
+    await reader2.cancel();
+    // The snapshot's asOfEventId reflects the new stream's latest ID
+    const data2 = JSON.parse(text2.split('data: ')[1].split('\n')[0]);
+    // Fresh stream: IDs restarted from 1 (not continuing from the old stream)
+    const newLatestId = parseInt(data2.stats.asOfEventId, 10);
+    // If eviction didn't happen, the stream would still exist with IDs > lastIdBeforeEviction
+    // After eviction + new message, the fresh stream has a small number of events
+    expect(newLatestId).toBeGreaterThan(0);
+    expect(newLatestId).toBeLessThan(20); // a single tick produces ~5-10 events
+  });
+
+  it('cancels eviction when a new message arrives for the session', async () => {
+    const store = new InMemoryStateStore();
+    const handle = createApp({
+      createTree: makeTree,
+      stateStore: store,
+      streamEvictionMs: 1000,
+    });
+    await handle.initializeState();
+
+    // Process first message — creates a stream
+    await handle.processMessage({ type: 'tick' }, 'default');
+
+    // Advance partway through eviction
+    await vi.advanceTimersByTimeAsync(500);
+
+    // Process second message — should reset the eviction timer
+    await handle.processMessage({ type: 'tick' }, 'default');
+
+    // Advance past original eviction time but not new one
+    await vi.advanceTimersByTimeAsync(700);
+
+    // Stream should still have events (not evicted)
+    vi.useRealTimers();
+    const res = await handle.app.request('/events', {
+      headers: { 'Last-Event-ID': '0' },
+    });
+    const events = await readSseEvents(res, 3, 1000);
+    // Should have replayed events from both ticks
+    expect(events.length).toBeGreaterThan(1);
+  });
+
+  it('defaults to no eviction when streamEvictionMs is not set', async () => {
+    const handle = createApp({
+      createTree: makeTree,
+    });
+    await handle.initializeState();
+
+    // Process a message
+    await handle.processMessage({ type: 'tick' }, 'default');
+
+    // Advance time significantly — stream should NOT be evicted
+    await vi.advanceTimersByTimeAsync(600_000);
+
+    // Replay should still work
+    vi.useRealTimers();
+    const res = await handle.app.request('/events', {
+      headers: { 'Last-Event-ID': '0' },
+    });
+    const events = await readSseEvents(res, 3, 1000);
+    expect(events.length).toBeGreaterThan(1);
+  });
+});
