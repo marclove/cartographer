@@ -34,14 +34,14 @@ Configuration returned by the user's tree factory function.
 ```typescript
 interface TreeRunConfig {
   tree: BehaviorTree;
-  autoTick?: { intervalMs: number };
+  sessionId: string;
 }
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `tree` | `BehaviorTree` | (required) | The constructed behavior tree to run. |
-| `autoTick` | `{ intervalMs: number }` | — | Optional auto-tick interval. When set, the server automatically sends tick messages at this interval. Omit for on-demand ticking only. |
+| `sessionId` | `string` | (required) | Session key for the ActorServer. |
 
 ---
 

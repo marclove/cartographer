@@ -56,7 +56,7 @@ import { ActorServer } from "cartographer";
 | ------ | -------- | -------------------- | ------------ |
 | `port` | `number` | `PORT` env or `3148` | Listen port. |
 
-See [AppOptions](#appoptions) for the remaining fields (`createTree`, `sessionId`, `stateStore`, `context`, `topologyPolicy`, `maxQueueDepth`, `autoTick`, `streamEvictionMs`).
+See [AppOptions](#appoptions) for the remaining fields (`createTree`, `sessionId`, `stateStore`, `context`, `topologyPolicy`, `maxQueueDepth`, `streamEvictionMs`).
 
 ### Properties
 
@@ -81,10 +81,6 @@ Gracefully shuts down the server.
 
 Processes a message programmatically without going through the REST API. The `sessionKey` parameter identifies which session to process against. Returns `null` if the queue is full.
 
-#### `bridgeTree(tree: BehaviorTree): void`
-
-Subscribes to a tree's events and forwards them through the static session's SSE stream. Use this when an external tree should stream events to connected SSE clients.
-
 ---
 
 ## Hono App Factory
@@ -107,7 +103,6 @@ import { createApp } from "cartographer";
 | `topologyPolicy`     | `'fail' \| 'reset'`                | `'fail'`                                   | Topology mismatch handling.                      |
 | `maxQueueDepth`      | `number`                           | `CARTOGRAPHER_MAX_QUEUE_DEPTH` env or `16` | Maximum queued messages.                         |
 | `sessionId`          | `string \| (c: Context) => string \| Promise<string>` | (required)              | Session key — static string or resolver function. |
-| `autoTick`           | `{ intervalMs: number }`           | —                                          | Ticks the static session key at the specified interval. |
 | `streamEvictionMs`   | `number`                           | `300_000` (5 min)                          | Idle session stream TTL. `0` disables eviction.  |
 
 #### AppHandle
@@ -119,15 +114,12 @@ import { createApp } from "cartographer";
 | `topologyPolicy`  | `'fail' \| 'reset'`                                               | Resolved topology policy.                          |
 | `maxQueueDepth`   | `number`                                                          | Resolved max queue depth.                          |
 | `processMessage`  | `(msg: ActorMessage, sessionKey: string) => Promise<ProcessResult \| QueuedResult \| null>` | Process a message programmatically.          |
-| `bridgeTree`      | `(tree: BehaviorTree) => void`                                    | Forward external tree events to the static session's SSE stream. |
 | `initializeState` | `() => Promise<void>`                                             | Sets the server start timestamp. |
 | `drainQueue`      | `(sessionKey: string) => Promise<void>`                           | Process the next queued message for the given session. |
 | `closeSseClients` | `() => void`                                                      | Close all connected SSE clients.                   |
-| `startAutoTick`   | `() => void`                                                      | Start the auto-tick interval (if `autoTick` was configured). |
-| `stopAutoTick`    | `() => void`                                                      | Stop the auto-tick interval.                       |
 | `nodeHandler`     | `() => (req, res) => Promise<void>`                               | Returns a Node HTTP listener for Express/Fastify.  |
 | `start`           | `() => Promise<void>`                                             | Initializes state and drains queue.                |
-| `stop`            | `() => void`                                                      | Stops auto-tick and closes SSE clients.            |
+| `stop`            | `() => void`                                                      | Closes all SSE clients.                            |
 
 See [Mounting into Express or Fastify](../guide-app-server.md#mounting-into-express-or-fastify) for framework integration examples and SSE compatibility notes.
 

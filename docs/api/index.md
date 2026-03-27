@@ -156,7 +156,7 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `ActorServer`              | HTTP server wrapping `MessageProcessor` with REST and SSE                |
 | `ActorServerOptions`       | Options for `ActorServer` constructor                                    |
 | `createApp`                | Hono app factory for full actor functionality                            |
-| `AppOptions`               | Options for `createApp` (includes `sessionId`, `autoTick`, `streamEvictionMs`) |
+| `AppOptions`               | Options for `createApp` (includes `sessionId`, `streamEvictionMs`) |
 | `AppHandle`                | Handle returned by `createApp` with app, processing, and lifecycle       |
 | `EventBridge`              | Bridges tree events to state persistence and SSE delivery                |
 | `ActorMessage`             | Union of all message types                                               |

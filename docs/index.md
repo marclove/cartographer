@@ -10,7 +10,7 @@ Cartographer also includes an **application server** that turns behavior trees i
 
 - **Content pipelines** -- Orchestrate multi-step generation, review, and publishing workflows where some steps are deterministic and others require LLM judgment.
 - **Interactive applications** -- Build message-driven apps where AI agents and human users collaborate through shared state, using the application server with REST, SSE, and a client SDK.
-- **Monitoring and alerting** -- Run trees as persistent services with auto-ticking to poll systems, evaluate conditions, and take corrective action.
+- **Monitoring and alerting** -- Run trees as persistent services to poll systems, evaluate conditions, and take corrective action.
 - **Multi-agent coordination** -- Run several AgentNodes in parallel or sequence, each with its own tools and system prompt, coordinated by composite nodes.
 - **Classification and routing** -- Use condition nodes and selectors to route inputs through different processing branches based on structured or LLM-driven evaluation.
 

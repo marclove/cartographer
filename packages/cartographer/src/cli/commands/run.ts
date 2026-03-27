@@ -44,7 +44,6 @@ export async function runCommand(options: RunOptions): Promise<void> {
       return tree;
     },
     port: port ?? 3147,
-    autoTick: config.autoTick,
   });
 
   const { port: serverPort } = await server.start();

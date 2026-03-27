@@ -210,7 +210,6 @@ const server = new ActorServer({
   context: { tenantId: "abc" }, // Optional: written to blackboard as context:*
   topologyPolicy: "fail", // Optional: 'fail' or 'reset' on tree shape change
   maxQueueDepth: 16, // Optional: max queued messages (default: CARTOGRAPHER_MAX_QUEUE_DEPTH env or 16)
-  autoTick: { intervalMs: 5000 }, // Optional: auto-tick interval
 });
 
 const { port } = await server.start();
@@ -359,8 +358,6 @@ const server = new ActorServer({
 // The tree can read it: ctx.blackboard.get('context:plan')
 ```
 
-When `autoTick` is configured, it ticks the static session key (or `'default'` when `sessionId` is a resolver). Other sessions are request-driven — use external triggers like webhooks or cron jobs for background ticking of specific sessions.
-
 #### Stream Eviction
 
 The server maintains an in-memory event replay buffer per session for SSE reconnection support. The `streamEvictionMs` option controls how long an idle session's buffer is kept in memory after the last SSE client disconnects. Defaults to 5 minutes (`300_000`ms). Set to `0` to disable eviction entirely.
@@ -420,16 +417,13 @@ const handle = createApp({
   createTree: () => myTreeFactory(),
   sessionId: "default",
   stateStore: myStore,
-  autoTick: { intervalMs: 5000 },
 });
 
 const app = express();
 app.use("/cartographer", handle.nodeHandler());
 
 await handle.start();
-const server = app.listen(3000, () => {
-  handle.startAutoTick();
-});
+const server = app.listen(3000);
 
 process.on("SIGTERM", () => {
   handle.stop();
@@ -456,7 +450,6 @@ fastify.use("/cartographer", handle.nodeHandler());
 
 await handle.start();
 await fastify.listen({ port: 3000 });
-handle.startAutoTick();
 
 fastify.addHook("onClose", () => {
   handle.stop();
@@ -465,7 +458,7 @@ fastify.addHook("onClose", () => {
 
 **SSE streaming note:** The `/events` endpoint uses Server-Sent Events via `ReadableStream`. Response compression middleware (Express `compression()`, Fastify `@fastify/compress`) will buffer the stream and prevent real-time delivery. Either exclude the Cartographer mount path from compression or filter out `text/event-stream` responses. The same applies to reverse proxies — set `proxy_buffering off` for the events path.
 
-`start()` calls `initializeState()` and `drainQueue()`. `startAutoTick()` is called separately after the server is listening. `stop()` calls `stopAutoTick()` and `closeSseClients()`. The individual methods remain available on `AppHandle` for fine-grained control.
+`start()` calls `initializeState()` and drains queued messages. `stop()` calls `closeSseClients()`. The individual methods remain available on `AppHandle` for fine-grained control.
 
 ---
 

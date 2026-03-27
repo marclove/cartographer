@@ -432,7 +432,7 @@ describe('createApp — message processing', () => {
   });
 });
 
-// ---------- Interrupt, resume, bridgeTree tests ----------
+// ---------- Interrupt and resume tests ----------
 
 function makeSlowTree(): BehaviorTree {
   return new BehaviorTree({
@@ -566,167 +566,6 @@ describe('createApp — interrupt and resume', () => {
   });
 });
 
-describe('createApp — bridgeTree', () => {
-  it('forwards tree events to SSE clients', async () => {
-    const handle = createApp({ createTree: makeTree, sessionId: 'default' });
-    await handle.initializeState();
-
-    const tree = makeTree();
-    handle.bridgeTree(tree);
-
-    let server!: Server;
-    let port!: number;
-    await new Promise<void>((resolve) => {
-      server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
-        port = info.port;
-        resolve();
-      });
-    });
-
-    const res = await fetch(`http://localhost:${port}/events`);
-    await tree.tick();
-
-    const events = await readSseEvents(res, 3, 2000);
-    expect(events[0].event).toBe('snapshot');
-    expect(events.length).toBeGreaterThan(1);
-
-    handle.closeSseClients();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-  });
-});
-
-// ---------- Auto-tick tests ----------
-
-describe('createApp — autoTick', () => {
-  beforeEach(() => { vi.useFakeTimers(); });
-  afterEach(() => { vi.useRealTimers(); });
-
-  it('sends tick messages at the configured interval', async () => {
-    let tickCount = 0;
-    const handle = createApp({
-      createTree: () => {
-        const action = new ActionNode({
-          name: 'counter',
-          action: async () => { tickCount++; return NodeStatus.SUCCESS; },
-        });
-        return new BehaviorTree({ name: 'auto', root: action });
-      },
-      sessionId: 'default',
-      autoTick: { intervalMs: 100 },
-    });
-    await handle.initializeState();
-    handle.startAutoTick();
-
-    await vi.advanceTimersByTimeAsync(250);
-
-    handle.stopAutoTick();
-    expect(tickCount).toBe(2);
-  });
-
-  it('skips tick when previous is still in flight', async () => {
-    let tickCount = 0;
-    let resolvers: Array<() => void> = [];
-    const handle = createApp({
-      createTree: () => {
-        const action = new ActionNode({
-          name: 'slow',
-          action: () => new Promise<NodeStatus>((resolve) => {
-            tickCount++;
-            resolvers.push(() => resolve(NodeStatus.SUCCESS));
-          }),
-        });
-        return new BehaviorTree({ name: 'auto', root: action });
-      },
-      sessionId: 'default',
-      autoTick: { intervalMs: 50 },
-    });
-    await handle.initializeState();
-    handle.startAutoTick();
-
-    // First interval fires, starts a tick
-    await vi.advanceTimersByTimeAsync(50);
-    expect(tickCount).toBe(1);
-
-    // Second interval fires while first is still in flight — should skip
-    await vi.advanceTimersByTimeAsync(50);
-    expect(tickCount).toBe(1);
-
-    // Resolve the first tick
-    resolvers[0]();
-    await vi.advanceTimersByTimeAsync(0);
-
-    // Third interval fires, should start a new tick
-    await vi.advanceTimersByTimeAsync(50);
-    expect(tickCount).toBe(2);
-
-    resolvers[1]();
-    handle.stopAutoTick();
-  });
-
-  it('does nothing when autoTick option is not set', async () => {
-    const handle = createApp({ createTree: makeTree, sessionId: 'default' });
-    await handle.initializeState();
-    // Should be a no-op, not throw
-    handle.startAutoTick();
-    handle.stopAutoTick();
-  });
-
-  it('survives processMessage rejection and keeps ticking', async () => {
-    let tickCount = 0;
-    const handle = createApp({
-      createTree: () => {
-        const action = new ActionNode({
-          name: 'flaky',
-          action: async () => {
-            tickCount++;
-            if (tickCount === 1) throw new Error('boom');
-            return NodeStatus.SUCCESS;
-          },
-        });
-        return new BehaviorTree({ name: 'auto', root: action });
-      },
-      sessionId: 'default',
-      autoTick: { intervalMs: 100 },
-    });
-    await handle.initializeState();
-    handle.startAutoTick();
-
-    // First tick fires and the action throws — auto-tick should swallow it
-    await vi.advanceTimersByTimeAsync(100);
-    expect(tickCount).toBe(1);
-
-    // Second tick should still fire
-    await vi.advanceTimersByTimeAsync(100);
-    expect(tickCount).toBe(2);
-
-    handle.stopAutoTick();
-  });
-
-  it('stops cleanly via stopAutoTick', async () => {
-    let tickCount = 0;
-    const handle = createApp({
-      createTree: () => {
-        const action = new ActionNode({
-          name: 'counter',
-          action: async () => { tickCount++; return NodeStatus.SUCCESS; },
-        });
-        return new BehaviorTree({ name: 'auto', root: action });
-      },
-      sessionId: 'default',
-      autoTick: { intervalMs: 100 },
-    });
-    await handle.initializeState();
-    handle.startAutoTick();
-
-    await vi.advanceTimersByTimeAsync(100);
-    expect(tickCount).toBe(1);
-
-    handle.stopAutoTick();
-
-    await vi.advanceTimersByTimeAsync(300);
-    expect(tickCount).toBe(1);
-  });
-});
 
 describe('createApp — lifecycle helpers', () => {
   it('nodeHandler() returns a working Node HTTP request listener', async () => {
@@ -753,59 +592,17 @@ describe('createApp — lifecycle helpers', () => {
     }
   });
 
-  it('start() initializes state but does not start auto-tick', async () => {
-    vi.useFakeTimers();
-    let tickCount = 0;
-    const store = new InMemoryStateStore();
-    const handle = createApp({
-      createTree: () => {
-        const action = new ActionNode({
-          name: 'counter',
-          action: async () => { tickCount++; return NodeStatus.SUCCESS; },
-        });
-        return new BehaviorTree({ name: 'lifecycle', root: action });
-      },
-      stateStore: store,
-      sessionId: 'default',
-      autoTick: { intervalMs: 50 },
-    });
-
+  it('start() initializes and drains without error', async () => {
+    const handle = createApp({ createTree: makeTree, sessionId: 'default' });
     await handle.start();
-
-    // auto-tick should NOT be running — caller starts it after server bind
-    await vi.advanceTimersByTimeAsync(100);
-    expect(tickCount).toBe(0);
-
-    vi.useRealTimers();
+    // No error — start() called initializeState() and drained the queue
   });
 
-  it('stop() halts auto-tick and closes SSE clients', async () => {
-    vi.useFakeTimers();
-    let tickCount = 0;
-    const handle = createApp({
-      createTree: () => {
-        const action = new ActionNode({
-          name: 'counter',
-          action: async () => { tickCount++; return NodeStatus.SUCCESS; },
-        });
-        return new BehaviorTree({ name: 'lifecycle', root: action });
-      },
-      sessionId: 'default',
-      autoTick: { intervalMs: 50 },
-    });
-
+  it('stop() closes SSE clients', async () => {
+    const handle = createApp({ createTree: makeTree, sessionId: 'default' });
     await handle.start();
-    handle.startAutoTick();
-    await vi.advanceTimersByTimeAsync(100);
-    const countBeforeStop = tickCount;
-    expect(countBeforeStop).toBeGreaterThanOrEqual(1);
-
     handle.stop();
-
-    await vi.advanceTimersByTimeAsync(200);
-    expect(tickCount).toBe(countBeforeStop);
-
-    vi.useRealTimers();
+    // No error — stop() called closeSseClients()
   });
 });
 
@@ -868,31 +665,6 @@ describe('createApp — session resolution', () => {
 
     const res = await handle.app.request('/_platform/health');
     expect(res.status).toBe(200);
-  });
-});
-
-describe('createApp — auto-tick mutual exclusion', () => {
-  it('allows both sessionId resolver and autoTick together', () => {
-    expect(() => createApp({
-      createTree: makeTree,
-      sessionId: () => 'user-1',
-      autoTick: { intervalMs: 100 },
-    })).not.toThrow();
-  });
-
-  it('allows autoTick without sessionId resolver', () => {
-    expect(() => createApp({
-      createTree: makeTree,
-      sessionId: 'default',
-      autoTick: { intervalMs: 100 },
-    })).not.toThrow();
-  });
-
-  it('allows sessionId resolver without autoTick', () => {
-    expect(() => createApp({
-      createTree: makeTree,
-      sessionId: () => 'user-1',
-    })).not.toThrow();
   });
 });
 
@@ -1153,6 +925,29 @@ describe('createApp — multi-session integration', () => {
     // Both queues should be drained
     expect(await store.getQueueSize('session-x')).toBe(0);
     expect(await store.getQueueSize('session-y')).toBe(0);
+  });
+
+  it('start() drains queued messages for sessions with no persisted state', async () => {
+    const store = new InMemoryStateStore();
+
+    // Simulate: messages were queued for a new session, but the server
+    // crashed before the first message's saveState completed.
+    // The queue exists but listKeys() won't return this session.
+    await store.enqueueMessage('brand-new', { type: 'tick' }, 16);
+
+    expect(await store.listKeys()).toEqual([]);
+    expect(await store.getQueueSize('brand-new')).toBe(1);
+
+    const handle = createApp({
+      createTree: makeTree,
+      stateStore: store,
+      sessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
+    });
+
+    await handle.start();
+    await new Promise(r => setTimeout(r, 100));
+
+    expect(await store.getQueueSize('brand-new')).toBe(0);
   });
 });
 

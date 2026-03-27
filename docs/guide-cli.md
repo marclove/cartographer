@@ -59,10 +59,10 @@ The factory pattern defers tree construction until the CLI has loaded environmen
 
 ### TreeRunConfig
 
-| Field      | Type                       | Default    | Description                                                                |
-| ---------- | -------------------------- | ---------- | -------------------------------------------------------------------------- |
-| `tree`     | `BehaviorTree`             | (required) | The constructed behavior tree to run.                                      |
-| `autoTick` | `{ intervalMs: number }`   | —          | Optional auto-tick interval. When set, the server sends tick messages at this interval. Omit for on-demand ticking only. |
+| Field       | Type             | Default    | Description                                   |
+| ----------- | ---------------- | ---------- | --------------------------------------------- |
+| `tree`      | `BehaviorTree`   | (required) | The constructed behavior tree to run.          |
+| `sessionId` | `string`         | (required) | Session key for the ActorServer.               |
 
 ### Example: reading environment variables
 
@@ -101,7 +101,7 @@ export default function (ctx: RunContext): TreeRunConfig {
 cartographer run api-caller.ts --env-file .env
 ```
 
-### Example: auto-tick for periodic execution
+### Example: health check tree
 
 ```typescript
 import type { RunContext, TreeRunConfig } from "cartographer";
@@ -119,7 +119,7 @@ export default function (ctx: RunContext): TreeRunConfig {
 
   return {
     tree,
-    autoTick: { intervalMs: 30_000 }, // tick every 30 seconds
+    sessionId: 'health-check',
   };
 }
 ```
@@ -136,9 +136,7 @@ Start an ActorServer for a behavior tree. The file must default-export a factory
 cartographer run deploy.ts
 ```
 
-The CLI calls the factory, creates an ActorServer, and starts it. The server exposes HTTP endpoints for sending messages, reading state, and streaming events via SSE. A dashboard is also started for real-time observation.
-
-When the factory returns an `autoTick` field, the server automatically sends tick messages at the configured interval. Without `autoTick`, the tree only runs when messages arrive via the HTTP API.
+The CLI calls the factory, creates an ActorServer, and starts it. The server exposes HTTP endpoints for sending messages, reading state, and streaming events via SSE. A dashboard is also started for real-time observation. The tree runs when messages arrive via the HTTP API.
 
 ### inspect \<file\>
 

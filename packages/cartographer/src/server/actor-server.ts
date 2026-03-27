@@ -1,7 +1,6 @@
 import { serve } from '@hono/node-server';
 import type { ServerType } from '@hono/node-server';
 import type { Hono } from 'hono';
-import type { BehaviorTree } from '../core/behavior-tree.js';
 import type { ActorMessage } from '../actor/types.js';
 import type { ProcessResult } from '../actor/message-processor.js';
 import { createApp } from './app.js';
@@ -74,7 +73,6 @@ export class ActorServer {
       this.server.on('error', reject);
     });
 
-    this.handle.startAutoTick();
     return result;
   }
 
@@ -95,10 +93,4 @@ export class ActorServer {
     return this.handle.processMessage(msg, sessionKey);
   }
 
-  /**
-   * Subscribe to a tree's events and forward them through the SSE pipeline.
-   */
-  bridgeTree(tree: BehaviorTree): void {
-    this.handle.bridgeTree(tree);
-  }
 }

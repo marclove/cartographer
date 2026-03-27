@@ -8,7 +8,7 @@ import type { ActorMessage } from '../actor/types.js';
 import type { ProcessResult } from '../actor/message-processor.js';
 import { InMemoryStateStore } from '../state/in-memory-state-store.js';
 import { InProcessEventStream } from './event-stream.js';
-import { serializeTree, serializeNodeRef, serializeEvent } from './serializers.js';
+import { serializeTree, serializeNodeRef } from './serializers.js';
 import { AgentNode } from '../nodes/agent.js';
 import type { BTreeNode } from '../types.js';
 import { MessageProcessor } from '../actor/message-processor.js';
@@ -38,7 +38,6 @@ export interface AppOptions {
   context?: Record<string, unknown>;
   topologyPolicy?: 'fail' | 'reset';
   maxQueueDepth?: number;
-  autoTick?: { intervalMs: number };
   /** Session key — static string or resolver function extracting from the Hono request context. */
   sessionId: string | ((c: any) => string | Promise<string>);
   /**
@@ -62,17 +61,14 @@ export interface AppHandle {
   topologyPolicy: 'fail' | 'reset';
   maxQueueDepth: number;
   processMessage: (msg: ActorMessage, sessionKey: string) => Promise<ProcessResult | QueuedResult | null>;
-  bridgeTree: (tree: BehaviorTree) => void;
   initializeState: () => Promise<void>;
   drainQueue: (sessionKey: string) => Promise<void>;
   closeSseClients: () => void;
-  startAutoTick: () => void;
-  stopAutoTick: () => void;
   /** Returns a Node.js HTTP request listener for mounting into Express, Fastify, or `http.createServer`. */
   nodeHandler: () => ReturnType<typeof getRequestListener>;
-  /** Initializes state and drains any queued messages. Call `startAutoTick()` separately after your server is listening. */
+  /** Initializes state and drains any queued messages. */
   start: () => Promise<void>;
-  /** Stops auto-tick and closes all SSE clients. */
+  /** Closes all SSE clients. */
   stop: () => void;
 }
 
@@ -480,22 +476,6 @@ export function createApp(options: AppOptions): AppHandle {
     executeMessage(msg, sessionKey, requestId, bridge).catch(() => {});
   }
 
-  function requireStaticSessionId(caller: string): string {
-    if (typeof options.sessionId !== 'string') {
-      throw new Error(`${caller} requires a static sessionId string, not a resolver function`);
-    }
-    return options.sessionId;
-  }
-
-  function bridgeTree(tree: BehaviorTree): void {
-    const key = requireStaticSessionId('bridgeTree()');
-    tree.events.onAny((type, data) => {
-      const serialized = serializeEvent(type as any, data as any);
-      trackEvent({ type, data: serialized });
-      const stream = getOrCreateStream(key);
-      stream.push(type, serialized);
-    });
-  }
   function closeSseClients(): void {
     for (const [, clients] of sessionSseClients) {
       for (const client of clients) {
@@ -510,49 +490,23 @@ export function createApp(options: AppOptions): AppHandle {
     streamEvictionTimers.clear();
   }
 
-  let autoTickTimer: ReturnType<typeof setInterval> | null = null;
-  let autoTickInFlight = false;
-
-  function startAutoTick(): void {
-    if (!options.autoTick || autoTickTimer) return;
-    const key = requireStaticSessionId('startAutoTick()');
-    autoTickTimer = setInterval(async () => {
-      if (autoTickInFlight) return;
-      autoTickInFlight = true;
-      try {
-        await processMessage({ type: 'tick' }, key);
-      } catch {
-        // Swallow transient errors (e.g. StateStore connection loss) so the
-        // server stays alive and retries on the next interval.
-      } finally {
-        autoTickInFlight = false;
-      }
-    }, options.autoTick.intervalMs);
-  }
-
-  function stopAutoTick(): void {
-    if (autoTickTimer) {
-      clearInterval(autoTickTimer);
-      autoTickTimer = null;
-    }
-  }
-
   function nodeHandler() {
     return getRequestListener(app.fetch);
   }
 
   async function start(): Promise<void> {
     await initializeState();
-    const keys = await stateStore.listKeys();
-    for (const key of keys) {
+    const stateKeys = await stateStore.listKeys();
+    const queuedKeys = await stateStore.listQueuedKeys();
+    const allKeys = [...new Set([...stateKeys, ...queuedKeys])];
+    for (const key of allKeys) {
       drainQueue(key).catch(() => {});
     }
   }
 
   function stop(): void {
-    stopAutoTick();
     closeSseClients();
   }
 
-  return { app, stateStore, topologyPolicy, maxQueueDepth, processMessage, bridgeTree, initializeState, drainQueue, closeSseClients, startAutoTick, stopAutoTick, nodeHandler, start, stop };
+  return { app, stateStore, topologyPolicy, maxQueueDepth, processMessage, initializeState, drainQueue, closeSseClients, nodeHandler, start, stop };
 }
