@@ -27,22 +27,13 @@ export interface RunContext {
 /**
  * Configuration returned by the user's tree factory function.
  *
- * Provide a `tree` and optionally an `autoTick` interval. The CLI
- * starts an ActorServer for the tree. When `autoTick` is set, the
- * server automatically sends tick messages at the configured interval.
+ * Provide a `tree` and a `sessionId`. The CLI starts an ActorServer
+ * for the tree.
  *
  * @example
  * ```ts
  * export default function(ctx: RunContext): TreeRunConfig {
- *   return { tree: myBehaviorTree };
- * }
- *
- * // With auto-tick — tick every 5 seconds
- * export default function(ctx: RunContext): TreeRunConfig {
- *   return {
- *     tree: myBehaviorTree,
- *     autoTick: { intervalMs: 5_000 },
- *   };
+ *   return { tree: myBehaviorTree, sessionId: 'main' };
  * }
  * ```
  */
@@ -50,6 +41,6 @@ export interface TreeRunConfig {
   /** The constructed behavior tree to run. */
   tree: BehaviorTree;
 
-  /** Optional auto-tick — omit for on-demand ticking only. */
-  autoTick?: { intervalMs: number };
+  /** Session key for the ActorServer. */
+  sessionId: string;
 }

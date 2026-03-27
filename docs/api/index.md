@@ -156,7 +156,7 @@ Re-exported from the internal type definitions. See individual reference pages f
 | `ActorServer`              | HTTP server wrapping `MessageProcessor` with REST and SSE                |
 | `ActorServerOptions`       | Options for `ActorServer` constructor                                    |
 | `createApp`                | Hono app factory for full actor functionality                            |
-| `AppOptions`               | Options for `createApp` (includes `autoTick`)                            |
+| `AppOptions`               | Options for `createApp` (includes `sessionId`, `streamEvictionMs`) |
 | `AppHandle`                | Handle returned by `createApp` with app, processing, and lifecycle       |
 | `EventBridge`              | Bridges tree events to state persistence and SSE delivery                |
 | `ActorMessage`             | Union of all message types                                               |
@@ -191,6 +191,7 @@ Re-exported from the internal type definitions. See individual reference pages f
 | ----------------------------- | ----------------------------------------------------- |
 | `createCartographerClient`    | Create a client connected to an `ActorServer`         |
 | `CartographerClient`          | Client interface (action, write, interrupt, resume)   |
+| `CartographerClientOptions`   | Options for `createCartographerClient` (credentials)  |
 | `SendResponse`                | Response from `command()`, `write()`, `send()`        |
 | `QueueFullError`              | Thrown on 429 (message queue is full)                 |
 

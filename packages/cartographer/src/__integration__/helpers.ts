@@ -146,10 +146,10 @@ export interface TestHarness {
   [Symbol.asyncDispose](): Promise<void>;
 }
 
-export type TestOptions = Omit<ActorServerOptions, 'port'>;
+export type TestOptions = Omit<ActorServerOptions, 'port' | 'sessionId'> & { sessionId?: string | ((c: any) => string | Promise<string>) };
 
 export async function setupTest(options: TestOptions): Promise<TestHarness> {
-  const server = new ActorServer({ ...options, port: 0 });
+  const server = new ActorServer({ sessionId: 'default', ...options, port: 0 });
   const { port } = await server.start();
 
   const client = createCartographerClient(`http://localhost:${port}`);

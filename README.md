@@ -229,19 +229,6 @@ Svelte 5 runes (`@cartographer/svelte`) and the raw client SDK (`@cartographer/c
 
 State persists across requests. The tree rehydrates from a state store on each message, runs to completion or suspension, then serializes back. In-memory storage works for development; Redis is available for production.
 
-## Auto-Tick
-
-ActorServer supports automatic ticking at a configured interval, useful for monitoring and polling workflows:
-
-```typescript
-const server = new ActorServer({
-  createTree: () => myTreeFactory(),
-  autoTick: { intervalMs: 60_000 },
-});
-
-await server.start();
-```
-
 ## Packages
 
 | Package                | Description                                                                           |
@@ -301,7 +288,7 @@ Comprehensive guides are available in the [`docs/`](docs/) directory:
 - [State and Observability](docs/guide-blackboard-and-events.md) — Shared state and the event system
 - [Context Layering](docs/guide-context.md) — TreeContext propagation and per-subtree overrides
 - [Error Handling](docs/guide-error-handling.md) — Error containment, recovery patterns, abort signals
-- [Application Server](docs/guide-app-server.md) — Persistent sessions, HTTP server, auto-tick, client SDK
+- [Application Server](docs/guide-app-server.md) — Persistent sessions, HTTP server, client SDK
 - [CLI Runner](docs/guide-cli.md) — Running, inspecting, and scaffolding trees
 - [Elicitation](docs/guide-elicitation.md) — Handling MCP server input requests
 - [Testing](docs/guide-testing.md) — Test contexts, event verification, multi-tick patterns

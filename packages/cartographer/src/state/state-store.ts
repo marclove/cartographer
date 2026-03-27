@@ -41,4 +41,6 @@ export interface StateStore {
   dequeueMessage(stateKey: string): Promise<ActorMessage | null>;
   getQueueSize(stateKey: string): Promise<number>;
   getQueuedMessages(stateKey: string): Promise<ActorMessage[]>;
+  /** Returns keys that have non-empty message queues. */
+  listQueuedKeys(): Promise<string[]>;
 }

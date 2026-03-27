@@ -17,5 +17,6 @@ export default function (_ctx: RunContext): TreeRunConfig {
         ],
       }),
     }),
+    sessionId: 'default',
   };
 }

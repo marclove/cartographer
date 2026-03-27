@@ -22,7 +22,7 @@ describe('ActorServer', () => {
   });
 
   it('starts and responds to health check', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/_platform/health`);
@@ -32,15 +32,22 @@ describe('ActorServer', () => {
     expect(body.uptime).toBeGreaterThanOrEqual(0);
   });
 
-  it('initializes default state on first start', async () => {
+  it('applies context on first message (lazy init)', async () => {
     const store = new InMemoryStateStore();
     server = new ActorServer({
       createTree: makeTree,
+      sessionId: 'default',
       stateStore: store,
       context: { tenantId: 'abc' },
       port: 0,
     });
-    await server.start();
+    port = (await server.start()).port;
+
+    // State is null before any message
+    expect(await store.getState('default')).toBeNull();
+
+    // Send a message to trigger lazy init
+    await server.processMessage({ type: 'tick' }, 'default');
 
     const state = await store.getState('default');
     expect(state).not.toBeNull();
@@ -49,7 +56,7 @@ describe('ActorServer', () => {
 
   it('GET /api/blackboard returns current blackboard', async () => {
     const store = new InMemoryStateStore();
-    server = new ActorServer({ createTree: makeTree, stateStore: store, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', stateStore: store, port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/blackboard`);
@@ -59,7 +66,7 @@ describe('ActorServer', () => {
   });
 
   it('GET /api/status returns tick stats', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/status`);
@@ -74,7 +81,7 @@ describe('ActorServer', () => {
   });
 
   it('GET /api/tree returns full tree structure', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/tree`);
@@ -89,7 +96,7 @@ describe('ActorServer', () => {
   });
 
   it('GET /api/nodes/:id returns node detail', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     const treeRes = await fetch(`http://localhost:${port}/api/tree`);
@@ -105,7 +112,7 @@ describe('ActorServer', () => {
   });
 
   it('GET /api/nodes/nonexistent returns 404', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/nodes/nonexistent-id`);
@@ -113,7 +120,7 @@ describe('ActorServer', () => {
   });
 
   it('returns 404 for unknown routes', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/unknown`);
@@ -130,7 +137,7 @@ describe('ActorServer write endpoints', () => {
   });
 
   it('POST /api/messages returns 202 with message ID', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/messages`, {
@@ -145,7 +152,7 @@ describe('ActorServer write endpoints', () => {
   });
 
   it('POST /api/messages returns 400 for missing type', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/messages`, {
@@ -158,7 +165,7 @@ describe('ActorServer write endpoints', () => {
 
   it('POST /api/commands/:name returns 202', async () => {
     const store = new InMemoryStateStore();
-    server = new ActorServer({ createTree: makeTree, stateStore: store, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', stateStore: store, port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/commands/approve`, {
@@ -173,7 +180,7 @@ describe('ActorServer write endpoints', () => {
 
   it('POST /api/blackboard/:key writes value', async () => {
     const store = new InMemoryStateStore();
-    server = new ActorServer({ createTree: makeTree, stateStore: store, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', stateStore: store, port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/blackboard/myKey`, {
@@ -192,7 +199,7 @@ describe('ActorServer write endpoints', () => {
   });
 
   it('GET /events returns SSE stream with snapshot', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/events`);
@@ -211,7 +218,7 @@ describe('ActorServer write endpoints', () => {
 
   it('emits message:processed event on success', async () => {
     const store = new InMemoryStateStore();
-    server = new ActorServer({ createTree: makeTree, stateStore: store, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', stateStore: store, port: 0 });
     port = (await server.start()).port;
 
     await fetch(`http://localhost:${port}/api/messages`, {
@@ -264,7 +271,7 @@ describe('ActorServer /events SSE', () => {
   }
 
   it('GET /events sends snapshot with tree structure on connect', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/events`);
@@ -293,7 +300,7 @@ describe('ActorServer /events SSE', () => {
   });
 
   it('GET /events broadcasts tree events in real-time during message processing', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/events`);
@@ -363,7 +370,7 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
   });
 
   it('returns 202 queued when a second request hits while processing is locked', async () => {
-    server = new ActorServer({ createTree: makeSlowTree, port: 0 });
+    server = new ActorServer({ createTree: makeSlowTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     // Start a slow request that will hold the lock
@@ -391,7 +398,7 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
   });
 
   it('returns 429 when queue is full', async () => {
-    server = new ActorServer({ createTree: makeSlowTree, port: 0, maxQueueDepth: 1 });
+    server = new ActorServer({ createTree: makeSlowTree, sessionId: 'default', port: 0, maxQueueDepth: 1 });
     port = (await server.start()).port;
 
     // Start a slow request that will hold the lock
@@ -423,7 +430,7 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
 
   it('POST /api/blackboard/:key updates the blackboard with the written value', async () => {
     const store = new InMemoryStateStore();
-    server = new ActorServer({ createTree: makeTree, stateStore: store, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', stateStore: store, port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/blackboard/testKey`, {
@@ -442,7 +449,7 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
   });
 
   it('stop() closes SSE clients', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     // Connect to /events SSE
@@ -462,7 +469,7 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
 
   it('processMessage returns queued result when lock is held', async () => {
     const store = new InMemoryStateStore();
-    server = new ActorServer({ createTree: makeSlowTree, stateStore: store, port: 0 });
+    server = new ActorServer({ createTree: makeSlowTree, sessionId: 'default', stateStore: store, port: 0 });
     port = (await server.start()).port;
 
     // Start a slow request via HTTP to hold the lock
@@ -485,7 +492,7 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
 
   it('processMessage returns null when queue is full', async () => {
     const store = new InMemoryStateStore();
-    server = new ActorServer({ createTree: makeSlowTree, stateStore: store, port: 0, maxQueueDepth: 1 });
+    server = new ActorServer({ createTree: makeSlowTree, sessionId: 'default', stateStore: store, port: 0, maxQueueDepth: 1 });
     port = (await server.start()).port;
 
     // Start a slow request via HTTP to hold the lock
@@ -506,34 +513,34 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
   });
 
   it('maxQueueDepth defaults to 16', () => {
-    const s = new ActorServer({ createTree: makeTree, port: 0 });
+    const s = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     expect(s.maxQueueDepth).toBe(16);
   });
 
   it('start() rejects when the port is unavailable', async () => {
     // Start a server on a specific port to occupy it
-    const first = new ActorServer({ createTree: makeTree, port: 0 });
+    const first = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     const { port: occupiedPort } = await first.start();
 
     // Starting a second server on the same port should reject
-    const second = new ActorServer({ createTree: makeTree, port: occupiedPort });
+    const second = new ActorServer({ createTree: makeTree, sessionId: 'default', port: occupiedPort });
     await expect(second.start()).rejects.toThrow();
 
     await first.stop();
   });
 
   it('defaults topologyPolicy to fail', () => {
-    const s = new ActorServer({ createTree: makeTree, port: 0 });
+    const s = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     expect(s.topologyPolicy).toBe('fail');
   });
 
   it('accepts topologyPolicy reset option', () => {
-    const s = new ActorServer({ createTree: makeTree, port: 0, topologyPolicy: 'reset' });
+    const s = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0, topologyPolicy: 'reset' });
     expect(s.topologyPolicy).toBe('reset');
   });
 
   it('POST /api/commands/:name routes correctly and returns 202', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/commands/some-action`, {
@@ -548,7 +555,7 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
   });
 
   it('POST /api/messages returns 400 for command type without name', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/messages`, {
@@ -562,7 +569,7 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
   });
 
   it('GET /events replays buffered events on reconnect', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     // Trigger a tick so there are events in the buffer
@@ -599,7 +606,7 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
   });
 
   it('stop() closes /events SSE clients', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     // Connect to /events SSE
@@ -628,7 +635,7 @@ describe('ActorServer coverage: lock contention, stop, SSE close, blackboard wri
         ],
       }),
     });
-    server = new ActorServer({ createTree: treeWithChildren, port: 0 });
+    server = new ActorServer({ createTree: treeWithChildren, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     // Get the tree to find the sequence node ID

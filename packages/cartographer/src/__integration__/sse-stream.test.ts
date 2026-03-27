@@ -125,6 +125,7 @@ let port: number;
 beforeEach(async () => {
   server = new ActorServer({
     createTree,
+    sessionId: 'default',
     port: 0,
   });
   ({ port } = await server.start());
@@ -148,7 +149,8 @@ describe('GET /events — snapshot on connect', () => {
     expect(data.tree.name).toBe('Root');
     expect(data.tree.id).toBe('root');
     expect(data.tree.type).toBe('sequence');
-    expect(data.blackboard).toEqual({ counter: 0 });
+    // Blackboard is empty until the first message triggers lazy init
+    expect(data.blackboard).toEqual({});
   });
 
   it('snapshot always has an id field', async () => {

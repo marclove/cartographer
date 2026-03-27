@@ -142,4 +142,10 @@ export class InMemoryStateStore implements StateStore {
   async getQueuedMessages(stateKey: string): Promise<ActorMessage[]> {
     return [...(this.queues.get(stateKey) ?? [])];
   }
+
+  async listQueuedKeys(): Promise<string[]> {
+    return [...this.queues.entries()]
+      .filter(([, q]) => q.length > 0)
+      .map(([k]) => k);
+  }
 }

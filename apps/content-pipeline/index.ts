@@ -6,5 +6,5 @@ export default function (ctx: RunContext): TreeRunConfig {
   const tree = buildContentPipeline();
   const ticket = ctx.args[0] ?? SAMPLE_TICKET;
   tree.blackboard.set('ticket', ticket);
-  return { tree };
+  return { tree, sessionId: 'content-pipeline' };
 }

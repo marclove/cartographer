@@ -201,6 +201,18 @@ export class RedisStateStore implements StateStore {
     return entries.map((e: string) => JSON.parse(e));
   }
 
+  async listQueuedKeys(): Promise<string[]> {
+    const pattern = `${this.keyPrefix}queue:*`;
+    const keys: string[] = await this.redis.keys(pattern);
+    const prefix = `${this.keyPrefix}queue:`;
+    const results: string[] = [];
+    for (const k of keys) {
+      const len = await this.redis.llen(k);
+      if (len > 0) results.push(k.slice(prefix.length));
+    }
+    return results;
+  }
+
   async close(): Promise<void> {
     await this.redis.quit();
   }

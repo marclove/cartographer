@@ -377,6 +377,7 @@ const server = new ActorServer({
         return NodeStatus.SUCCESS;
       })
       .build(),
+  sessionId: "default",
   port: 0, // random available port
 });
 

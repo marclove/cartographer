@@ -53,7 +53,7 @@ interface BufferedEvent {
  *
  * @example
  * ```ts
- * const bridge = new EventBridge(stateStore, 'default', msg.id, (event) => {
+ * const bridge = new EventBridge(stateStore, sessionKey, msg.id, (event) => {
  *   sseStream.push(event); // forward to client in real time
  * });
  *
@@ -70,7 +70,7 @@ export class EventBridge {
   /**
    * @param stateStore - Persistence backend where events are appended.
    * @param stateKey - The state store key that identifies the session
-   *   (typically `'default'`).
+   *   (the session key from `AppOptions.sessionId`).
    * @param messageId - Optional client-supplied message ID. When omitted, a
    *   unique ID is generated automatically.
    * @param onEvent - Optional callback invoked synchronously for every event

@@ -42,7 +42,7 @@ describe('ActorServer interrupt/resume endpoints', () => {
 
   it('POST /api/interrupt while processing returns interrupted=true', async () => {
     const store = new InMemoryStateStore();
-    server = new ActorServer({ createTree: makeSlowTree, stateStore: store, port: 0 });
+    server = new ActorServer({ createTree: makeSlowTree, sessionId: 'default', stateStore: store, port: 0 });
     port = (await server.start()).port;
 
     // Start a slow message (will be processing)
@@ -76,7 +76,7 @@ describe('ActorServer interrupt/resume endpoints', () => {
   });
 
   it('POST /api/interrupt when nothing is processing returns interrupted=false', async () => {
-    server = new ActorServer({ createTree: makeFastTree, port: 0 });
+    server = new ActorServer({ createTree: makeFastTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/interrupt`, {
@@ -89,7 +89,7 @@ describe('ActorServer interrupt/resume endpoints', () => {
 
   it('POST /api/resume clears held state', async () => {
     const store = new InMemoryStateStore();
-    server = new ActorServer({ createTree: makeFastTree, stateStore: store, port: 0 });
+    server = new ActorServer({ createTree: makeFastTree, sessionId: 'default', stateStore: store, port: 0 });
     port = (await server.start()).port;
 
     // Manually set held state
@@ -115,7 +115,7 @@ describe('ActorServer interrupt/resume endpoints', () => {
   });
 
   it('POST /api/resume when not held returns resumed=false', async () => {
-    server = new ActorServer({ createTree: makeFastTree, port: 0 });
+    server = new ActorServer({ createTree: makeFastTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
 
     const res = await fetch(`http://localhost:${port}/api/resume`, {

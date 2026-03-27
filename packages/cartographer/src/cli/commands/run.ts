@@ -37,13 +37,13 @@ export async function runCommand(options: RunOptions): Promise<void> {
   const { json, verbose, quiet, port, noDashboard, dashboardPort } = options;
 
   const server = new ActorServer({
+    sessionId: config.sessionId,
     createTree: () => {
       const tree = factory(runContext).tree;
       createFormatter(tree.events, { json, verbose, quiet });
       return tree;
     },
     port: port ?? 3147,
-    autoTick: config.autoTick,
   });
 
   const { port: serverPort } = await server.start();

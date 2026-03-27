@@ -8,9 +8,7 @@ import type { ActorMessage } from '../actor/types.js';
 import type { ProcessResult } from '../actor/message-processor.js';
 import { InMemoryStateStore } from '../state/in-memory-state-store.js';
 import { InProcessEventStream } from './event-stream.js';
-import { serializeTree, serializeNodeRef, serializeEvent } from './serializers.js';
-import { serializeTree as serializeTreeState } from '../core/serialization.js';
-import { blackboardToRecord } from './blackboard-utils.js';
+import { serializeTree, serializeNodeRef } from './serializers.js';
 import { AgentNode } from '../nodes/agent.js';
 import type { BTreeNode } from '../types.js';
 import { MessageProcessor } from '../actor/message-processor.js';
@@ -40,16 +38,12 @@ export interface AppOptions {
   context?: Record<string, unknown>;
   topologyPolicy?: 'fail' | 'reset';
   maxQueueDepth?: number;
-  autoTick?: { intervalMs: number };
-  /**
-   * Extract session ID from the Hono request context.
-   * Default: reads `c.get('sessionId')`, falls back to `'default'`.
-   */
-  resolveSessionId?: (c: any) => string | Promise<string>;
+  /** Session key — static string or resolver function extracting from the Hono request context. */
+  sessionId: string | ((c: any) => string | Promise<string>);
   /**
    * How long (in ms) to keep an idle session's in-memory event stream
    * after the last SSE client disconnects. Evicts unused replay buffers
-   * to bound memory in multi-session deployments.
+   * to bound memory.
    * Default: 300_000 (5 minutes). Set to 0 to disable eviction.
    */
   streamEvictionMs?: number;
@@ -67,28 +61,22 @@ export interface AppHandle {
   topologyPolicy: 'fail' | 'reset';
   maxQueueDepth: number;
   processMessage: (msg: ActorMessage, sessionKey: string) => Promise<ProcessResult | QueuedResult | null>;
-  bridgeTree: (tree: BehaviorTree) => void;
   initializeState: () => Promise<void>;
   drainQueue: (sessionKey: string) => Promise<void>;
   closeSseClients: () => void;
-  startAutoTick: () => void;
-  stopAutoTick: () => void;
   /** Returns a Node.js HTTP request listener for mounting into Express, Fastify, or `http.createServer`. */
   nodeHandler: () => ReturnType<typeof getRequestListener>;
-  /** Initializes state and drains any queued messages. Call `startAutoTick()` separately after your server is listening. */
+  /** Initializes state and drains any queued messages. */
   start: () => Promise<void>;
-  /** Stops auto-tick and closes all SSE clients. */
+  /** Closes all SSE clients. */
   stop: () => void;
 }
 
 export function createApp(options: AppOptions): AppHandle {
-  if (options.resolveSessionId && options.autoTick) {
-    throw new Error(
-      'autoTick and resolveSessionId cannot be used together. '
-      + 'Multi-session mode is request-driven. Use external triggers '
-      + '(cron, webhooks) to tick individual sessions.'
-    );
-  }
+  const resolveSession: (c: any) => string | Promise<string> =
+    typeof options.sessionId === 'string'
+      ? () => options.sessionId as string
+      : options.sessionId;
 
   const createTreeFn = options.createTree;
   const stateStore = options.stateStore ?? new InMemoryStateStore();
@@ -190,21 +178,17 @@ export function createApp(options: AppOptions): AppHandle {
 
   // Session resolution middleware
   app.use('*', async (c, next) => {
-    // Skip session resolution for session-independent endpoints
     const path = c.req.path;
     if (path === '/_platform/health' || path === '/api/status' || path === '/api/tree' || path.startsWith('/api/nodes/')) {
       return next();
     }
 
-    const sessionId = options.resolveSessionId
-      ? await options.resolveSessionId(c)
-      : ((c as any).get('sessionId') as string | undefined) ?? 'default';
-
-    if (!sessionId) {
+    const sid = await resolveSession(c);
+    if (!sid) {
       return c.json({ error: 'Unauthorized: session ID required', status: 401 }, 401);
     }
 
-    (c as any).set('sessionId', sessionId);
+    (c as any).set('sessionId', sid);
     await next();
   });
 
@@ -409,26 +393,6 @@ export function createApp(options: AppOptions): AppHandle {
   // Lifecycle
   async function initializeState() {
     stats.startedAt = Date.now();
-    // Only eagerly initialize state in single-session mode
-    if (options.resolveSessionId) return;
-
-    const existing = await stateStore.getState('default');
-    if (!existing) {
-      const tree = createTreeFn();
-      _readTree = tree;
-      for (const [key, value] of Object.entries(context)) {
-        tree.blackboard.set(`context:${key}`, value);
-      }
-      const bb = blackboardToRecord(tree.blackboard);
-      const treeState = serializeTreeState(tree.root, tree.rootHash);
-      await stateStore.saveState('default', {
-        blackboard: bb,
-        treeState,
-        treeStructure: serializeTree(tree.root),
-        createdAt: Date.now(),
-        lastMessageAt: Date.now(),
-      });
-    }
   }
 
   // Message processing core
@@ -512,17 +476,6 @@ export function createApp(options: AppOptions): AppHandle {
     executeMessage(msg, sessionKey, requestId, bridge).catch(() => {});
   }
 
-  function bridgeTree(tree: BehaviorTree): void {
-    if (options.resolveSessionId) {
-      throw new Error('bridgeTree() is not supported in multi-session mode');
-    }
-    tree.events.onAny((type, data) => {
-      const serialized = serializeEvent(type as any, data as any);
-      trackEvent({ type, data: serialized });
-      const stream = getOrCreateStream('default');
-      stream.push(type, serialized);
-    });
-  }
   function closeSseClients(): void {
     for (const [, clients] of sessionSseClients) {
       for (const client of clients) {
@@ -537,53 +490,23 @@ export function createApp(options: AppOptions): AppHandle {
     streamEvictionTimers.clear();
   }
 
-  let autoTickTimer: ReturnType<typeof setInterval> | null = null;
-  let autoTickInFlight = false;
-
-  function startAutoTick(): void {
-    if (!options.autoTick || autoTickTimer) return;
-    autoTickTimer = setInterval(async () => {
-      if (autoTickInFlight) return;
-      autoTickInFlight = true;
-      try {
-        await processMessage({ type: 'tick' }, 'default');
-      } catch {
-        // Swallow transient errors (e.g. StateStore connection loss) so the
-        // server stays alive and retries on the next interval.
-      } finally {
-        autoTickInFlight = false;
-      }
-    }, options.autoTick.intervalMs);
-  }
-
-  function stopAutoTick(): void {
-    if (autoTickTimer) {
-      clearInterval(autoTickTimer);
-      autoTickTimer = null;
-    }
-  }
-
   function nodeHandler() {
     return getRequestListener(app.fetch);
   }
 
   async function start(): Promise<void> {
     await initializeState();
-    if (options.resolveSessionId) {
-      // Multi-session: drain queued messages for all known sessions
-      const keys = await stateStore.listKeys();
-      for (const key of keys) {
-        drainQueue(key).catch(() => {});
-      }
-    } else {
-      drainQueue('default').catch(() => {});
+    const stateKeys = await stateStore.listKeys();
+    const queuedKeys = await stateStore.listQueuedKeys();
+    const allKeys = [...new Set([...stateKeys, ...queuedKeys])];
+    for (const key of allKeys) {
+      drainQueue(key).catch(() => {});
     }
   }
 
   function stop(): void {
-    stopAutoTick();
     closeSseClients();
   }
 
-  return { app, stateStore, topologyPolicy, maxQueueDepth, processMessage, bridgeTree, initializeState, drainQueue, closeSseClients, startAutoTick, stopAutoTick, nodeHandler, start, stop };
+  return { app, stateStore, topologyPolicy, maxQueueDepth, processMessage, initializeState, drainQueue, closeSseClients, nodeHandler, start, stop };
 }

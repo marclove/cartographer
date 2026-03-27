@@ -29,7 +29,7 @@ describe('createApp — read-only routes', () => {
   let handle: AppHandle;
 
   beforeEach(async () => {
-    handle = createApp({ createTree: makeTree });
+    handle = createApp({ createTree: makeTree, sessionId: 'default' });
     await handle.initializeState();
   });
 
@@ -75,12 +75,14 @@ describe('createApp — read-only routes', () => {
       expect(typeof body).toBe('object');
     });
 
-    it('includes context values in initial blackboard', async () => {
+    it('includes context values in blackboard after first message', async () => {
       const h = createApp({
         createTree: makeTree,
+        sessionId: 'default',
         context: { tenant: 'acme' },
       });
       await h.initializeState();
+      await h.processMessage({ type: 'tick' }, 'default');
       const res = await h.app.request('/api/blackboard');
       const body = await res.json();
       expect(body['context:tenant']).toBe('acme');
@@ -89,7 +91,7 @@ describe('createApp — read-only routes', () => {
 
   describe('GET /api/nodes/:id', () => {
     it('returns node detail for a valid ID', async () => {
-      const h = createApp({ createTree: makeTreeWithChildren });
+      const h = createApp({ createTree: makeTreeWithChildren, sessionId: 'default' });
       await h.initializeState();
 
       // Get tree to find a node ID
@@ -122,6 +124,7 @@ describe('createApp — read-only routes', () => {
       const h = createApp({
         createTree: () => { throw new Error('boom'); },
         stateStore: new InMemoryStateStore(),
+        sessionId: 'default',
       });
       // The routes that need readTree should return 500
       const res = await h.app.request('/api/tree');
@@ -196,7 +199,7 @@ describe('createApp — SSE streaming', () => {
   let port: number;
 
   beforeEach(async () => {
-    handle = createApp({ createTree: makeTree });
+    handle = createApp({ createTree: makeTree, sessionId: 'default' });
     await handle.initializeState();
     await new Promise<void>((resolve) => {
       server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
@@ -230,7 +233,7 @@ describe('createApp — message processing', () => {
   let handle: AppHandle;
 
   beforeEach(async () => {
-    handle = createApp({ createTree: makeTree });
+    handle = createApp({ createTree: makeTree, sessionId: 'default' });
     await handle.initializeState();
   });
 
@@ -251,6 +254,7 @@ describe('createApp — message processing', () => {
           });
           return new BehaviorTree({ name: 'slow', root: action });
         },
+        sessionId: 'default',
       });
       await slowHandle.initializeState();
 
@@ -274,6 +278,7 @@ describe('createApp — message processing', () => {
           return new BehaviorTree({ name: 'slow', root: action });
         },
         maxQueueDepth: 1,
+        sessionId: 'default',
       });
       await slowHandle.initializeState();
 
@@ -427,7 +432,7 @@ describe('createApp — message processing', () => {
   });
 });
 
-// ---------- Interrupt, resume, bridgeTree tests ----------
+// ---------- Interrupt and resume tests ----------
 
 function makeSlowTree(): BehaviorTree {
   return new BehaviorTree({
@@ -444,7 +449,7 @@ function makeSlowTree(): BehaviorTree {
 describe('createApp — interrupt and resume', () => {
   describe('POST /api/interrupt', () => {
     it('returns interrupted: false when no message is active', async () => {
-      const handle = createApp({ createTree: makeTree });
+      const handle = createApp({ createTree: makeTree, sessionId: 'default' });
       await handle.initializeState();
       let server!: Server;
       let port!: number;
@@ -466,7 +471,7 @@ describe('createApp — interrupt and resume', () => {
 
     it('returns interrupted: true with messageId while processing', async () => {
       const store = new InMemoryStateStore();
-      const handle = createApp({ createTree: makeSlowTree, stateStore: store });
+      const handle = createApp({ createTree: makeSlowTree, stateStore: store, sessionId: 'default' });
       await handle.initializeState();
       let server!: Server;
       let port!: number;
@@ -508,7 +513,7 @@ describe('createApp — interrupt and resume', () => {
 
   describe('POST /api/resume', () => {
     it('returns resumed: false when not held', async () => {
-      const handle = createApp({ createTree: makeTree });
+      const handle = createApp({ createTree: makeTree, sessionId: 'default' });
       await handle.initializeState();
       let server!: Server;
       let port!: number;
@@ -530,7 +535,7 @@ describe('createApp — interrupt and resume', () => {
 
     it('clears held state and returns resumed: true', async () => {
       const store = new InMemoryStateStore();
-      const handle = createApp({ createTree: makeTree, stateStore: store });
+      const handle = createApp({ createTree: makeTree, stateStore: store, sessionId: 'default' });
       await handle.initializeState();
 
       // Manually set held state on the store
@@ -561,167 +566,10 @@ describe('createApp — interrupt and resume', () => {
   });
 });
 
-describe('createApp — bridgeTree', () => {
-  it('forwards tree events to SSE clients', async () => {
-    const handle = createApp({ createTree: makeTree });
-    await handle.initializeState();
-
-    const tree = makeTree();
-    handle.bridgeTree(tree);
-
-    let server!: Server;
-    let port!: number;
-    await new Promise<void>((resolve) => {
-      server = serve({ fetch: handle.app.fetch, port: 0 }, (info) => {
-        port = info.port;
-        resolve();
-      });
-    });
-
-    const res = await fetch(`http://localhost:${port}/events`);
-    await tree.tick();
-
-    const events = await readSseEvents(res, 3, 2000);
-    expect(events[0].event).toBe('snapshot');
-    expect(events.length).toBeGreaterThan(1);
-
-    handle.closeSseClients();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-  });
-});
-
-// ---------- Auto-tick tests ----------
-
-describe('createApp — autoTick', () => {
-  beforeEach(() => { vi.useFakeTimers(); });
-  afterEach(() => { vi.useRealTimers(); });
-
-  it('sends tick messages at the configured interval', async () => {
-    let tickCount = 0;
-    const handle = createApp({
-      createTree: () => {
-        const action = new ActionNode({
-          name: 'counter',
-          action: async () => { tickCount++; return NodeStatus.SUCCESS; },
-        });
-        return new BehaviorTree({ name: 'auto', root: action });
-      },
-      autoTick: { intervalMs: 100 },
-    });
-    await handle.initializeState();
-    handle.startAutoTick();
-
-    await vi.advanceTimersByTimeAsync(250);
-
-    handle.stopAutoTick();
-    expect(tickCount).toBe(2);
-  });
-
-  it('skips tick when previous is still in flight', async () => {
-    let tickCount = 0;
-    let resolvers: Array<() => void> = [];
-    const handle = createApp({
-      createTree: () => {
-        const action = new ActionNode({
-          name: 'slow',
-          action: () => new Promise<NodeStatus>((resolve) => {
-            tickCount++;
-            resolvers.push(() => resolve(NodeStatus.SUCCESS));
-          }),
-        });
-        return new BehaviorTree({ name: 'auto', root: action });
-      },
-      autoTick: { intervalMs: 50 },
-    });
-    await handle.initializeState();
-    handle.startAutoTick();
-
-    // First interval fires, starts a tick
-    await vi.advanceTimersByTimeAsync(50);
-    expect(tickCount).toBe(1);
-
-    // Second interval fires while first is still in flight — should skip
-    await vi.advanceTimersByTimeAsync(50);
-    expect(tickCount).toBe(1);
-
-    // Resolve the first tick
-    resolvers[0]();
-    await vi.advanceTimersByTimeAsync(0);
-
-    // Third interval fires, should start a new tick
-    await vi.advanceTimersByTimeAsync(50);
-    expect(tickCount).toBe(2);
-
-    resolvers[1]();
-    handle.stopAutoTick();
-  });
-
-  it('does nothing when autoTick option is not set', async () => {
-    const handle = createApp({ createTree: makeTree });
-    await handle.initializeState();
-    // Should be a no-op, not throw
-    handle.startAutoTick();
-    handle.stopAutoTick();
-  });
-
-  it('survives processMessage rejection and keeps ticking', async () => {
-    let tickCount = 0;
-    const handle = createApp({
-      createTree: () => {
-        const action = new ActionNode({
-          name: 'flaky',
-          action: async () => {
-            tickCount++;
-            if (tickCount === 1) throw new Error('boom');
-            return NodeStatus.SUCCESS;
-          },
-        });
-        return new BehaviorTree({ name: 'auto', root: action });
-      },
-      autoTick: { intervalMs: 100 },
-    });
-    await handle.initializeState();
-    handle.startAutoTick();
-
-    // First tick fires and the action throws — auto-tick should swallow it
-    await vi.advanceTimersByTimeAsync(100);
-    expect(tickCount).toBe(1);
-
-    // Second tick should still fire
-    await vi.advanceTimersByTimeAsync(100);
-    expect(tickCount).toBe(2);
-
-    handle.stopAutoTick();
-  });
-
-  it('stops cleanly via stopAutoTick', async () => {
-    let tickCount = 0;
-    const handle = createApp({
-      createTree: () => {
-        const action = new ActionNode({
-          name: 'counter',
-          action: async () => { tickCount++; return NodeStatus.SUCCESS; },
-        });
-        return new BehaviorTree({ name: 'auto', root: action });
-      },
-      autoTick: { intervalMs: 100 },
-    });
-    await handle.initializeState();
-    handle.startAutoTick();
-
-    await vi.advanceTimersByTimeAsync(100);
-    expect(tickCount).toBe(1);
-
-    handle.stopAutoTick();
-
-    await vi.advanceTimersByTimeAsync(300);
-    expect(tickCount).toBe(1);
-  });
-});
 
 describe('createApp — lifecycle helpers', () => {
   it('nodeHandler() returns a working Node HTTP request listener', async () => {
-    const handle = createApp({ createTree: makeTree });
+    const handle = createApp({ createTree: makeTree, sessionId: 'default' });
     await handle.initializeState();
 
     const handler = handle.nodeHandler();
@@ -744,77 +592,33 @@ describe('createApp — lifecycle helpers', () => {
     }
   });
 
-  it('start() initializes state but does not start auto-tick', async () => {
-    vi.useFakeTimers();
-    let tickCount = 0;
-    const store = new InMemoryStateStore();
-    const handle = createApp({
-      createTree: () => {
-        const action = new ActionNode({
-          name: 'counter',
-          action: async () => { tickCount++; return NodeStatus.SUCCESS; },
-        });
-        return new BehaviorTree({ name: 'lifecycle', root: action });
-      },
-      stateStore: store,
-      autoTick: { intervalMs: 50 },
-    });
-
+  it('start() initializes and drains without error', async () => {
+    const handle = createApp({ createTree: makeTree, sessionId: 'default' });
     await handle.start();
-
-    const state = await store.getState('default');
-    expect(state).not.toBeNull();
-
-    // auto-tick should NOT be running — caller starts it after server bind
-    await vi.advanceTimersByTimeAsync(100);
-    expect(tickCount).toBe(0);
-
-    vi.useRealTimers();
+    // No error — start() called initializeState() and drained the queue
   });
 
-  it('stop() halts auto-tick and closes SSE clients', async () => {
-    vi.useFakeTimers();
-    let tickCount = 0;
-    const handle = createApp({
-      createTree: () => {
-        const action = new ActionNode({
-          name: 'counter',
-          action: async () => { tickCount++; return NodeStatus.SUCCESS; },
-        });
-        return new BehaviorTree({ name: 'lifecycle', root: action });
-      },
-      autoTick: { intervalMs: 50 },
-    });
-
+  it('stop() closes SSE clients', async () => {
+    const handle = createApp({ createTree: makeTree, sessionId: 'default' });
     await handle.start();
-    handle.startAutoTick();
-    await vi.advanceTimersByTimeAsync(100);
-    const countBeforeStop = tickCount;
-    expect(countBeforeStop).toBeGreaterThanOrEqual(1);
-
     handle.stop();
-
-    await vi.advanceTimersByTimeAsync(200);
-    expect(tickCount).toBe(countBeforeStop);
-
-    vi.useRealTimers();
+    // No error — stop() called closeSseClients()
   });
 });
 
 describe('createApp — session resolution', () => {
-  it('resolveSessionId sets session on context for downstream routes', async () => {
+  it('sessionId resolver sets session on context for downstream routes', async () => {
     const handle = createApp({
       createTree: makeTree,
-      resolveSessionId: () => 'user-42',
+      sessionId: () => 'user-42',
     });
-    // Don't call initializeState — multi-session mode skips eager init
     // Blackboard for 'user-42' should be empty since no state exists
     const res = await handle.app.request('/api/blackboard');
     expect(res.status).toBe(200);
   });
 
   it('falls back to default when no resolver is provided', async () => {
-    const handle = createApp({ createTree: makeTree });
+    const handle = createApp({ createTree: makeTree, sessionId: 'default' });
     await handle.initializeState();
 
     const res = await handle.app.request('/api/blackboard');
@@ -826,7 +630,7 @@ describe('createApp — session resolution', () => {
   it('returns 401 when resolver returns empty string', async () => {
     const handle = createApp({
       createTree: makeTree,
-      resolveSessionId: () => '',
+      sessionId: () => '',
     });
 
     const res = await handle.app.request('/api/blackboard');
@@ -836,17 +640,17 @@ describe('createApp — session resolution', () => {
   it('returns 401 when resolver returns null', async () => {
     const handle = createApp({
       createTree: makeTree,
-      resolveSessionId: () => null as unknown as string,
+      sessionId: () => null as unknown as string,
     });
 
     const res = await handle.app.request('/api/blackboard');
     expect(res.status).toBe(401);
   });
 
-  it('supports async resolveSessionId', async () => {
+  it('supports async sessionId resolver', async () => {
     const handle = createApp({
       createTree: makeTree,
-      resolveSessionId: async () => 'async-user',
+      sessionId: async () => 'async-user',
     });
 
     const res = await handle.app.request('/api/blackboard');
@@ -856,35 +660,11 @@ describe('createApp — session resolution', () => {
   it('health endpoint skips session resolution', async () => {
     const handle = createApp({
       createTree: makeTree,
-      resolveSessionId: () => '',  // would 401 on session-scoped routes
+      sessionId: () => '',  // would 401 on session-scoped routes
     });
 
     const res = await handle.app.request('/_platform/health');
     expect(res.status).toBe(200);
-  });
-});
-
-describe('createApp — auto-tick mutual exclusion', () => {
-  it('throws when both resolveSessionId and autoTick are configured', () => {
-    expect(() => createApp({
-      createTree: makeTree,
-      resolveSessionId: () => 'user-1',
-      autoTick: { intervalMs: 100 },
-    })).toThrow(/autoTick.*resolveSessionId/);
-  });
-
-  it('allows autoTick without resolveSessionId', () => {
-    expect(() => createApp({
-      createTree: makeTree,
-      autoTick: { intervalMs: 100 },
-    })).not.toThrow();
-  });
-
-  it('allows resolveSessionId without autoTick', () => {
-    expect(() => createApp({
-      createTree: makeTree,
-      resolveSessionId: () => 'user-1',
-    })).not.toThrow();
   });
 });
 
@@ -894,7 +674,7 @@ describe('createApp — per-session interrupt', () => {
     const handle = createApp({
       createTree: makeSlowTree,
       stateStore: store,
-      resolveSessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
+      sessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
     });
 
     let server!: ReturnType<typeof serve>;
@@ -959,7 +739,7 @@ describe('createApp — multi-session integration', () => {
     const handle = createApp({
       createTree: makeCounterTree,
       stateStore: store,
-      resolveSessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
+      sessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
     });
 
     let server!: ReturnType<typeof serve>;
@@ -1013,7 +793,7 @@ describe('createApp — multi-session integration', () => {
       }),
       stateStore: store,
       context: { tenant: 'acme', env: 'staging' },
-      resolveSessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
+      sessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
     });
 
     let server!: ReturnType<typeof serve>;
@@ -1049,7 +829,7 @@ describe('createApp — multi-session integration', () => {
     const handle = createApp({
       createTree: makeTree,
       stateStore: store,
-      resolveSessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
+      sessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
     });
 
     let server!: ReturnType<typeof serve>;
@@ -1089,27 +869,29 @@ describe('createApp — multi-session integration', () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  it('single-session mode works identically to previous behavior', async () => {
+  it('default session initializes lazily with context on first message', async () => {
     const store = new InMemoryStateStore();
     const handle = createApp({
       createTree: makeTree,
       stateStore: store,
+      sessionId: 'default',
       context: { mode: 'single' },
     });
     await handle.initializeState();
 
-    // Verify eager initialization
-    const state = await store.getState('default');
-    expect(state).not.toBeNull();
-    expect(state!.blackboard['context:mode']).toBe('single');
+    // No eager init — state is null until first message
+    expect(await store.getState('default')).toBeNull();
 
-    // processMessage still works with 'default'
     const result = await handle.processMessage({ type: 'tick' }, 'default');
     expect(result).toBeDefined();
     expect((result as any).treeStatus).toBeDefined();
+
+    const state = await store.getState('default');
+    expect(state).not.toBeNull();
+    expect(state!.blackboard['context:mode']).toBe('single');
   });
 
-  it('start() drains queued messages for all sessions in multi-session mode', async () => {
+  it('start() drains queued messages for all sessions', async () => {
     const store = new InMemoryStateStore();
 
     // Simulate queued messages left from a previous server instance
@@ -1133,7 +915,7 @@ describe('createApp — multi-session integration', () => {
     const handle = createApp({
       createTree: makeTree,
       stateStore: store,
-      resolveSessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
+      sessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
     });
 
     await handle.start();
@@ -1143,6 +925,29 @@ describe('createApp — multi-session integration', () => {
     // Both queues should be drained
     expect(await store.getQueueSize('session-x')).toBe(0);
     expect(await store.getQueueSize('session-y')).toBe(0);
+  });
+
+  it('start() drains queued messages for sessions with no persisted state', async () => {
+    const store = new InMemoryStateStore();
+
+    // Simulate: messages were queued for a new session, but the server
+    // crashed before the first message's saveState completed.
+    // The queue exists but listKeys() won't return this session.
+    await store.enqueueMessage('brand-new', { type: 'tick' }, 16);
+
+    expect(await store.listKeys()).toEqual([]);
+    expect(await store.getQueueSize('brand-new')).toBe(1);
+
+    const handle = createApp({
+      createTree: makeTree,
+      stateStore: store,
+      sessionId: (c: any) => c.req.header('x-session-id') ?? 'default',
+    });
+
+    await handle.start();
+    await new Promise(r => setTimeout(r, 100));
+
+    expect(await store.getQueueSize('brand-new')).toBe(0);
   });
 });
 
@@ -1155,6 +960,7 @@ describe('createApp — stream eviction', () => {
     const handle = createApp({
       createTree: makeTree,
       stateStore: store,
+      sessionId: 'default',
       streamEvictionMs: 1000,
     });
     await handle.initializeState();
@@ -1200,6 +1006,7 @@ describe('createApp — stream eviction', () => {
     const handle = createApp({
       createTree: makeTree,
       stateStore: store,
+      sessionId: 'default',
       streamEvictionMs: 1000,
     });
     await handle.initializeState();
@@ -1229,6 +1036,7 @@ describe('createApp — stream eviction', () => {
   it('defaults to 5-minute eviction when streamEvictionMs is not set', async () => {
     const handle = createApp({
       createTree: makeTree,
+      sessionId: 'default',
     });
     await handle.initializeState();
 
@@ -1252,6 +1060,7 @@ describe('createApp — stream eviction', () => {
   it('disables eviction when streamEvictionMs is 0', async () => {
     const handle = createApp({
       createTree: makeTree,
+      sessionId: 'default',
       streamEvictionMs: 0,
     });
     await handle.initializeState();

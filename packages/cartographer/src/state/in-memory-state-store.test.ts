@@ -234,5 +234,25 @@ describe('InMemoryStateStore', () => {
       expect(await store.getQueueSize('default')).toBe(0);
       expect(await store.dequeueMessage('default')).toBeNull();
     });
+
+    it('listQueuedKeys returns keys with non-empty queues', async () => {
+      const store = new InMemoryStateStore();
+      await store.enqueueMessage('a', { type: 'tick' }, 10);
+      await store.enqueueMessage('b', { type: 'tick' }, 10);
+
+      const keys = await store.listQueuedKeys();
+      expect(keys).toEqual(expect.arrayContaining(['a', 'b']));
+      expect(keys).toHaveLength(2);
+    });
+
+    it('listQueuedKeys excludes empty queues', async () => {
+      const store = new InMemoryStateStore();
+      await store.enqueueMessage('full', { type: 'tick' }, 10);
+      await store.enqueueMessage('drained', { type: 'tick' }, 10);
+      await store.dequeueMessage('drained');
+
+      const keys = await store.listQueuedKeys();
+      expect(keys).toEqual(['full']);
+    });
   });
 });

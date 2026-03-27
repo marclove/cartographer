@@ -34,7 +34,7 @@ describe('CartographerClient', () => {
   });
 
   it('command() sends POST and returns message ID', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
     const client = createCartographerClient(`http://localhost:${port}`);
 
@@ -43,7 +43,7 @@ describe('CartographerClient', () => {
   });
 
   it('blackboard() returns current state', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
     const client = createCartographerClient(`http://localhost:${port}`);
 
@@ -52,7 +52,7 @@ describe('CartographerClient', () => {
   });
 
   it('status() returns tree metadata', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
     const client = createCartographerClient(`http://localhost:${port}`);
 
@@ -68,7 +68,7 @@ describe('CartographerClient', () => {
   });
 
   it('write(key, value) writes to blackboard and is visible in subsequent read', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
     const client = createCartographerClient(`http://localhost:${port}`);
 
@@ -83,7 +83,7 @@ describe('CartographerClient', () => {
   });
 
   it('send(msg) POSTs to /api/messages and returns { id }', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
     const client = createCartographerClient(`http://localhost:${port}`);
 
@@ -93,7 +93,7 @@ describe('CartographerClient', () => {
   });
 
   it('tree() returns tree data with name and root', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
     const client = createCartographerClient(`http://localhost:${port}`);
 
@@ -103,7 +103,7 @@ describe('CartographerClient', () => {
   });
 
   it('send() throws on 400 for invalid payload', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     port = (await server.start()).port;
     const client = createCartographerClient(`http://localhost:${port}`);
 
@@ -112,7 +112,7 @@ describe('CartographerClient', () => {
   });
 
   it('command() throws QueueFullError when server queue is full', async () => {
-    server = new ActorServer({ createTree: makeSlowTree, port: 0, maxQueueDepth: 0 });
+    server = new ActorServer({ createTree: makeSlowTree, sessionId: 'default', port: 0, maxQueueDepth: 0 });
     port = (await server.start()).port;
     const client = createCartographerClient(`http://localhost:${port}`);
 
@@ -157,7 +157,7 @@ describe('CartographerClient event listeners', () => {
   });
 
   it('on()/off()/onAny() work through SSE when EventSource is available', async () => {
-    const server = new ActorServer({ createTree: makeTree, port: 0 });
+    const server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     const { port } = await server.start();
     const client = createCartographerClient(`http://localhost:${port}`);
 
@@ -301,7 +301,7 @@ describe('CartographerClient commandAndWait', () => {
   });
 
   it('commandAndWait() resolves with messageId and treeStatus on success', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     const { port } = await server.start();
     const client = createCartographerClient(`http://localhost:${port}`);
 
@@ -330,7 +330,7 @@ describe('CartographerClient commandAndWait', () => {
     });
 
     // First: process a message to save state with tree1's topology
-    server = new ActorServer({ createTree: tree1, stateStore: store, port: 0 });
+    server = new ActorServer({ createTree: tree1, sessionId: 'default', stateStore: store, port: 0 });
     let { port } = await server.start();
     const client1 = createCartographerClient(`http://localhost:${port}`);
     await client1.command('seed');
@@ -338,7 +338,7 @@ describe('CartographerClient commandAndWait', () => {
     await server.stop();
 
     // Second: start server with tree2 (different topology) + fail policy
-    server = new ActorServer({ createTree: tree2, stateStore: store, topologyPolicy: 'fail', port: 0 });
+    server = new ActorServer({ createTree: tree2, sessionId: 'default', stateStore: store, topologyPolicy: 'fail', port: 0 });
     ({ port } = await server.start());
     const client2 = createCartographerClient(`http://localhost:${port}`);
 
@@ -351,7 +351,7 @@ describe('CartographerClient commandAndWait', () => {
   });
 
   it('commandAndWait() cleans up listeners after resolving', async () => {
-    server = new ActorServer({ createTree: makeTree, port: 0 });
+    server = new ActorServer({ createTree: makeTree, sessionId: 'default', port: 0 });
     const { port } = await server.start();
     const client = createCartographerClient(`http://localhost:${port}`);
 
@@ -389,7 +389,7 @@ describe('message queue', () => {
   }
 
   it('messages are queued when server is busy and processed in FIFO order', async () => {
-    server = new ActorServer({ createTree: () => makeDelayTree(200), port: 0 });
+    server = new ActorServer({ createTree: () => makeDelayTree(200), sessionId: 'default', port: 0 });
     const { port } = await server.start();
     const client = createCartographerClient(`http://localhost:${port}`);
 
@@ -436,7 +436,7 @@ describe('message queue', () => {
   });
 
   it('commandAndWait works correctly with queued messages', async () => {
-    server = new ActorServer({ createTree: () => makeDelayTree(200), port: 0 });
+    server = new ActorServer({ createTree: () => makeDelayTree(200), sessionId: 'default', port: 0 });
     const { port } = await server.start();
     const client = createCartographerClient(`http://localhost:${port}`);
 
@@ -460,7 +460,7 @@ describe('message queue', () => {
   it('queue full returns QueueFullError from client', async () => {
     // Use the never-resolving tree so the lock is held permanently,
     // and maxQueueDepth: 1 so only one message can queue
-    server = new ActorServer({ createTree: makeSlowTree, port: 0, maxQueueDepth: 1 });
+    server = new ActorServer({ createTree: makeSlowTree, sessionId: 'default', port: 0, maxQueueDepth: 1 });
     const { port } = await server.start();
     const client = createCartographerClient(`http://localhost:${port}`);
 

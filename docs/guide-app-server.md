@@ -63,6 +63,7 @@ const server = new ActorServer({
         ],
       }),
     }),
+  sessionId: "default",
   port: 3148,
 });
 
@@ -203,12 +204,12 @@ const result = await processPromise;
 ```typescript
 const server = new ActorServer({
   createTree: () => myTreeFactory(), // Required: tree factory
+  sessionId: "default", // Required: static key or resolver function
   stateStore: new InMemoryStateStore(), // Optional (default: InMemoryStateStore)
   port: 3148, // Optional (default: PORT env var or 3148)
   context: { tenantId: "abc" }, // Optional: written to blackboard as context:*
   topologyPolicy: "fail", // Optional: 'fail' or 'reset' on tree shape change
   maxQueueDepth: 16, // Optional: max queued messages (default: CARTOGRAPHER_MAX_QUEUE_DEPTH env or 16)
-  autoTick: { intervalMs: 5000 }, // Optional: auto-tick interval
 });
 
 const { port } = await server.start();
@@ -218,9 +219,7 @@ console.log(`Listening on port ${port}`);
 await server.stop();
 ```
 
-The `context` option injects key-value pairs into the blackboard on initialization, prefixed with `context:`. Use it to pass deployment metadata like tenant IDs.
-
-`ActorServer` currently manages a single session with the hardcoded state key `'default'`. All state, locks, and events are stored under this key. Multi-session support is not yet available at the server level, though `MessageProcessor` accepts any `stateKey`.
+The `context` option injects key-value pairs into the blackboard, prefixed with `context:`. Context is applied lazily when a session processes its first message. Use it to pass deployment metadata like tenant IDs or user preferences.
 
 ### Endpoints
 
@@ -317,6 +316,63 @@ source.addEventListener("message:interrupted", (e) => {
 });
 ```
 
+### Session Resolution
+
+The `sessionId` option (required) determines which session key is used for each request. It accepts either a static string or a resolver function.
+
+For a single-user application, pass a static string:
+
+```typescript
+const server = new ActorServer({
+  createTree: () => myTreeFactory(),
+  sessionId: "default",
+});
+```
+
+For per-user sessions, pass a resolver function that extracts the session key from the Hono request context. Cartographer is auth-agnostic — it provides the integration surface for connecting session identity to your existing auth system.
+
+```typescript
+const server = new ActorServer({
+  createTree: () => myTreeFactory(),
+  stateStore: new RedisStateStore({ redis }),
+  sessionId: async (c) => {
+    const session = c.get("session");
+    if (!session?.userId) return ""; // returning falsy triggers a 401
+    return `user:${session.userId}`;
+  },
+});
+```
+
+The resolver runs as middleware on every request (except health and tree-structure endpoints, which are session-independent). It can be synchronous or async. Returning a falsy value results in a `401 Unauthorized` response.
+
+The same tree factory is used for all sessions (uniform topology). Per-user customization is handled through the `context` option, which writes key-value pairs as `context:{key}` on the blackboard when a session processes its first message:
+
+```typescript
+const server = new ActorServer({
+  createTree: () => myTreeFactory(),
+  stateStore: new RedisStateStore({ redis }),
+  sessionId: async (c) => c.get("session")?.userId,
+  context: { plan: "enterprise" },
+});
+// Each session's blackboard starts with context:plan = 'enterprise'
+// The tree can read it: ctx.blackboard.get('context:plan')
+```
+
+#### Stream Eviction
+
+The server maintains an in-memory event replay buffer per session for SSE reconnection support. The `streamEvictionMs` option controls how long an idle session's buffer is kept in memory after the last SSE client disconnects. Defaults to 5 minutes (`300_000`ms). Set to `0` to disable eviction entirely.
+
+```typescript
+const server = new ActorServer({
+  createTree: () => myTreeFactory(),
+  stateStore: new RedisStateStore({ redis }),
+  sessionId: async (c) => c.get("session")?.userId,
+  streamEvictionMs: 600_000, // 10 minutes
+});
+```
+
+Activity resets the eviction timer — if a new SSE client connects or a message is processed for the session before the timer fires, the buffer is preserved. Eviction only removes the in-memory replay buffer; persisted state in the `StateStore` is unaffected.
+
 ---
 
 ## Hono App Factory
@@ -333,6 +389,7 @@ import { Hono } from "hono";
 
 const handle = createApp({
   createTree: () => myTreeFactory(),
+  sessionId: "default",
   stateStore: myStore,
 });
 
@@ -341,9 +398,10 @@ const root = new Hono();
 root.route("/cartographer", handle.app);
 
 // Initialize and start processing
-await handle.initializeState();
-handle.drainQueue().catch(() => {});
+await handle.start();
 ```
+
+`handle.start()` initializes the server and drains queued messages for all known sessions. For fine-grained control, `drainQueue(sessionKey)` accepts the session key to drain.
 
 ### Mounting into Express or Fastify
 
@@ -357,17 +415,15 @@ import { createApp } from "cartographer";
 
 const handle = createApp({
   createTree: () => myTreeFactory(),
+  sessionId: "default",
   stateStore: myStore,
-  autoTick: { intervalMs: 5000 },
 });
 
 const app = express();
 app.use("/cartographer", handle.nodeHandler());
 
 await handle.start();
-const server = app.listen(3000, () => {
-  handle.startAutoTick();
-});
+const server = app.listen(3000);
 
 process.on("SIGTERM", () => {
   handle.stop();
@@ -384,6 +440,7 @@ import { createApp } from "cartographer";
 
 const handle = createApp({
   createTree: () => myTreeFactory(),
+  sessionId: "default",
   stateStore: myStore,
 });
 
@@ -393,7 +450,6 @@ fastify.use("/cartographer", handle.nodeHandler());
 
 await handle.start();
 await fastify.listen({ port: 3000 });
-handle.startAutoTick();
 
 fastify.addHook("onClose", () => {
   handle.stop();
@@ -402,7 +458,7 @@ fastify.addHook("onClose", () => {
 
 **SSE streaming note:** The `/events` endpoint uses Server-Sent Events via `ReadableStream`. Response compression middleware (Express `compression()`, Fastify `@fastify/compress`) will buffer the stream and prevent real-time delivery. Either exclude the Cartographer mount path from compression or filter out `text/event-stream` responses. The same applies to reverse proxies — set `proxy_buffering off` for the events path.
 
-`start()` calls `initializeState()` and `drainQueue()`. `startAutoTick()` is called separately after the server is listening. `stop()` calls `stopAutoTick()` and `closeSseClients()`. The individual methods remain available on `AppHandle` for fine-grained control.
+`start()` calls `initializeState()` and drains queued messages. `stop()` calls `closeSseClients()`. The individual methods remain available on `AppHandle` for fine-grained control.
 
 ---
 
@@ -436,6 +492,7 @@ const store = new RedisStateStore({
 
 const server = new ActorServer({
   createTree: () => myTreeFactory(),
+  sessionId: "default",
   stateStore: store,
 });
 ```
@@ -475,6 +532,24 @@ import { createCartographerClient } from "cartographer";
 
 const client = createCartographerClient("http://localhost:3148");
 ```
+
+### Cross-Origin Credentials
+
+When the client and server are on different origins (common when auth cookies need to be forwarded), pass the `credentials` option:
+
+```typescript
+const client = createCartographerClient("https://api.example.com", {
+  credentials: "include", // Send cookies cross-origin
+});
+```
+
+| Value | Behavior |
+| --- | --- |
+| `'same-origin'` | Send cookies only for same-origin requests (default) |
+| `'include'` | Always send cookies, even cross-origin |
+| `'omit'` | Never send cookies |
+
+The `credentials` setting applies to all `fetch()` calls (POST and GET) and sets `withCredentials` on the `EventSource` SSE connection.
 
 ### Sending Messages
 

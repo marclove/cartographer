@@ -356,10 +356,10 @@ function createTree() {
   return tree;
 }
 
-// Run as a persistent service with auto-ticking every 30 seconds
+// Run as a persistent service
 const server = new ActorServer({
   createTree,
-  autoTick: { intervalMs: 30_000 },
+  sessionId: "default",
 });
 
 await server.start();
@@ -370,6 +370,6 @@ await server.start();
 ## Next Steps
 
 - [Decorators](guide-decorators.md) — Full reference for Retry, Timeout, and other decorators.
-- [Application Server](guide-app-server.md) — Persistent services with auto-tick, HTTP API, and SSE events.
+- [Application Server](guide-app-server.md) — Persistent services with HTTP API and SSE events.
 - [Testing Behavior Trees](guide-testing.md) — How to test error handling and resilience patterns.
 - [Advanced Patterns](guide-advanced-patterns.md) — Custom nodes, strategies, and multi-tick workflows.
