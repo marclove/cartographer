@@ -1,6 +1,6 @@
 import { describe, it, expect, expectTypeOf } from 'vitest';
 import { z } from 'zod/v4';
-import { createBlackboardSchema } from '../../cartographer/src/core/blackboard-schema.js';
+import { createBlackboardSchema } from 'cartographer';
 import { createTypedRunes } from './typed-runes.js';
 import type { BlackboardRef, BlackboardSnapshotRef } from './blackboard.svelte.js';
 

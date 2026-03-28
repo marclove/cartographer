@@ -1,14 +1,15 @@
 import type { z } from 'zod/v4';
+import type { BlackboardSchema, SchemaInput } from 'cartographer';
 import { useBlackboard as useBlackboardUntyped, useBlackboardSnapshot } from './hooks.js';
 
-type RootKeys<T extends Record<string, unknown>> = {
+type RootKeys<T extends SchemaInput> = {
   [K in keyof T as T[K] extends z.ZodType ? K : never]: T[K];
 };
 
-type InferValue<T extends Record<string, unknown>, K extends keyof RootKeys<T>> =
+type InferValue<T extends SchemaInput, K extends keyof RootKeys<T>> =
   T[K] extends z.ZodType ? z.infer<T[K]> : never;
 
-interface TypedUseBlackboard<T extends Record<string, unknown>> {
+interface TypedUseBlackboard<T extends SchemaInput> {
   <K extends keyof RootKeys<T> & string>(key: K): [
     InferValue<T, K> | undefined,
     (value: InferValue<T, K>) => Promise<void>,
@@ -35,8 +36,8 @@ interface TypedUseBlackboard<T extends Record<string, unknown>> {
  * const [task, setTask] = useBlackboard('task'); // string | undefined
  * ```
  */
-export function createTypedHooks<T extends Record<string, unknown>>(
-  _schema: { readonly _input: T },
+export function createTypedHooks<T extends SchemaInput>(
+  _schema: BlackboardSchema<T>,
 ): {
   useBlackboard: TypedUseBlackboard<T>;
   useBlackboardSnapshot: typeof useBlackboardSnapshot;
