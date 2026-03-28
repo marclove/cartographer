@@ -11,6 +11,9 @@ export { getBlackboard, getBlackboardSnapshot } from './blackboard.svelte.js';
 // Factories
 export { createCommand } from './command.svelte.js';
 
+// Typed runes
+export { createTypedRunes } from './typed-runes.js';
+
 // Event subscriptions
 export { onClientEvent, onTreeEvent } from './events.svelte.js';
 

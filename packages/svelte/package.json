@@ -18,10 +18,12 @@
   "svelte": "./dist/index.js",
   "peerDependencies": {
     "@cartographer/client": ">=0.1.0",
+    "cartographer": ">=0.1.0",
     "svelte": "^5.0.0"
   },
   "devDependencies": {
     "@cartographer/client": "workspace:*",
+    "cartographer": "workspace:*",
     "@sveltejs/package": "^2.5.7",
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
     "@testing-library/svelte": "^5.2.7",
