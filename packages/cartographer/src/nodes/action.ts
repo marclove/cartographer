@@ -116,16 +116,21 @@ export class ActionNode extends BaseNode {
     // actions that don't need it, and prevents the message processor's
     // suspension detection from falsely triggering between consecutive
     // synchronous action nodes.
-    if (!(resultOrPromise instanceof Promise)) {
-      if (resultOrPromise !== NodeStatus.RUNNING) {
-        this._lastTerminalStatus = resultOrPromise;
+    //
+    // Uses a thenable check rather than instanceof Promise so that
+    // cross-realm promises, Bluebird, and other Promise-like objects
+    // still take the async path correctly.
+    if (typeof (resultOrPromise as any)?.then !== 'function') {
+      const result = resultOrPromise as NodeStatus;
+      if (result !== NodeStatus.RUNNING) {
+        this._lastTerminalStatus = result;
       }
-      return resultOrPromise;
+      return result;
     }
 
-    // Async path: the action returned a Promise — use the inflight pattern
+    // Async path: the action returned a thenable — use the inflight pattern
     // so the tree can yield and resume on the next tick.
-    const promise = resultOrPromise;
+    const promise = Promise.resolve(resultOrPromise);
     const state: { promise: Promise<NodeStatus>; result?: NodeStatus; error?: Error } = { promise };
     this._inflightState = state;
 
