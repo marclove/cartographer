@@ -57,14 +57,8 @@ describe('Agent Strategies Integration', () => {
       strategy,
     });
 
-    const flush = () => new Promise<void>(r => setTimeout(r, 0));
-
-    expect(await sequence.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
-    expect(await sequence.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
-    expect(await sequence.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
+    // Sync actions resolve immediately. The async strategy is awaited on the
+    // first tick, then all three sync children complete in that same tick.
     const status = await sequence.tick(ctx);
 
     expect(status).toBe(NodeStatus.SUCCESS);
@@ -95,10 +89,9 @@ describe('Agent Strategies Integration', () => {
       }),
     });
 
-    const flush = () => new Promise<void>(r => setTimeout(r, 0));
-
-    expect(await parallel.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
+    // Sync actions resolve immediately. The async strategy is awaited on the
+    // first tick, then all sync children complete in that same tick.
+    // Policy: successCount(1), fast is SUCCESS → policy met → SUCCESS.
     const status = await parallel.tick(ctx);
 
     expect(status).toBe(NodeStatus.SUCCESS);

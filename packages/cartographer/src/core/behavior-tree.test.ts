@@ -16,8 +16,6 @@ describe('BehaviorTree', () => {
       name: 'test-tree',
       root: new ActionNode({ name: 'root', action: () => NodeStatus.SUCCESS }),
     });
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -26,8 +24,6 @@ describe('BehaviorTree', () => {
       name: 'test-tree',
       root: new ActionNode({ name: 'root', action: () => NodeStatus.FAILURE }),
     });
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.FAILURE);
   });
 
@@ -55,8 +51,6 @@ describe('BehaviorTree', () => {
       }),
       blackboard: bb,
     });
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -71,16 +65,10 @@ describe('BehaviorTree', () => {
         },
       }),
     });
-    // First run returns RUNNING (action is inflight)
-    const result1 = await tree.run();
-    expect(result1.status).toBe(NodeStatus.RUNNING);
-
-    await flush();
-
-    // Second run returns SUCCESS with blackboard data
-    const result2 = await tree.run();
-    expect(result2.status).toBe(NodeStatus.SUCCESS);
-    expect(result2.blackboard.result).toBe('done');
+    // Sync action completes in a single run
+    const result = await tree.run();
+    expect(result.status).toBe(NodeStatus.SUCCESS);
+    expect(result.blackboard.result).toBe('done');
   });
 
   it('events emitter is accessible', async () => {
@@ -148,7 +136,7 @@ describe('BehaviorTree', () => {
   it('emits tree:init on construction', () => {
     const emitSpy = vi.spyOn(EventEmitter.prototype, 'emit');
     try {
-      const tree = new BehaviorTree({
+      const _tree = new BehaviorTree({
         name: 'my-tree',
         root: new ActionNode({ name: 'root-node', action: () => NodeStatus.SUCCESS }),
       });
@@ -169,11 +157,11 @@ describe('BehaviorTree', () => {
     const spy = vi.fn();
     tree.events.on('tree:tick', spy);
 
-    await tree.tick(); // RUNNING (inflight started)
+    await tree.tick(); // sync action completes immediately
 
     expect(spy).toHaveBeenCalledOnce();
     expect(spy).toHaveBeenCalledWith(
-      expect.objectContaining({ tree: 'my-tree', status: NodeStatus.RUNNING })
+      expect.objectContaining({ tree: 'my-tree', status: NodeStatus.SUCCESS })
     );
     expect(spy.mock.calls[0][0].durationMs).toBeGreaterThanOrEqual(0);
   });
@@ -290,13 +278,7 @@ describe('BehaviorTree', () => {
         ],
       }),
     });
-    // Tick 1: writer starts inflight → RUNNING
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
-    // Tick 2: writer completes (cached), reader starts inflight → RUNNING
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
-    // Tick 3: writer cached, reader completes → SUCCESS
+    // Both sync actions complete in a single tick
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 });

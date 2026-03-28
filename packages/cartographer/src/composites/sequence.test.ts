@@ -30,13 +30,7 @@ describe('SequenceNode', () => {
       children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.SUCCESS)],
     });
     const ctx = createContext();
-    // Tick 1: a starts inflight → RUNNING
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
-    // Tick 2: a completes SUCCESS, b starts inflight → RUNNING
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
-    // Tick 3: b completes SUCCESS → sequence SUCCESS
+    // Sync actions complete in a single tick — both succeed immediately
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
@@ -46,8 +40,7 @@ describe('SequenceNode', () => {
       children: [actionNode('a', NodeStatus.FAILURE), actionNode('b', NodeStatus.SUCCESS)],
     });
     const ctx = createContext();
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
+    // Sync action fails immediately on tick 1
     expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
   });
 
@@ -57,10 +50,7 @@ describe('SequenceNode', () => {
       children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.FAILURE)],
     });
     const ctx = createContext();
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
+    // Both sync actions process in a single tick — a succeeds, b fails
     expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
   });
 
@@ -214,14 +204,11 @@ describe('SequenceNode', () => {
       });
       const ctx = createContext();
 
-      // Tick 1: action 'a' starts inflight → RUNNING
+      // Tick 1: sync action 'a' completes immediately (cached), health RUNNING
       await node.tick(ctx);
-      await flush();
-      // Tick 2: action 'a' completes (cached), health RUNNING
+      // Tick 2: action 'a' cached, health RUNNING
       await node.tick(ctx);
-      // Tick 3: action 'a' cached, health RUNNING
-      await node.tick(ctx);
-      // Tick 4: action 'a' cached, health SUCCESS → cycle ends
+      // Tick 3: action 'a' cached, health SUCCESS → cycle ends
       await node.tick(ctx);
 
       expect(orderSpy).toHaveBeenCalledTimes(1);
@@ -238,14 +225,10 @@ describe('SequenceNode', () => {
       });
       const ctx = createContext();
 
-      // Cycle 1: tick 1 starts action (RUNNING), tick 2 completes (SUCCESS)
-      await node.tick(ctx);
-      await flush();
+      // Cycle 1: sync action completes immediately → SUCCESS
       await node.tick(ctx);
 
-      // Cycle 2: tick 3 starts action (RUNNING), tick 4 completes (SUCCESS)
-      await node.tick(ctx);
-      await flush();
+      // Cycle 2: new cycle, strategy re-consulted → SUCCESS
       await node.tick(ctx);
 
       expect(orderSpy).toHaveBeenCalledTimes(2);
@@ -262,14 +245,10 @@ describe('SequenceNode', () => {
       });
       const ctx = createContext();
 
-      // Cycle 1: tick 1 starts action (RUNNING), tick 2 completes (FAILURE)
-      await node.tick(ctx);
-      await flush();
+      // Cycle 1: sync action fails immediately → FAILURE
       await node.tick(ctx);
 
-      // Cycle 2: tick 3 starts action (RUNNING), tick 4 completes (FAILURE)
-      await node.tick(ctx);
-      await flush();
+      // Cycle 2: new cycle, strategy re-consulted → FAILURE
       await node.tick(ctx);
 
       expect(orderSpy).toHaveBeenCalledTimes(2);

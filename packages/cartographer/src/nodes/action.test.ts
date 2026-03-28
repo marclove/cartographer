@@ -15,8 +15,6 @@ function createContext(): TreeContext {
   };
 }
 
-const flush = () => new Promise((r) => setTimeout(r, 0));
-
 describe('ActionNode', () => {
   it('returns the status from the action function', async () => {
     const node = new ActionNode({
@@ -24,8 +22,7 @@ describe('ActionNode', () => {
       action: () => NodeStatus.SUCCESS,
     });
     const ctx = createContext();
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
+    // Sync actions return their result immediately in a single tick
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
@@ -74,9 +71,9 @@ describe('ActionNode', () => {
       action: () => NodeStatus.RUNNING,
     });
     const ctx = createContext();
+    // Sync action returning RUNNING gets it immediately
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
-    // RUNNING from action is stored as result, returned on next tick
+    // No inflight state set, so next tick calls the action again fresh
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
   });
 });
@@ -149,9 +146,8 @@ describe('ActionNode inflight state', () => {
   });
 
   it('abort() clears inflight state — next tick starts fresh', async () => {
-    let resolveAction!: (status: NodeStatus) => void;
     const action = vi.fn(
-      async () => new Promise<NodeStatus>((r) => { resolveAction = r; }),
+      async () => new Promise<NodeStatus>(() => { /* never resolves */ }),
     );
     const node = new ActionNode({ name: 'abort-test', action });
     const ctx = createContext();
@@ -167,9 +163,8 @@ describe('ActionNode inflight state', () => {
   });
 
   it('reset() clears inflight state — next tick starts fresh', async () => {
-    let resolveAction!: (status: NodeStatus) => void;
     const action = vi.fn(
-      async () => new Promise<NodeStatus>((r) => { resolveAction = r; }),
+      async () => new Promise<NodeStatus>(() => { /* never resolves */ }),
     );
     const node = new ActionNode({ name: 'reset-test', action });
     const ctx = createContext();

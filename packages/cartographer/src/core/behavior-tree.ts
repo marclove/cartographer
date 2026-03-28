@@ -275,6 +275,7 @@ export class BehaviorTree {
     return this.root.hasInflightWork();
   }
 
+
   /**
    * Returns a promise that resolves when all in-flight work across the tree has settled.
    * Uses Promise.all (not allSettled) — nodes handle their own errors internally.

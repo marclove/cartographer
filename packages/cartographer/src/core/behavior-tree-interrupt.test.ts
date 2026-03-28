@@ -69,17 +69,14 @@ describe('BehaviorTree.interrupt()', () => {
     const seq = new SequenceNode({ name: 'seq', children: [childA, childB] });
     const tree = new BehaviorTree({ name: 'test', root: seq });
 
-    // Tick 1: A succeeds (cached), B starts
-    await tree.tick();
-    await flush();
-    // Tick 2: A cached, B RUNNING
+    // Tick 1: A succeeds immediately (sync, cached), B starts async work → RUNNING
     await tree.tick();
     expect(callCountA).toBe(1);
 
     // Interrupt
     tree.interrupt();
 
-    // Tick 3: A should still be cached, B restarts
+    // Tick 2: A should still be cached, B restarts
     const status = await tree.tick();
     expect(status).toBe(NodeStatus.RUNNING);
     expect(callCountA).toBe(1); // A was NOT re-executed

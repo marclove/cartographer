@@ -51,24 +51,24 @@ describe('ActionNode.interrupt()', () => {
     expect(node.hasInflightWork()).toBe(false);
   });
 
-  it('does not clear inflight state after promise has settled', async () => {
+  it('sync action has no inflight state — interrupt is a no-op, re-tick succeeds', async () => {
     const node = new ActionNode({
       name: 'fast-action',
       action: () => NodeStatus.SUCCESS,
     });
     const ctx = createContext();
 
-    // Start and let settle
-    await node.tick(ctx);
-    await flush();
+    // Sync action completes immediately — no inflight state
+    const status1 = await node.tick(ctx);
+    expect(status1).toBe(NodeStatus.SUCCESS);
+    expect(node.hasInflightWork()).toBe(false);
 
-    // Promise settled but not collected — interrupt should not clear it
-    // (result is ready for collection on next tick)
+    // Interrupt is a no-op since there is no inflight work
     node.interrupt();
 
-    // The settled result should still be collectible
-    const status = await node.tick(ctx);
-    expect(status).toBe(NodeStatus.SUCCESS);
+    // Re-tick still succeeds (sync action runs again)
+    const status2 = await node.tick(ctx);
+    expect(status2).toBe(NodeStatus.SUCCESS);
   });
 });
 

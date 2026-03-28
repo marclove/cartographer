@@ -110,9 +110,11 @@ describe('Deterministic Integration Tests', () => {
     expect(tickCount).toBe(3);
     expect(tree.blackboard.get('work')).toBe('finished');
     expect(tree.blackboard.get('completed')).toBe(true);
-    // With the inflight model each logical action takes 2 ticks
-    // (start → RUNNING, then poll → result). 8 ticks total.
-    expect(totalTicks).toBe(8);
+    // Sync actions (guard-check, completion) resolve in a single tick.
+    // multi-tick returns RUNNING twice then SUCCESS, so it takes 3 ticks.
+    // Total: 3 ticks (guard resolves instantly within each tick,
+    // multi-tick drives the RUNNING loop, completion resolves instantly).
+    expect(totalTicks).toBe(3);
   });
 
   it('Selector fallback with event tracing', async () => {
@@ -139,48 +141,28 @@ describe('Deterministic Integration Tests', () => {
       ],
     });
 
-    // Tick 1: primary (FAILURE), secondary (FAILURE), fallback starts inflight → RUNNING
+    // Single tick: primary (FAILURE), secondary (FAILURE), fallback is sync → SUCCESS
     const status1 = await selector.tick(ctx);
-    expect(status1).toBe(NodeStatus.RUNNING);
-
-    // Tick 2: primary (FAILURE, re-evaluated — reactive), secondary (FAILURE),
-    //         fallback polls inflight → SUCCESS
-    await flush();
-    const status2 = await selector.tick(ctx);
-    expect(status2).toBe(NodeStatus.SUCCESS);
+    expect(status1).toBe(NodeStatus.SUCCESS);
     expect(ctx.blackboard.get('source')).toBe('fallback');
 
-    // ConditionNodes are reactive so they are re-evaluated on tick 2.
-    // The fallback ActionNode is non-reactive: it gets ticked in tick 1
-    // (inflight start) and again in tick 2 (poll).
-    //
-    // Recorded enter events across both ticks:
-    //   Tick 1: fallback-selector, primary, secondary, fallback
-    //   Tick 2: fallback-selector, primary, secondary, fallback
+    // All nodes entered and exited in a single tick:
+    //   fallback-selector, primary, secondary, fallback
     const enterNames = enterEvents.map((e) => e.node.name);
     expect(enterNames).toEqual([
       'fallback-selector', 'primary', 'secondary', 'fallback',
-      'fallback-selector', 'primary', 'secondary', 'fallback',
     ]);
 
-    // Exit events (children exit before parent in each tick):
-    //   Tick 1: primary, secondary, fallback, fallback-selector
-    //   Tick 2: primary, secondary, fallback, fallback-selector
+    // Exit events (children exit before parent):
+    //   primary, secondary, fallback, fallback-selector
     const exitNames = exitEvents.map((e) => e.node.name);
     expect(exitNames).toEqual([
       'primary', 'secondary', 'fallback', 'fallback-selector',
-      'primary', 'secondary', 'fallback', 'fallback-selector',
     ]);
 
-    // Statuses across both ticks:
-    //   Tick 1: FAILURE, FAILURE, RUNNING, RUNNING
-    //   Tick 2: FAILURE, FAILURE, SUCCESS, SUCCESS
+    // Statuses: FAILURE, FAILURE, SUCCESS, SUCCESS
     const exitStatuses = exitEvents.map((e) => e.status);
     expect(exitStatuses).toEqual([
-      NodeStatus.FAILURE,
-      NodeStatus.FAILURE,
-      NodeStatus.RUNNING,
-      NodeStatus.RUNNING,
       NodeStatus.FAILURE,
       NodeStatus.FAILURE,
       NodeStatus.SUCCESS,
@@ -190,7 +172,6 @@ describe('Deterministic Integration Tests', () => {
 
   it('Parallel with RUNNING children and successCount policy', async () => {
     let fastTicks = 0;
-    let slowTicks = 0;
 
     const fast = new ActionNode({
       name: 'fast',
@@ -217,46 +198,24 @@ describe('Deterministic Integration Tests', () => {
 
     const ctx = createContext();
 
-    // With the inflight model every action invocation requires two parallel
-    // ticks: one to start the inflight and one to poll the result. The
-    // sequentialAction helper increments its counter once per action-fn call
-    // (i.e. once per inflight start), not once per tree tick.
-    //
-    // With early policy evaluation, the parallel short-circuits as soon as
-    // the successCount threshold is met, without waiting for all children.
+    // With the sync fast path, sync actions return their result in a
+    // single tick. The sequentialAction helper returns sync values.
     //
     // Logical sequence:
-    //   Tick 1: all start inflight                     → RUNNING
-    //   Tick 2: fast polls SUCCESS (cached);
-    //           medium polls RUNNING; slow polls RUNNING → RUNNING
-    //   Tick 3: fast cached; medium & slow start inflight → RUNNING
-    //           (medium action fn call 2 → SUCCESS; slow action fn call 2 → RUNNING)
-    //   Tick 4: fast cached; medium polls SUCCESS (cached);
-    //           slow polls RUNNING
-    //           → policy: 2 of 2 resolved ≥ successCount(2) → SUCCESS
-    //           (slow is aborted, cycle ends)
+    //   Tick 1: fast → SUCCESS (sync), medium → RUNNING (sync),
+    //           slow → RUNNING (sync) → parallel RUNNING
+    //   Tick 2: fast cached; medium → SUCCESS (sync, 2nd call);
+    //           slow → RUNNING (sync, 2nd call)
+    //           → policy: 2 successes ≥ successCount(2) → SUCCESS
+    //           (slow is aborted)
 
-    // Tick 1 – all three start inflight
+    // Tick 1 – fast resolves immediately, medium/slow return RUNNING
     const status1 = await parallel.tick(ctx);
     expect(status1).toBe(NodeStatus.RUNNING);
-    // fast's action fn ran during inflight start, so the blackboard write
-    // already happened even though the polled result isn't back yet.
     expect(ctx.blackboard.get('fast')).toBe(true);
 
-    // Tick 2 – fast resolves SUCCESS, medium/slow still RUNNING
-    await flush();
+    // Tick 2 – medium resolves SUCCESS; successCount(2) met → SUCCESS
     const status2 = await parallel.tick(ctx);
-    expect(status2).toBe(NodeStatus.RUNNING);
-
-    // Tick 3 – fast cached; medium and slow start new inflight cycles
-    await flush();
-    const status3 = await parallel.tick(ctx);
-    expect(status3).toBe(NodeStatus.RUNNING);
-
-    // Tick 4 – fast cached; medium resolves SUCCESS; slow still RUNNING
-    // Early evaluation: successCount(2) met → SUCCESS, slow aborted
-    await flush();
-    const status4 = await parallel.tick(ctx);
-    expect(status4).toBe(NodeStatus.SUCCESS);
+    expect(status2).toBe(NodeStatus.SUCCESS);
   });
 });

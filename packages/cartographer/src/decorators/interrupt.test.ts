@@ -104,17 +104,8 @@ describe('Retry.interrupt()', () => {
     });
     const ctx = createContext();
 
-    // Tick 1: child starts (callCount=1), returns RUNNING (inflight pattern)
-    await retry.tick(ctx);
-    expect(callCount).toBe(1);
-    await flush();
-
-    // Tick 2: child collects FAILURE, retry increments, starts attempt 2
-    await retry.tick(ctx);
-    expect(callCount).toBe(2);
-    await flush();
-
-    // Tick 3: child collects FAILURE, retry increments, starts attempt 3 (async)
+    // Tick 1: sync attempts 1 (FAILURE) and 2 (FAILURE) resolve immediately,
+    // then attempt 3 starts async inflight → RUNNING
     await retry.tick(ctx);
     expect(callCount).toBe(3);
 
@@ -148,15 +139,10 @@ describe('Repeat.interrupt()', () => {
     });
     const ctx = createContext();
 
-    // Tick 1: child starts (callCount=1), returns RUNNING
+    // Tick 1: sync iterations 1 (SUCCESS) and 2 (SUCCESS) resolve immediately,
+    // then iteration 3 starts async inflight → RUNNING
     await repeat.tick(ctx);
-    expect(callCount).toBe(1);
-    await flush();
-
-    // Tick 2: child collects SUCCESS, repeat increments, starts child again
-    await repeat.tick(ctx);
-    expect(callCount).toBe(2);
-    await flush();
+    expect(callCount).toBe(3);
 
     // Tick 3: child collects SUCCESS, repeat increments, starts child (async)
     await repeat.tick(ctx);

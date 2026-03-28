@@ -1,94 +1,126 @@
-import { describe, it, expect, afterAll, afterEach } from 'vitest';
-import { NodeStatus, createTreeLogger } from 'cartographer';
-import type { TreeEvents } from 'cartographer';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { ActorServer } from 'cartographer';
 import { createTestServer, type TestServer } from './server.js';
 import { buildHealthMonitor } from './tree.js';
 import type { HealthRecord, HealthAssessment, IncidentReport } from './schemas.js';
 
-const LOG_FILE = 'logs/scheduled-monitor.log';
+let healthServer: TestServer;
+let server: ActorServer;
+let port: number;
+const url = (path: string) => `http://localhost:${port}${path}`;
 
-let stopLogging: (() => void) | undefined;
-afterEach(() => { stopLogging?.(); stopLogging = undefined; });
+beforeAll(async () => {
+  healthServer = await createTestServer();
+  server = new ActorServer({
+    createTree: () => buildHealthMonitor(healthServer.url),
+    sessionId: 'health-monitor',
+    port: 0,
+  });
+  ({ port } = await server.start());
+});
 
-describe('scheduled-monitor example', { timeout: 300_000 }, () => {
-  let server: TestServer;
+afterAll(async () => {
+  await server.stop();
+  await healthServer.close();
+});
 
-  afterAll(async () => {
-    if (server) await server.close();
+async function sendTick(): Promise<void> {
+  const res = await fetch(url('/api/messages'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'tick' }),
+  });
+  expect(res.status).toBe(202);
+}
+
+async function getBlackboard(): Promise<Record<string, unknown>> {
+  const res = await fetch(url('/api/blackboard'));
+  return res.json();
+}
+
+async function waitForCycle(n: number, timeoutMs = 60_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const res = await fetch(url('/api/status'));
+    const status = await res.json();
+    if ((status.cycleCount as number) >= n) return;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error(`Timed out waiting for cycle ${n}`);
+}
+
+describe('scheduled-monitor', { timeout: 300_000 }, () => {
+  it('GET /api/tree returns the monitor structure', async () => {
+    const res = await fetch(url('/api/tree'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.tree).toBe('health-monitor');
+    expect(body.root.name).toBe('monitor');
+    expect(body.root.type).toBe('sequence');
   });
 
-  it('detects an api outage and opens an incident across multiple ticks', async () => {
-    server = await createTestServer();
-    const tree = buildHealthMonitor(server.url);
-    stopLogging = createTreeLogger(tree.events, { filePath: LOG_FILE, logBlackboard: true });
+  it('GET /_platform/health returns ok', async () => {
+    const res = await fetch(url('/_platform/health'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe('ok');
+  });
 
-    // Track incident report via event listener — the blackboard key gets
-    // deleted by clearIncidentState on recovery, so we can't check it after the run.
-    let incidentReport: IncidentReport | undefined;
-    tree.events.on('agent:response', (event: TreeEvents['agent:response']) => {
-      if (event.node.name === 'draft-incident-report') {
-        incidentReport = event.result as IncidentReport;
-      }
-    });
-
-    // With the inflight pattern, each ActionNode and AgentNode returns RUNNING
-    // on first tick, then SUCCESS/FAILURE on the next tick after the work
-    // completes. A single logical monitoring cycle therefore requires many more
-    // raw ticks than before.
-    //
-    // We count completed cycles by tracking terminal tree statuses (SUCCESS)
-    // rather than the blackboard counter (monitor:cycleCount), because in the
-    // reactive tick model the counter only increments once per completed cycle
-    // and intermediate ticks return RUNNING.
-    //
+  it('detects an outage and manages the incident lifecycle across ticks', async () => {
     // Server failure profile for 'api':
     //   Request 1:   200 (healthy)
-    //   Requests 2–4: 503 (hard outage)
+    //   Requests 2-4: 503 (hard outage)
     //   Requests 5+:  200 (recovered)
-    // This exercises the full incident lifecycle: healthy baseline → outage
-    // detection → ongoing incident → recovery.
+    //
+    // Each tick message runs one full monitoring cycle through the
+    // HTTP interface. We capture the incident report between cycles
+    // since recovery clears it from the blackboard.
     const TARGET_CYCLES = 5;
-    const MAX_TICKS = 5000;
-    let totalTicks = 0;
-    let completedCycles = 0;
+    let incidentReport: IncidentReport | undefined;
 
-    while (completedCycles < TARGET_CYCLES && totalTicks < MAX_TICKS) {
-      const status = await tree.tick();
-      totalTicks++;
-      if (status !== NodeStatus.RUNNING) {
-        completedCycles++;
+    for (let i = 1; i <= TARGET_CYCLES; i++) {
+      await sendTick();
+      await waitForCycle(i);
+
+      // Capture the incident report before recovery clears it
+      if (!incidentReport) {
+        const bb = await getBlackboard();
+        incidentReport = bb['draft-incident-report:output'] as IncidentReport | undefined;
       }
-      // Short pause: lets microtask-resolved promises (sync actions) settle
-      // and gives the agent API calls time to make progress between polls.
-      await new Promise(r => setTimeout(r, 50));
     }
 
-    expect(completedCycles).toBeGreaterThanOrEqual(TARGET_CYCLES);
+    const bb = await getBlackboard();
 
     // Health data should be recorded for all services
     for (const service of ['api', 'database', 'queue']) {
-      const health = tree.blackboard.get<HealthRecord>(`health:${service}`);
+      const health = bb[`health:${service}`] as HealthRecord;
       expect(health).toBeDefined();
-      expect(health!.statusCode).toBeTypeOf('number');
+      expect(health.statusCode).toBeTypeOf('number');
     }
 
-    // History should accumulate across completed cycles
-    const apiHistory = tree.blackboard.get<HealthRecord[]>('history:api');
+    // History should accumulate across cycles
+    const apiHistory = bb['history:api'] as HealthRecord[];
     expect(apiHistory).toBeDefined();
-    expect(apiHistory!.length).toBeGreaterThanOrEqual(TARGET_CYCLES);
+    expect(apiHistory.length).toBeGreaterThanOrEqual(TARGET_CYCLES);
 
-    // Requests 2–4 to the api service return 503.
-    const unhealthyCount = apiHistory!.filter((r) => !r.healthy).length;
+    // At least 1 unhealthy record (requests 2-4 return 503)
+    const unhealthyCount = apiHistory.filter((r) => !r.healthy).length;
     expect(unhealthyCount).toBeGreaterThanOrEqual(1);
 
     // Assessment agent should have produced output
-    const assessment = tree.blackboard.get<HealthAssessment>('assess-health:output');
+    const assessment = bb['assess-health:output'] as HealthAssessment;
     expect(assessment).toBeDefined();
-    expect(['healthy', 'degraded', 'outage']).toContain(assessment!.status);
+    expect(['healthy', 'degraded', 'outage']).toContain(assessment.status);
 
-    // The api failure should trigger the incident detection path
-    // and cause the incident report agent to run.
+    // An incident report should have been produced during the outage
     expect(incidentReport).toBeDefined();
     expect(['critical', 'major', 'minor']).toContain(incidentReport!.severity);
+
+    // Status endpoint should reflect completed cycles
+    const statusRes = await fetch(url('/api/status'));
+    const status = await statusRes.json();
+    expect(status.tree).toBe('health-monitor');
+    expect(status.cycleCount as number).toBeGreaterThanOrEqual(TARGET_CYCLES);
+    expect(status.lastStatus).toBe('success');
   });
 });
