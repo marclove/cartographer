@@ -8,8 +8,8 @@ import { ActionNode } from '../nodes/action.js';
 import { TestAgent } from '../agent/test-agent.js';
 import { NodeStatus } from '../types.js';
 
-function makeAgentNode(name: string, session?: string | { name: string; fork?: true | string }): AgentNode {
-  return new AgentNode({
+function makeAgentNode(name: string, session?: string | { name: string; fork?: true | string }): AgentNode<unknown> {
+  return new AgentNode<unknown>({
     name,
     agent: new TestAgent({ name }),
     prompt: 'test',

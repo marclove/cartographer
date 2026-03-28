@@ -36,7 +36,7 @@ describe('agent structured pipeline (live)', () => {
               }),
 
               // Agent classifies with structured output
-              new AgentNode({
+              new AgentNode<unknown>({
                 name: 'classify',
                 agent: new ClaudeSDKAgent({
                   name: 'classify',

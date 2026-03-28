@@ -31,7 +31,7 @@ describe('agent interrupt and redirect (live)', () => {
               ),
 
               // Agent researches — reads topic from blackboard via dynamic prompt
-              new AgentNode({
+              new AgentNode<unknown>({
                 name: 'research',
                 agent: new ClaudeSDKAgent({ name: 'research', model: "claude-haiku-4-5"}),
                 prompt: (ctx) => {

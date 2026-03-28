@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, expectTypeOf } from 'vitest';
 import { NodeStatus } from '../types.js';
-import type { TreeContext } from '../types.js';
+import type { TreeContext, AgentNodeConfig } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
 import { SessionRegistry } from '../core/session-registry.js';
@@ -29,7 +29,7 @@ describe('AgentNode - structured output', () => {
       { type: 'result', subtype: 'success', output: { answer: 'yes' }, cost: 0.01 },
     ]);
 
-    const node = new AgentNode({ name: 'classify', agent, prompt: 'Classify this input' });
+    const node = new AgentNode<unknown>({ name: 'classify', agent, prompt: 'Classify this input' });
     const ctx = createContext();
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
     await flush();
@@ -41,7 +41,7 @@ describe('AgentNode - structured output', () => {
       { type: 'result', subtype: 'success', output: { answer: 'yes' }, cost: 0.01 },
     ]);
 
-    const node = new AgentNode({ name: 'classify', agent, prompt: 'Classify this input' });
+    const node = new AgentNode<unknown>({ name: 'classify', agent, prompt: 'Classify this input' });
     const ctx = createContext();
     await node.tick(ctx);
     await flush();
@@ -54,13 +54,12 @@ describe('AgentNode - structured output', () => {
       { type: 'result', subtype: 'success', output: { confidence: 0.3 }, cost: 0.01 },
     ]);
 
-    const node = new AgentNode({
+    const node = new AgentNode<{ confidence: number }>({
       name: 'classify',
       agent,
       prompt: 'Classify',
-      mapResult: (output: unknown) => {
-        const data = output as { confidence: number };
-        return data.confidence > 0.5 ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
+      mapResult: (output) => {
+        return output.confidence > 0.5 ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
       },
     });
 
@@ -75,7 +74,7 @@ describe('AgentNode - structured output', () => {
       { type: 'result', subtype: 'error', errors: ['Something went wrong'] },
     ]);
 
-    const node = new AgentNode({ name: 'classify', agent, prompt: 'Classify' });
+    const node = new AgentNode<unknown>({ name: 'classify', agent, prompt: 'Classify' });
     const ctx = createContext();
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
     await flush();
@@ -94,7 +93,7 @@ describe('AgentNode - structured output', () => {
       yield* origSend(prompt, options);
     };
 
-    const node = new AgentNode({
+    const node = new AgentNode<unknown>({
       name: 'dynamic',
       agent,
       prompt: (ctx) => `Analyze: ${ctx.blackboard.get('input')}`,
@@ -117,7 +116,7 @@ describe('AgentNode - unstructured output', () => {
       { type: 'result', subtype: 'success', output: 'Fixed the bug', cost: 0.05 },
     ]);
 
-    const node = new AgentNode({ name: 'fixer', agent, prompt: 'Fix the bug' });
+    const node = new AgentNode<unknown>({ name: 'fixer', agent, prompt: 'Fix the bug' });
     const ctx = createContext();
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
     await flush();
@@ -129,7 +128,7 @@ describe('AgentNode - unstructured output', () => {
       { type: 'result', subtype: 'error', errors: ['Exceeded maximum turns'] },
     ]);
 
-    const node = new AgentNode({ name: 'fixer', agent, prompt: 'Fix the bug' });
+    const node = new AgentNode<unknown>({ name: 'fixer', agent, prompt: 'Fix the bug' });
     const ctx = createContext();
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
     await flush();
@@ -141,7 +140,7 @@ describe('AgentNode - unstructured output', () => {
       { type: 'result', subtype: 'success', output: 'All tests pass', cost: 0.02 },
     ]);
 
-    const node = new AgentNode({ name: 'runner', agent, prompt: 'Run tests' });
+    const node = new AgentNode<unknown>({ name: 'runner', agent, prompt: 'Run tests' });
     const ctx = createContext();
     await node.tick(ctx);
     await flush();
@@ -154,7 +153,7 @@ describe('AgentNode - unstructured output', () => {
       { type: 'result', subtype: 'success', output: 'namespaced result', cost: 0.02 },
     ]);
 
-    const node = new AgentNode({
+    const node = new AgentNode<unknown>({
       name: 'runner',
       agent,
       prompt: 'Run tests',
@@ -176,7 +175,7 @@ describe('AgentNode - observability events', () => {
       { type: 'result', subtype: 'success', output: 'ok' },
     ]);
 
-    const node = new AgentNode({ name: 'worker', agent, prompt: 'Do work' });
+    const node = new AgentNode<unknown>({ name: 'worker', agent, prompt: 'Do work' });
     const ctx = createContext();
     const promptSpy = vi.fn();
     ctx.events.on('agent:prompt', promptSpy);
@@ -195,7 +194,7 @@ describe('AgentNode - observability events', () => {
       { type: 'result', subtype: 'success', output: 'done' },
     ]);
 
-    const node = new AgentNode({ name: 'thinker', agent, prompt: 'Think' });
+    const node = new AgentNode<unknown>({ name: 'thinker', agent, prompt: 'Think' });
     const ctx = createContext();
     const thinkingSpy = vi.fn();
     ctx.events.on('agent:thinking', thinkingSpy);
@@ -214,7 +213,7 @@ describe('AgentNode - observability events', () => {
       { type: 'result', subtype: 'success', output: 'done' },
     ]);
 
-    const node = new AgentNode({ name: 'worker', agent, prompt: 'Work' });
+    const node = new AgentNode<unknown>({ name: 'worker', agent, prompt: 'Work' });
     const ctx = createContext();
     const textSpy = vi.fn();
     ctx.events.on('agent:text', textSpy);
@@ -233,7 +232,7 @@ describe('AgentNode - observability events', () => {
       { type: 'result', subtype: 'success', output: 'done' },
     ]);
 
-    const node = new AgentNode({ name: 'reader', agent, prompt: 'Read files' });
+    const node = new AgentNode<unknown>({ name: 'reader', agent, prompt: 'Read files' });
     const ctx = createContext();
     const toolSpy = vi.fn();
     ctx.events.on('agent:tool_use', toolSpy);
@@ -252,7 +251,7 @@ describe('AgentNode - observability events', () => {
       { type: 'result', subtype: 'success', output: 'done' },
     ]);
 
-    const node = new AgentNode({ name: 'streamer', agent, prompt: 'Stream' });
+    const node = new AgentNode<unknown>({ name: 'streamer', agent, prompt: 'Stream' });
     const ctx = createContext();
     const streamSpy = vi.fn();
     ctx.events.on('agent:stream', streamSpy);
@@ -271,7 +270,7 @@ describe('AgentNode - observability events', () => {
       { type: 'result', subtype: 'success', output: 'done' },
     ]);
 
-    const node = new AgentNode({ name: 'limited', agent, prompt: 'Work' });
+    const node = new AgentNode<unknown>({ name: 'limited', agent, prompt: 'Work' });
     const ctx = createContext();
     const rateSpy = vi.fn();
     ctx.events.on('agent:rate_limit', rateSpy);
@@ -298,7 +297,7 @@ describe('AgentNode - observability events', () => {
       { type: 'result', subtype: 'success', output: 'done' },
     ]);
 
-    const node = new AgentNode({ name: 'elicit', agent: elicitAgent, prompt: 'Work' });
+    const node = new AgentNode<unknown>({ name: 'elicit', agent: elicitAgent, prompt: 'Work' });
     const ctx = createContext();
     // No onElicitation on context — wrapElicitation should auto-decline and emit
     const declineSpy = vi.fn();
@@ -315,7 +314,7 @@ describe('AgentNode - observability events', () => {
       { type: 'result', subtype: 'success', output: 'done', cost: 0.03 },
     ]);
 
-    const node = new AgentNode({ name: 'worker', agent, prompt: 'Do work' });
+    const node = new AgentNode<unknown>({ name: 'worker', agent, prompt: 'Do work' });
     const ctx = createContext();
     const responseSpy = vi.fn();
     ctx.events.on('agent:response', responseSpy);
@@ -333,7 +332,7 @@ describe('AgentNode - observability events', () => {
       { type: 'result', subtype: 'error', errors: ['Exceeded maximum turns'], cost: 0.05 },
     ]);
 
-    const node = new AgentNode({ name: 'errorer', agent, prompt: 'Do stuff' });
+    const node = new AgentNode<unknown>({ name: 'errorer', agent, prompt: 'Do stuff' });
     const ctx = createContext();
     const errorSpy = vi.fn();
     ctx.events.on('agent:error', errorSpy);
@@ -356,7 +355,7 @@ describe('AgentNode - caching', () => {
       { type: 'result', subtype: 'success', output: 'cached', cost: 0.01 },
     ]);
 
-    const node = new AgentNode({
+    const node = new AgentNode<unknown>({
       name: 'cached',
       agent,
       prompt: 'Classify',
@@ -377,7 +376,7 @@ describe('AgentNode - caching', () => {
       { type: 'result', subtype: 'success', output: 'first', cost: 0.01 },
     ]);
 
-    const node = new AgentNode({
+    const node = new AgentNode<unknown>({
       name: 'cached',
       agent,
       prompt: 'Classify',
@@ -405,7 +404,7 @@ describe('AgentNode - serialize/restore', () => {
       { type: 'result', subtype: 'success', output: 'ok', cost: 0.01 },
     ]);
 
-    const node = new AgentNode({ name: 'serializable', agent, prompt: 'Do work' });
+    const node = new AgentNode<unknown>({ name: 'serializable', agent, prompt: 'Do work' });
     const ctx = createContext();
     await node.tick(ctx);
     await flush();
@@ -417,7 +416,7 @@ describe('AgentNode - serialize/restore', () => {
 
   it('restores last terminal status', async () => {
     const agent = createAgent([]);
-    const node = new AgentNode({ name: 'restorable', agent, prompt: 'Do work' });
+    const node = new AgentNode<unknown>({ name: 'restorable', agent, prompt: 'Do work' });
     node.restore({ lastStatus: NodeStatus.FAILURE }, new Map());
 
     const state = node.serialize();
@@ -426,7 +425,7 @@ describe('AgentNode - serialize/restore', () => {
 
   it('serializes empty object when no terminal status', () => {
     const agent = createAgent([]);
-    const node = new AgentNode({ name: 'fresh', agent, prompt: 'Do work' });
+    const node = new AgentNode<unknown>({ name: 'fresh', agent, prompt: 'Do work' });
     expect(node.serialize()).toEqual({});
   });
 });
@@ -440,7 +439,7 @@ describe('AgentNode - abort/interrupt', () => {
       yield await neverResolve;
     };
 
-    const node = new AgentNode({ name: 'abortable', agent, prompt: 'Do work' });
+    const node = new AgentNode<unknown>({ name: 'abortable', agent, prompt: 'Do work' });
     const ctx = createContext();
     await node.tick(ctx); // starts inflight
 
@@ -460,7 +459,7 @@ describe('AgentNode - abort/interrupt', () => {
       { type: 'result', subtype: 'success', output: 'cached', cost: 0.01 },
     ]);
 
-    const node = new AgentNode({
+    const node = new AgentNode<unknown>({
       name: 'interruptible',
       agent,
       prompt: 'Classify',
@@ -482,7 +481,7 @@ describe('AgentNode - abort/interrupt', () => {
 describe('AgentNode - agentOptions', () => {
   it('delegates to agent.getInfo()', () => {
     const agent = new TestAgent({ name: 'my-agent', info: { model: 'test-model' } });
-    const node = new AgentNode({ name: 'node', agent, prompt: 'test' });
+    const node = new AgentNode<unknown>({ name: 'node', agent, prompt: 'test' });
 
     const info = node.agentOptions;
     expect(info.name).toBe('my-agent');
@@ -497,7 +496,7 @@ describe('AgentNode - sessions', () => {
       { type: 'result', subtype: 'success', output: 'done' },
     ]);
 
-    const node = new AgentNode({ name: 'worker', agent, prompt: 'Work', session: 'triage' });
+    const node = new AgentNode<unknown>({ name: 'worker', agent, prompt: 'Work', session: 'triage' });
     const ctx = createContext();
 
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
@@ -519,7 +518,7 @@ describe('AgentNode - sessions', () => {
       yield* origSend(prompt, options);
     };
 
-    const node = new AgentNode({ name: 'worker', agent, prompt: 'Work', session: 'triage' });
+    const node = new AgentNode<unknown>({ name: 'worker', agent, prompt: 'Work', session: 'triage' });
     const ctx = createContext();
     ctx.sessions.set('triage', 'existing-sess-id');
 
@@ -542,7 +541,7 @@ describe('AgentNode - sessions', () => {
       yield* origSend(prompt, options);
     };
 
-    const node = new AgentNode({
+    const node = new AgentNode<unknown>({
       name: 'worker',
       agent,
       prompt: 'Work',
@@ -564,7 +563,7 @@ describe('AgentNode - sessions', () => {
       { type: 'result', subtype: 'success', output: 'done' },
     ]);
 
-    const node = new AgentNode({
+    const node = new AgentNode<unknown>({
       name: 'worker',
       agent,
       prompt: 'Work',
@@ -588,7 +587,7 @@ describe('AgentNode - sessions', () => {
       { type: 'result', subtype: 'success', output: 'done' },
     ]);
 
-    const node = new AgentNode({
+    const node = new AgentNode<unknown>({
       name: 'worker',
       agent,
       prompt: 'Work',
@@ -611,7 +610,7 @@ describe('AgentNode - sessions', () => {
       { type: 'result', subtype: 'success', output: 'done' },
     ]);
 
-    const node = new AgentNode({
+    const node = new AgentNode<unknown>({
       name: 'worker',
       agent,
       prompt: 'Work',
@@ -636,7 +635,7 @@ describe('AgentNode - sessions', () => {
       yield* origSend(prompt, options);
     };
 
-    const node = new AgentNode({ name: 'worker', agent, prompt: 'Work' });
+    const node = new AgentNode<unknown>({ name: 'worker', agent, prompt: 'Work' });
     const ctx = createContext();
 
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
@@ -652,7 +651,7 @@ describe('AgentNode - sessions', () => {
       { type: 'result', subtype: 'success', output: 'done' },
     ]);
 
-    const node = new AgentNode({ name: 'worker', agent, prompt: 'Work', session: 'my-session' });
+    const node = new AgentNode<unknown>({ name: 'worker', agent, prompt: 'Work', session: 'my-session' });
     const ctx = createContext();
 
     expect(node.sessionConfig).toEqual({ name: 'my-session' });
@@ -662,5 +661,28 @@ describe('AgentNode - sessions', () => {
     await node.tick(ctx);
 
     expect(ctx.sessions.get('my-session')).toBe('new-sess-id');
+  });
+});
+
+describe('AgentNode - type-level', () => {
+  it('mapResult receives TOutput, not unknown', () => {
+    type Config = AgentNodeConfig<{ answer: string }>;
+    expectTypeOf<NonNullable<Config['mapResult']>>()
+      .parameter(0)
+      .toEqualTypeOf<{ answer: string }>();
+  });
+
+  it('AgentNode requires a type parameter', () => {
+    const agent = createAgent([]);
+    const node = new AgentNode<{ answer: string }>({
+      name: 'typed',
+      agent,
+      prompt: 'test',
+      mapResult: (output) => {
+        expectTypeOf(output).toEqualTypeOf<{ answer: string }>();
+        return NodeStatus.SUCCESS;
+      },
+    });
+    expect(node).toBeDefined();
   });
 });

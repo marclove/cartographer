@@ -702,7 +702,7 @@ export interface SessionConfig {
   fork?: true | string;
 }
 
-export interface AgentNodeConfig {
+export interface AgentNodeConfig<TOutput> {
   /** Optional stable identifier. Auto-generated UUID when omitted. */
   id?: string;
 
@@ -722,7 +722,7 @@ export interface AgentNodeConfig {
    * Maps the output to a `NodeStatus`. If omitted, the node returns
    * `SUCCESS` when the agent call succeeds.
    */
-  mapResult?: (output: unknown, context: TreeContext) => NodeStatus;
+  mapResult?: (output: TOutput, context: TreeContext) => NodeStatus;
 
   /**
    * When set, the agent accesses a scoped view of the blackboard where

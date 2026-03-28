@@ -20,7 +20,7 @@ describe('Agent Streaming Events', { timeout: 90_000 }, () => {
     const thinkingEvents = collectEvents(ctx, 'agent:thinking');
     const responseEvents = collectEvents(ctx, 'agent:response');
 
-    const agent = new AgentNode({
+    const agent = new AgentNode<unknown>({
       name: 'streamer',
       agent: new ClaudeSDKAgent({
         name: 'streamer',
