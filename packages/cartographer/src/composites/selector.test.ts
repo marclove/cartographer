@@ -30,10 +30,7 @@ describe('SelectorNode', () => {
       children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.FAILURE)],
     });
     const ctx = createContext();
-    // Tick 1: a starts inflight → RUNNING
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
-    // Tick 2: a completes SUCCESS → selector SUCCESS
+    // Sync action succeeds immediately on tick 1
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
@@ -43,13 +40,7 @@ describe('SelectorNode', () => {
       children: [actionNode('a', NodeStatus.FAILURE), actionNode('b', NodeStatus.SUCCESS)],
     });
     const ctx = createContext();
-    // Tick 1: a starts inflight → RUNNING
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
-    // Tick 2: a completes FAILURE (cached), b starts inflight → RUNNING
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
-    // Tick 3: a cached FAILURE, b completes SUCCESS → selector SUCCESS
+    // Both sync actions process in a single tick — a fails, b succeeds
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
@@ -59,10 +50,7 @@ describe('SelectorNode', () => {
       children: [actionNode('a', NodeStatus.FAILURE), actionNode('b', NodeStatus.FAILURE)],
     });
     const ctx = createContext();
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
+    // Both sync actions process in a single tick — both fail
     expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
   });
 
@@ -72,13 +60,7 @@ describe('SelectorNode', () => {
       children: [actionNode('a', NodeStatus.FAILURE), actionNode('b', NodeStatus.RUNNING)],
     });
     const ctx = createContext();
-    // Tick 1: a starts inflight → RUNNING
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
-    // Tick 2: a completes FAILURE (cached), b starts inflight → RUNNING
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
-    // Tick 3: a cached FAILURE, b returns RUNNING from inflight (action returns RUNNING) → RUNNING
+    // Sync a=FAILURE (cached), sync b=RUNNING → selector RUNNING
     expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
   });
 
@@ -169,12 +151,8 @@ describe('SelectorNode', () => {
       children: [actionNode('a', NodeStatus.SUCCESS), secondChild],
     });
     const ctx = createContext();
-    // Tick 1: a starts inflight → RUNNING (b not ticked yet)
-    await node.tick(ctx);
-    expect(tickSpy).not.toHaveBeenCalled();
-    await flush();
-    // Tick 2: a completes SUCCESS → b still not ticked
-    await node.tick(ctx);
+    // Sync action 'a' succeeds immediately — selector short-circuits, b never ticked
+    expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
     expect(tickSpy).not.toHaveBeenCalled();
   });
 
@@ -200,14 +178,11 @@ describe('SelectorNode', () => {
       });
       const ctx = createContext();
 
-      // Tick 1: action 'a' starts inflight → RUNNING
+      // Tick 1: sync action 'a' fails immediately (cached), slow RUNNING
       await node.tick(ctx);
-      await flush();
-      // Tick 2: a FAILURE (cached), slow RUNNING → RUNNING
+      // Tick 2: a cached, slow RUNNING
       await node.tick(ctx);
-      // Tick 3: a cached, slow RUNNING → RUNNING
-      await node.tick(ctx);
-      // Tick 4: a cached, slow SUCCESS → cycle ends
+      // Tick 3: a cached, slow SUCCESS → cycle ends
       await node.tick(ctx);
 
       expect(orderSpy).toHaveBeenCalledTimes(1);
@@ -224,14 +199,10 @@ describe('SelectorNode', () => {
       });
       const ctx = createContext();
 
-      // Cycle 1
-      await node.tick(ctx);
-      await flush();
+      // Cycle 1: sync action succeeds immediately → SUCCESS
       await node.tick(ctx);
 
-      // Cycle 2
-      await node.tick(ctx);
-      await flush();
+      // Cycle 2: new cycle, strategy re-consulted → SUCCESS
       await node.tick(ctx);
 
       expect(orderSpy).toHaveBeenCalledTimes(2);
@@ -248,14 +219,10 @@ describe('SelectorNode', () => {
       });
       const ctx = createContext();
 
-      // Cycle 1
-      await node.tick(ctx);
-      await flush();
+      // Cycle 1: sync action fails immediately → FAILURE
       await node.tick(ctx);
 
-      // Cycle 2
-      await node.tick(ctx);
-      await flush();
+      // Cycle 2: new cycle, strategy re-consulted → FAILURE
       await node.tick(ctx);
 
       expect(orderSpy).toHaveBeenCalledTimes(2);

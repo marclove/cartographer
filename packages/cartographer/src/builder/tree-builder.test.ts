@@ -18,8 +18,6 @@ describe('TreeBuilder', () => {
       .action('root', () => NodeStatus.SUCCESS)
       .build();
     expect(tree.name).toBe('simple');
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -31,13 +29,7 @@ describe('TreeBuilder', () => {
           .action('succeed', () => NodeStatus.SUCCESS)
       )
       .build();
-    // Tick 1: fail starts inflight → RUNNING
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
-    // Tick 2: fail FAILURE (cached), succeed starts inflight → RUNNING
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
-    // Tick 3: fail cached, succeed SUCCESS → SUCCESS
+    // Sync actions resolve immediately: fail FAILURE, succeed SUCCESS → SUCCESS
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -49,10 +41,7 @@ describe('TreeBuilder', () => {
           .action('second', () => NodeStatus.SUCCESS)
       )
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
+    // Sync actions resolve immediately: first SUCCESS, second SUCCESS → SUCCESS
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -64,8 +53,7 @@ describe('TreeBuilder', () => {
           .action('second', () => NodeStatus.SUCCESS)
       )
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
+    // Sync action resolves immediately: first FAILURE → FAILURE
     expect(await tree.tick()).toBe(NodeStatus.FAILURE);
   });
 
@@ -81,10 +69,7 @@ describe('TreeBuilder', () => {
           .action('fallback', () => NodeStatus.FAILURE)
       )
       .build();
-    // Tick 1: selector → sequence → condition SUCCESS, act starts inflight → RUNNING
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
-    // Tick 2: selector → sequence → condition SUCCESS (reactive), act SUCCESS → SUCCESS
+    // Sync actions resolve immediately: condition SUCCESS, act SUCCESS → sequence SUCCESS → selector SUCCESS
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -107,8 +92,7 @@ describe('TreeBuilder', () => {
           .action('b', () => NodeStatus.SUCCESS)
       )
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
+    // Sync actions resolve immediately: a FAILURE, b SUCCESS → successCount=1 met → SUCCESS
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -141,10 +125,7 @@ describe('TreeBuilder', () => {
         (b) => b.action('child', () => NodeStatus.SUCCESS)
       )
       .build();
-    // Tick 1: action starts inflight → inverter sees RUNNING → RUNNING
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
-    // Tick 2: action completes SUCCESS → inverter returns FAILURE
+    // Sync action resolves immediately: SUCCESS → inverter returns FAILURE
     expect(await tree.tick()).toBe(NodeStatus.FAILURE);
   });
 
@@ -158,16 +139,8 @@ describe('TreeBuilder', () => {
         })
       )
       .build();
-    // Each attempt needs: tick (starts inflight → RUNNING) → flush → tick (completes)
-    // Attempt 1: FAILURE → retry
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING); // retry sees FAILURE, starts attempt 2
-    await flush();
-    // Attempt 2: FAILURE → retry
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING); // retry sees FAILURE, starts attempt 3
-    await flush();
-    // Attempt 3: SUCCESS
+    // Sync actions resolve immediately — retry cycles through all attempts in one tick
+    // Attempt 1: FAILURE → Attempt 2: FAILURE → Attempt 3: SUCCESS
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
     expect(attempts).toBe(3);
   });
@@ -183,10 +156,7 @@ describe('TreeBuilder', () => {
           .condition('read', (ctx) => ctx.blackboard.get('msg') === 'hello')
       )
       .build();
-    // Tick 1: write starts inflight → RUNNING
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
-    // Tick 2: write completes (cached), condition reads 'hello' → SUCCESS
+    // Sync action resolves immediately: write SUCCESS, condition reads 'hello' → SUCCESS
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -320,8 +290,6 @@ describe('TreeBuilder', () => {
 });
 
 describe('registry integration', () => {
-  const flush = () => new Promise(r => setTimeout(r, 0));
-
   function makeRegistry() {
     const registry = new TreeRegistry();
     registry.registerAction('succeed', () => NodeStatus.SUCCESS);
@@ -340,8 +308,6 @@ describe('registry integration', () => {
     const tree = new TreeBuilder('test', registry)
       .action('root', 'succeed')
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -360,8 +326,6 @@ describe('registry integration', () => {
         b.action('step', 'succeed');
       })
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -372,8 +336,6 @@ describe('registry integration', () => {
         b.action('step', 'succeed');
       })
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -385,8 +347,6 @@ describe('registry integration', () => {
         b.action('step', 'succeed');
       })
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -397,8 +357,6 @@ describe('registry integration', () => {
         b.action('child', 'succeed');
       })
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -410,9 +368,7 @@ describe('registry integration', () => {
         b.action('step', () => NodeStatus.SUCCESS);
       })
       .build();
-    // condition resolves immediately; inline action goes through inflight
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
+    // Both condition and sync action resolve immediately
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -423,8 +379,6 @@ describe('registry integration', () => {
         b.action('child', 'succeed');
       })
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -486,8 +440,6 @@ describe('CompositeBuilder decorator methods', () => {
         b.action('child', () => NodeStatus.FAILURE);
       })
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS);
   });
 
@@ -497,8 +449,6 @@ describe('CompositeBuilder decorator methods', () => {
         b.action('child', () => NodeStatus.SUCCESS);
       })
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.FAILURE);
   });
 });
@@ -530,8 +480,6 @@ describe('SingleChildBuilder methods', () => {
         });
       })
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS); // inverter flips FAILURE
   });
 
@@ -543,8 +491,6 @@ describe('SingleChildBuilder methods', () => {
         });
       })
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.FAILURE); // inverter flips SUCCESS
   });
 
@@ -556,8 +502,6 @@ describe('SingleChildBuilder methods', () => {
         });
       })
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS); // double inversion
   });
 
@@ -602,8 +546,6 @@ describe('SingleChildBuilder methods', () => {
         });
       })
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.FAILURE); // inverter flips alwaysSucceed's SUCCESS
   });
 
@@ -615,8 +557,6 @@ describe('SingleChildBuilder methods', () => {
         });
       })
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.SUCCESS); // inverter flips alwaysFail's FAILURE
   });
 
@@ -628,8 +568,6 @@ describe('SingleChildBuilder methods', () => {
         });
       })
       .build();
-    expect(await tree.tick()).toBe(NodeStatus.RUNNING);
-    await flush();
     expect(await tree.tick()).toBe(NodeStatus.FAILURE); // inverter flips SUCCESS
   });
 

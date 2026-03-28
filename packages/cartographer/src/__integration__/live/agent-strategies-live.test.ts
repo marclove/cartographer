@@ -36,15 +36,9 @@ describe('Agent Strategies Integration (Live API)', { timeout: 60_000 }, () => {
       strategy,
     });
 
-    // First tick: strategy resolves policy, all actions start inflight → RUNNING
-    const status1 = await parallel.tick(ctx);
-    expect(status1).toBe(NodeStatus.RUNNING);
-
-    // Wait for sync actions to resolve, then poll
-    await new Promise(r => setTimeout(r, 0));
-    const status2 = await parallel.tick(ctx);
-
-    expect(status2).toBe(NodeStatus.SUCCESS);
+    // Single tick: strategy resolves policy, all sync actions complete immediately
+    const status = await parallel.tick(ctx);
+    expect(status).toBe(NodeStatus.SUCCESS);
     expect(strategyEvents).toHaveLength(1);
 
     const decision = strategyEvents[0].decision as any;

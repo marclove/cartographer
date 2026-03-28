@@ -268,7 +268,7 @@ export class MessageProcessor {
    *   during execution. This is caught by {@link process} — not a true error.
    */
   private async runToCompletion(tree: BehaviorTree): Promise<NodeStatus> {
-    let consecutiveNoInflight = 0;
+    let consecutiveIdle = 0;
     while (true) {
       const status = await tree.tick();
       if (status !== NodeStatus.RUNNING) return status;
@@ -280,7 +280,7 @@ export class MessageProcessor {
         if (interrupted) {
           throw new Error('interrupted');
         }
-        consecutiveNoInflight = 0;
+        consecutiveIdle = 0;
         continue;
       }
 
@@ -288,8 +288,8 @@ export class MessageProcessor {
       // the tick (result pending collection) or the tree is truly suspended.
       // Tick once more to distinguish — if still RUNNING with no inflight
       // on the second pass, the tree is suspended and we return.
-      consecutiveNoInflight++;
-      if (consecutiveNoInflight >= 2) return status;
+      consecutiveIdle++;
+      if (consecutiveIdle >= 2) return status;
     }
   }
 

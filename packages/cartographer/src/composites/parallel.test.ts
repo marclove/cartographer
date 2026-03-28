@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ParallelNode } from './parallel.js';
 import { NodeStatus } from '../types.js';
-import type { TreeContext, ParallelStrategy, ParallelPolicy, BTreeNode } from '../types.js';
+import type { TreeContext, ParallelStrategy, BTreeNode } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
 import { SessionRegistry } from '../core/session-registry.js';
@@ -31,10 +31,7 @@ describe('ParallelNode', () => {
       children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.SUCCESS)],
     });
     const ctx = createContext();
-    // Tick 1: both start inflight → RUNNING
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
-    // Tick 2: both complete SUCCESS → SUCCESS
+    // Sync actions complete immediately — both succeed on tick 1
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
@@ -44,8 +41,7 @@ describe('ParallelNode', () => {
       children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.FAILURE)],
     });
     const ctx = createContext();
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
+    // Sync actions complete immediately — b fails on tick 1
     expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
   });
 
@@ -60,8 +56,7 @@ describe('ParallelNode', () => {
       strategy: new DefaultParallelStrategy({ successCount: 2 }),
     });
     const ctx = createContext();
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
+    // Sync actions complete immediately — 2 successes meets threshold
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
@@ -76,8 +71,7 @@ describe('ParallelNode', () => {
       strategy: new DefaultParallelStrategy({ failureCount: 2 }),
     });
     const ctx = createContext();
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
+    // Sync actions complete immediately — 2 failures meets threshold
     expect(await node.tick(ctx)).toBe(NodeStatus.FAILURE);
   });
 
@@ -93,8 +87,7 @@ describe('ParallelNode', () => {
       strategy: new DefaultParallelStrategy({ successPercentage: 50 }),
     });
     const ctx = createContext();
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
+    // Sync actions complete immediately — 75% success meets 50% threshold
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 
@@ -103,6 +96,7 @@ describe('ParallelNode', () => {
       name: 'par',
       children: [actionNode('a', NodeStatus.SUCCESS), actionNode('b', NodeStatus.RUNNING)],
     });
+    // Sync a=SUCCESS (cached), sync b=RUNNING → parallel RUNNING
     expect(await node.tick(createContext())).toBe(NodeStatus.RUNNING);
   });
 
@@ -135,8 +129,7 @@ describe('ParallelNode', () => {
       strategy: customStrategy,
     });
     const ctx = createContext();
-    expect(await node.tick(ctx)).toBe(NodeStatus.RUNNING);
-    await flush();
+    // Sync actions complete immediately — 1 success meets successCount: 1
     expect(await node.tick(ctx)).toBe(NodeStatus.SUCCESS);
   });
 });

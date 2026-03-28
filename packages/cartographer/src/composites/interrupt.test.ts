@@ -40,22 +40,19 @@ describe('SequenceNode.interrupt()', () => {
     });
     const ctx = createContext();
 
-    // Tick 1: A succeeds (cached in completedMap), B starts async work
-    await seq.tick(ctx);
-    await flush();
-    // Tick 2: A returns cached SUCCESS, B returns RUNNING (still in-flight)
+    // Tick 1: A succeeds immediately (sync, cached in completedMap), B starts async work → RUNNING
     const status = await seq.tick(ctx);
     expect(status).toBe(NodeStatus.RUNNING);
-    expect(callCountA).toBe(1); // A was ticked once, then cached
+    expect(callCountA).toBe(1); // A was called once, then cached
 
     // Interrupt: clears B's inflight but preserves completedMap
     seq.interrupt();
     expect(childB.hasInflightWork()).toBe(false);
 
-    // Tick 3 after interrupt: A should use cached result (not re-ticked),
+    // Tick 2 after interrupt: A should use cached result (not re-ticked),
     // B should restart fresh (new invocation since old promise was orphaned)
-    const status3 = await seq.tick(ctx);
-    expect(status3).toBe(NodeStatus.RUNNING); // B starts new work
+    const status2 = await seq.tick(ctx);
+    expect(status2).toBe(NodeStatus.RUNNING); // B starts new work
     expect(callCountA).toBe(1); // A was NOT re-ticked
 
     // Cleanup
@@ -113,10 +110,7 @@ describe('SelectorNode.interrupt()', () => {
     });
     const ctx = createContext();
 
-    // Tick 1: A fails (cached), B starts async work
-    await sel.tick(ctx);
-    await flush();
-    // Tick 2: A returns cached FAILURE, B returns RUNNING
+    // Tick 1: A fails immediately (sync, cached), B starts async work → RUNNING
     const status = await sel.tick(ctx);
     expect(status).toBe(NodeStatus.RUNNING);
     expect(callCountA).toBe(1);
@@ -125,9 +119,9 @@ describe('SelectorNode.interrupt()', () => {
     sel.interrupt();
     expect(childB.hasInflightWork()).toBe(false);
 
-    // Tick 3: A uses cached FAILURE (not re-ticked), B restarts
-    const status3 = await sel.tick(ctx);
-    expect(status3).toBe(NodeStatus.RUNNING);
+    // Tick 2: A uses cached FAILURE (not re-ticked), B restarts
+    const status2 = await sel.tick(ctx);
+    expect(status2).toBe(NodeStatus.RUNNING);
     expect(callCountA).toBe(1); // A was NOT re-ticked
 
     // Cleanup
@@ -155,10 +149,7 @@ describe('ParallelNode.interrupt()', () => {
     });
     const ctx = createContext();
 
-    // Tick 1: A succeeds (cached), B starts async work → RUNNING
-    await par.tick(ctx);
-    await flush();
-    // Tick 2: A returns cached SUCCESS, B returns RUNNING
+    // Tick 1: A succeeds immediately (sync, cached), B starts async work → RUNNING
     const status = await par.tick(ctx);
     expect(status).toBe(NodeStatus.RUNNING);
     expect(callCountA).toBe(1);
@@ -167,9 +158,9 @@ describe('ParallelNode.interrupt()', () => {
     par.interrupt();
     expect(childB.hasInflightWork()).toBe(false);
 
-    // Tick 3: A should use cached SUCCESS, B restarts
-    const status3 = await par.tick(ctx);
-    expect(status3).toBe(NodeStatus.RUNNING);
+    // Tick 2: A should use cached SUCCESS, B restarts
+    const status2 = await par.tick(ctx);
+    expect(status2).toBe(NodeStatus.RUNNING);
     expect(callCountA).toBe(1); // A was NOT re-ticked
 
     // Cleanup

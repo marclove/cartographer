@@ -299,6 +299,7 @@ export abstract class BaseNode implements BTreeNode {
     return this.children.some(child => child.hasInflightWork());
   }
 
+
   /**
    * Return a deterministic content-based hash that identifies this node's
    * position and role in the tree topology.

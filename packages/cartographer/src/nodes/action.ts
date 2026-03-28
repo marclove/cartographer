@@ -108,8 +108,24 @@ export class ActionNode extends BaseNode {
       return NodeStatus.RUNNING;
     }
 
-    // Start: launch the action and capture result/error asynchronously
-    const promise = Promise.resolve(this.action(context));
+    // Start: call the action function.
+    const resultOrPromise = this.action(context);
+
+    // Fast path: synchronous actions return their result in a single tick.
+    // This avoids the inflight pattern (and its two-tick overhead) for
+    // actions that don't need it, and prevents the message processor's
+    // suspension detection from falsely triggering between consecutive
+    // synchronous action nodes.
+    if (!(resultOrPromise instanceof Promise)) {
+      if (resultOrPromise !== NodeStatus.RUNNING) {
+        this._lastTerminalStatus = resultOrPromise;
+      }
+      return resultOrPromise;
+    }
+
+    // Async path: the action returned a Promise — use the inflight pattern
+    // so the tree can yield and resume on the next tick.
+    const promise = resultOrPromise;
     const state: { promise: Promise<NodeStatus>; result?: NodeStatus; error?: Error } = { promise };
     this._inflightState = state;
 
