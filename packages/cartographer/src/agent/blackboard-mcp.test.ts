@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import { z } from 'zod/v4';
 import { createBlackboardMcpServer } from './blackboard-mcp.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
+import { createBlackboardSchema } from '../core/blackboard-schema.js';
 
 describe('createBlackboardMcpServer', () => {
   it('returns an MCP server object', () => {
@@ -164,5 +166,56 @@ describe('blackboard MCP tools (unit)', () => {
     const { handlers } = createBlackboardMcpServer(bb);
     const result = await handlers.mdelete({ keys: [] });
     expect(result.content[0].text).toBe('Deleted keys: ');
+  });
+});
+
+describe('blackboard MCP with schema (enriched descriptions)', () => {
+  const schema = createBlackboardSchema({
+    task: z.string(),
+    count: z.number(),
+    analyst: {
+      output: z.object({ summary: z.string(), confidence: z.number() }),
+      sources: z.array(z.string()),
+    },
+  });
+
+  it('accepts optional schema parameter', () => {
+    const bb = new InMemoryBlackboard();
+    const server = createBlackboardMcpServer(bb, { schema });
+    expect(server).toBeDefined();
+  });
+
+  it('still works without schema (backward compatible)', () => {
+    const bb = new InMemoryBlackboard();
+    const server = createBlackboardMcpServer(bb);
+    expect(server).toBeDefined();
+  });
+
+  it('still works with string namespace (backward compatible)', () => {
+    const bb = new InMemoryBlackboard();
+    const server = createBlackboardMcpServer(bb, 'ns');
+    expect(server).toBeDefined();
+  });
+
+  it('still works with namespace and schema together', () => {
+    const bb = new InMemoryBlackboard();
+    const server = createBlackboardMcpServer(bb, { namespace: 'analyst', schema });
+    expect(server).toBeDefined();
+  });
+
+  it('handlers still work correctly with schema', async () => {
+    const bb = new InMemoryBlackboard();
+    const { handlers } = createBlackboardMcpServer(bb, { schema });
+    await handlers.set({ key: 'task', value: 'hello' });
+    const result = await handlers.get({ key: 'task' });
+    expect(result.content[0].text).toBe(JSON.stringify('hello'));
+  });
+
+  it('scoped schema shows only scope keys for namespace', async () => {
+    const bb = new InMemoryBlackboard();
+    const { handlers } = createBlackboardMcpServer(bb, { namespace: 'analyst', schema });
+    await handlers.set({ key: 'output', value: { summary: 'good', confidence: 0.9 } });
+    const result = await handlers.get({ key: 'output' });
+    expect(JSON.parse(result.content[0].text)).toEqual({ summary: 'good', confidence: 0.9 });
   });
 });

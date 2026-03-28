@@ -1,6 +1,12 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod/v4';
 import type { Blackboard } from '../types.js';
+import type { BlackboardSchema } from '../core/blackboard-schema.js';
+
+interface BlackboardMcpOptions {
+  namespace?: string;
+  schema?: BlackboardSchema<any>;
+}
 
 /**
  * The shape of a successful MCP tool response.
@@ -25,6 +31,59 @@ interface BlackboardMcpHandlers {
   mget: (args: { keys: string[] }) => Promise<McpToolResult>;
   mset: (args: { entries: Record<string, unknown> }) => Promise<McpToolResult>;
   mdelete: (args: { keys: string[] }) => Promise<McpToolResult>;
+}
+
+/**
+ * Convert a Zod schema to a human-readable type string for tool descriptions.
+ */
+function zodToTypeString(zodSchema: z.ZodType): string {
+  try {
+    const jsonSchema = z.toJSONSchema(zodSchema);
+    return jsonSchemaToString(jsonSchema as Record<string, unknown>);
+  } catch {
+    return 'unknown';
+  }
+}
+
+function jsonSchemaToString(schema: Record<string, unknown>): string {
+  const type = schema.type as string | undefined;
+
+  if (type === 'string') return 'string';
+  if (type === 'number' || type === 'integer') return 'number';
+  if (type === 'boolean') return 'boolean';
+
+  if (type === 'array') {
+    const items = schema.items as Record<string, unknown> | undefined;
+    const itemType = items ? jsonSchemaToString(items) : 'unknown';
+    return `${itemType}[]`;
+  }
+
+  if (type === 'object') {
+    const props = schema.properties as Record<string, Record<string, unknown>> | undefined;
+    if (!props || Object.keys(props).length === 0) {
+      return 'Record<string, unknown>';
+    }
+    const entries = Object.entries(props)
+      .map(([k, v]) => `${k}: ${jsonSchemaToString(v)}`)
+      .join(', ');
+    return `{ ${entries} }`;
+  }
+
+  return 'unknown';
+}
+
+function buildKeyDescription(entries: Record<string, z.ZodType>): string {
+  const keys = Object.keys(entries);
+  if (keys.length === 0) return '';
+  const lines = keys.map((key) => `  - ${key} (${zodToTypeString(entries[key])})`);
+  return `\nAvailable keys:\n${lines.join('\n')}`;
+}
+
+function buildTypeDescription(entries: Record<string, z.ZodType>): string {
+  const keys = Object.keys(entries);
+  if (keys.length === 0) return '';
+  const lines = keys.map((key) => `  - ${key}: ${zodToTypeString(entries[key])}`);
+  return `\nExpected types per key:\n${lines.join('\n')}`;
 }
 
 /**
@@ -75,13 +134,41 @@ interface BlackboardMcpHandlers {
  * for testing tool behaviour in isolation without the MCP protocol layer.
  *
  * @param blackboard - The blackboard to expose via MCP tools.
- * @param namespace - Optional namespace. When provided, all tool operations
- *   are scoped to this namespace prefix.
+ * @param optionsOrNamespace - Optional namespace string (backward compatible) or
+ *   options object with `namespace` and/or `schema` for enriched tool descriptions.
  */
-export function createBlackboardMcpServer(blackboard: Blackboard, namespace?: string) {
+export function createBlackboardMcpServer(
+  blackboard: Blackboard,
+  optionsOrNamespace?: string | BlackboardMcpOptions,
+) {
+  const namespace =
+    typeof optionsOrNamespace === 'string'
+      ? optionsOrNamespace
+      : optionsOrNamespace?.namespace;
+  const schema =
+    typeof optionsOrNamespace === 'object' ? optionsOrNamespace?.schema : undefined;
+
   // If a namespace is given, restrict Claude's view to that prefix.
   // Reads and writes outside the namespace are invisible to the agent.
   const scoped = namespace ? blackboard.scoped(namespace) : blackboard;
+
+  // Build description suffixes from schema if provided
+  let descriptionEntries: Record<string, z.ZodType> | undefined;
+  if (schema) {
+    if (namespace && namespace in schema.scopeEntries) {
+      descriptionEntries = schema.scopeEntries[
+        namespace as keyof typeof schema.scopeEntries
+      ] as Record<string, z.ZodType>;
+    } else {
+      descriptionEntries = { ...schema.rootEntries } as Record<string, z.ZodType>;
+      for (const scopeKeys of Object.values(schema.scopeEntries)) {
+        Object.assign(descriptionEntries, scopeKeys as Record<string, z.ZodType>);
+      }
+    }
+  }
+
+  const keySuffix = descriptionEntries ? buildKeyDescription(descriptionEntries) : '';
+  const typeSuffix = descriptionEntries ? buildTypeDescription(descriptionEntries) : '';
 
   const getHandler = async (args: { key: string }): Promise<McpToolResult> => {
     const value = scoped.get(args.key);
@@ -133,13 +220,13 @@ export function createBlackboardMcpServer(blackboard: Blackboard, namespace?: st
     tools: [
       tool(
         'get',
-        'Get a value from the behavior tree blackboard by key',
+        `Get a value from the behavior tree blackboard by key${keySuffix}`,
         { key: z.string().describe('The key to get') },
         getHandler,
       ),
       tool(
         'set',
-        'Set a value on the behavior tree blackboard',
+        `Set a value on the behavior tree blackboard${typeSuffix}`,
         {
           key: z.string().describe('The key to set'),
           value: z.any().describe('The value to store'),
@@ -160,13 +247,13 @@ export function createBlackboardMcpServer(blackboard: Blackboard, namespace?: st
       ),
       tool(
         'mget',
-        'Get multiple values from the behavior tree blackboard',
+        `Get multiple values from the behavior tree blackboard${keySuffix}`,
         { keys: z.array(z.string()).describe('The keys to get') },
         mgetHandler,
       ),
       tool(
         'mset',
-        'Set multiple values on the behavior tree blackboard',
+        `Set multiple values on the behavior tree blackboard${typeSuffix}`,
         { entries: z.record(z.string(), z.any()).describe('Key-value pairs to set') },
         msetHandler,
       ),
