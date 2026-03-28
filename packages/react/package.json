@@ -14,10 +14,12 @@
   "files": ["dist"],
   "peerDependencies": {
     "react": ">=18",
-    "@cartographer/client": ">=0.1.0"
+    "@cartographer/client": ">=0.1.0",
+    "cartographer": ">=0.1.0"
   },
   "devDependencies": {
     "@cartographer/client": "workspace:*",
+    "cartographer": "workspace:*",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
