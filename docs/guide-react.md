@@ -171,7 +171,7 @@ The value is `null` until the first `tree:tick` SSE event arrives, and resets to
 import { useCommand } from "@cartographer/react";
 
 function ApproveButton() {
-  const approve = useCommand("approve");
+  const approve = useCommand<{ comment: string }>("approve");
 
   return (
     <button onClick={() => approve.send({ comment: "Ship it" })} disabled={approve.pending}>
@@ -186,8 +186,8 @@ The returned object has three members:
 | Member                  | Type                                               | Description                                                                                                                                                |
 | ----------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pending`               | `boolean`                                          | `true` while an HTTP request is in flight or a dispatched message hasn't received its `message:processed` / `message:failed` SSE event.                    |
-| `send(payload?)`        | `(unknown?) => Promise<{ id }>`                    | Fires the command and returns the server-assigned message ID. `pending` remains `true` until the SSE settlement event arrives.                             |
-| `sendAndWait(payload?)` | `(unknown?) => Promise<{ messageId, treeStatus }>` | Fires the command and waits for the server to finish processing. The promise resolves with the final tree status, or rejects if the server reports failure. |
+| `send(payload?)`        | `(TPayload?) => Promise<{ id }>`                   | Fires the command and returns the server-assigned message ID. `pending` remains `true` until the SSE settlement event arrives.                             |
+| `sendAndWait(payload?)` | `(TPayload?) => Promise<{ messageId, treeStatus }>` | Fires the command and waits for the server to finish processing. The promise resolves with the final tree status, or rejects if the server reports failure. |
 
 ### Fire-and-forget vs. await completion
 
@@ -200,7 +200,7 @@ import { useState } from "react";
 import { useCommand } from "@cartographer/react";
 
 function AnalysisPanel() {
-  const analyze = useCommand("analyze");
+  const analyze = useCommand<{ document: string }>("analyze");
   const [result, setResult] = useState<string | null>(null);
 
   async function runAnalysis() {
@@ -464,7 +464,7 @@ expect(getByText("Analysis: All clear")).toBeDefined();
 | `useBlackboardSnapshot()`       | Hook         | Full blackboard as `Record<string, unknown>`.                           |
 | `useConnectionStatus()`         | Hook         | SSE connection state (`'connecting'`, `'connected'`, `'disconnected'`). |
 | `useTreeStatus()`               | Hook         | Latest tree tick result, or `null`.                                     |
-| `useCommand(name)`              | Hook         | Command handle with `send`, `sendAndWait`, and `pending`.               |
+| `useCommand<TPayload>(name)`    | Hook         | Command handle with `send`, `sendAndWait`, and `pending`. `TPayload` defaults to `unknown`. |
 | `useClientEvent(name, handler)` | Hook         | Subscribe to `notify` events.                                           |
 | `useTreeEvent(type, handler)`   | Hook         | Subscribe to raw SSE event types.                                       |
 | `createMockClient()`            | Test utility | Mock client with `emit()` for simulating SSE events.                    |

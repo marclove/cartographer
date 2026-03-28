@@ -39,7 +39,7 @@ Used to configure children of composite nodes. All methods return `this` for cha
 
 - `action(name: string, fn: (context: TreeContext) => Promise<NodeStatus> | NodeStatus): this`
 - `condition(name: string, fn: (context: TreeContext) => Promise<boolean> | boolean): this`
-- `agent(name: string, config: Omit<AgentNodeConfig, 'name'>): this` — the config requires an `agent` field (an `Agent` instance) and a `prompt`
+- `agent<TOutput>(name: string, config: Omit<AgentNodeConfig<TOutput>, 'name'>): this` — the config requires an `agent` field (an `Agent` instance) and a `prompt`. `TOutput` is inferred from the `mapResult` callback when provided.
 
 ### Composite methods
 

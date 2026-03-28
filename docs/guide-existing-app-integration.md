@@ -168,7 +168,7 @@ export function createReviewTree() {
         loadTicket(),
 
         // Step 2: Agent drafts a response
-        new AgentNode({
+        new AgentNode<unknown>({
           name: "draft",
           agent: draftAgent,
           prompt: (ctx) => {
@@ -244,9 +244,9 @@ function waitForReviewDecision() {
       name: "await-review",
       children: [
         receive("approve"),
-        receive("request-revision", {
+        receive<{ feedback: string }>("request-revision", {
           mapPayload: (payload, bb) => {
-            bb.set("revision:feedback", (payload as { feedback: string }).feedback);
+            bb.set("revision:feedback", payload.feedback);
           },
         }),
         receive("reject"),
@@ -306,7 +306,7 @@ function reviseAndLoop() {
       }),
 
       // Agent revises based on reviewer feedback
-      new AgentNode({
+      new AgentNode<unknown>({
         name: "revise",
         agent: reviseAgent,
         prompt: (ctx) => {
@@ -430,7 +430,7 @@ export function ReviewWorkflow({ ticketId }: { ticketId: string }) {
   const connection = useConnectionStatus();
   const approve = useCommand("approve");
   const reject = useCommand("reject");
-  const requestRevision = useCommand("request-revision");
+  const requestRevision = useCommand<{ feedback: string }>("request-revision");
 
   // Cartographer: live draft from the blackboard
   const [draft] = useBlackboard<string>("draft:output");
