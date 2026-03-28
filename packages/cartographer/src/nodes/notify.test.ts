@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { notify } from './notify.js';
+import { describe, it, expect, expectTypeOf } from 'vitest';
+import { notify, NotifyNode } from './notify.js';
 import { NodeStatus } from '../types.js';
 import type { TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
@@ -71,5 +71,19 @@ describe('NotifyNode', () => {
     const a = notify('ui:review', () => ({}));
     const b = notify('ui:review', () => ({}));
     expect(a.contentHash()).toBe(b.contentHash());
+  });
+});
+
+describe('NotifyNode - type-level', () => {
+  it('notify factory infers TData from dataFn return type', () => {
+    const node = notify('ui:review', () => ({ findings: 'data' }));
+    expectTypeOf(node).toEqualTypeOf<NotifyNode<{ findings: string }>>();
+  });
+
+  it('explicit generic constrains dataFn return type', () => {
+    notify<{ findings: string }>('ui:review', () => ({ findings: 'data' }));
+
+    // @ts-expect-error — dataFn returns wrong shape
+    notify<{ findings: string }>('ui:review', () => ({ wrong: 123 }));
   });
 });

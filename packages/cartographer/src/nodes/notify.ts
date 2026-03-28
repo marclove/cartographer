@@ -8,10 +8,10 @@ import { computeContentHash } from '../core/content-hash.js';
  * 1. Blackboard entry at `clientEvents:<name>` (durable)
  * 2. `client:event` event (real-time SSE)
  */
-export class NotifyNode extends ActionNode {
+export class NotifyNode<TData> extends ActionNode {
   private readonly eventName: string;
 
-  constructor(eventName: string, dataFn: (ctx: TreeContext) => unknown) {
+  constructor(eventName: string, dataFn: (ctx: TreeContext) => TData) {
     super({
       name: `notify:${eventName}`,
       action: async (ctx: TreeContext) => {
@@ -30,9 +30,9 @@ export class NotifyNode extends ActionNode {
 }
 
 /** Factory function. */
-export function notify(
+export function notify<TData>(
   name: string,
-  dataFn: (ctx: TreeContext) => unknown,
-): NotifyNode {
-  return new NotifyNode(name, dataFn);
+  dataFn: (ctx: TreeContext) => TData,
+): NotifyNode<TData> {
+  return new NotifyNode<TData>(name, dataFn);
 }
