@@ -1,15 +1,18 @@
 import { describe, it, expect, expectTypeOf } from 'vitest';
 import { z } from 'zod/v4';
-import { createBlackboardSchema } from 'cartographer';
 import { createTypedHooks } from './typed-hooks.js';
 
-const schema = createBlackboardSchema({
-  task: z.string(),
-  count: z.number(),
-  analyst: {
-    output: z.object({ summary: z.string() }),
+// Inline schema matching what createBlackboardSchema produces
+const schema = {
+  rootEntries: { task: z.string(), count: z.number() },
+  scopeEntries: { analyst: { output: z.object({ summary: z.string() }) } },
+  validate: false,
+  _input: {
+    task: z.string(),
+    count: z.number(),
+    analyst: { output: z.object({ summary: z.string() }) },
   },
-});
+} as const;
 
 describe('createTypedHooks', () => {
   it('returns an object with useBlackboard and useBlackboardSnapshot', () => {

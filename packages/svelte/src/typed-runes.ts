@@ -1,28 +1,18 @@
 import type { z } from 'zod/v4';
-import type { BlackboardSchema, SchemaInput } from 'cartographer';
 import {
   getBlackboard as getBlackboardUntyped,
   getBlackboardSnapshot,
 } from './blackboard.svelte.js';
 import type { BlackboardRef, BlackboardSnapshotRef } from './blackboard.svelte.js';
 
-/**
- * Extract the root key names from a schema input type.
- */
-type RootKeys<T extends SchemaInput> = {
+type RootKeys<T extends Record<string, unknown>> = {
   [K in keyof T as T[K] extends z.ZodType ? K : never]: T[K];
 };
 
-/**
- * Infer the value type for a root key.
- */
-type InferValue<T extends SchemaInput, K extends keyof RootKeys<T>> =
+type InferValue<T extends Record<string, unknown>, K extends keyof RootKeys<T>> =
   T[K] extends z.ZodType ? z.infer<T[K]> : never;
 
-/**
- * The typed `getBlackboard` rune returned by {@link createTypedRunes}.
- */
-interface TypedGetBlackboard<T extends SchemaInput> {
+interface TypedGetBlackboard<T extends Record<string, unknown>> {
   <K extends keyof RootKeys<T> & string>(key: K): BlackboardRef<InferValue<T, K>>;
 }
 
@@ -46,8 +36,8 @@ interface TypedGetBlackboard<T extends SchemaInput> {
  * feedback.value; // string | undefined
  * ```
  */
-export function createTypedRunes<T extends SchemaInput>(
-  _schema: BlackboardSchema<T>,
+export function createTypedRunes<T extends Record<string, unknown>>(
+  _schema: { readonly _input: T },
 ): {
   getBlackboard: TypedGetBlackboard<T>;
   getBlackboardSnapshot: () => BlackboardSnapshotRef;

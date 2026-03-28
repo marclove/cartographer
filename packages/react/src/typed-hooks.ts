@@ -1,24 +1,14 @@
 import type { z } from 'zod/v4';
-import type { BlackboardSchema, SchemaInput } from 'cartographer';
 import { useBlackboard as useBlackboardUntyped, useBlackboardSnapshot } from './hooks.js';
 
-/**
- * Extract the root key names from a schema input type.
- */
-type RootKeys<T extends SchemaInput> = {
+type RootKeys<T extends Record<string, unknown>> = {
   [K in keyof T as T[K] extends z.ZodType ? K : never]: T[K];
 };
 
-/**
- * Infer the value type for a root key.
- */
-type InferValue<T extends SchemaInput, K extends keyof RootKeys<T>> =
+type InferValue<T extends Record<string, unknown>, K extends keyof RootKeys<T>> =
   T[K] extends z.ZodType ? z.infer<T[K]> : never;
 
-/**
- * The typed `useBlackboard` hook returned by {@link createTypedHooks}.
- */
-interface TypedUseBlackboard<T extends SchemaInput> {
+interface TypedUseBlackboard<T extends Record<string, unknown>> {
   <K extends keyof RootKeys<T> & string>(key: K): [
     InferValue<T, K> | undefined,
     (value: InferValue<T, K>) => Promise<void>,
@@ -45,8 +35,8 @@ interface TypedUseBlackboard<T extends SchemaInput> {
  * const [task, setTask] = useBlackboard('task'); // string | undefined
  * ```
  */
-export function createTypedHooks<T extends SchemaInput>(
-  _schema: BlackboardSchema<T>,
+export function createTypedHooks<T extends Record<string, unknown>>(
+  _schema: { readonly _input: T },
 ): {
   useBlackboard: TypedUseBlackboard<T>;
   useBlackboardSnapshot: typeof useBlackboardSnapshot;
