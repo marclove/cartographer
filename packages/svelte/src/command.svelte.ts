@@ -9,7 +9,7 @@ import { getClient } from './context.js';
  * tracks whether any dispatched command is still in flight or awaiting
  * server-side completion.
  */
-export interface CommandRef {
+export interface CommandRef<TPayload = unknown> {
   /**
    * `true` while at least one HTTP request is in flight **or** a dispatched
    * message ID has not yet received a `message:processed` / `message:failed`
@@ -27,7 +27,7 @@ export interface CommandRef {
    * @param payload - Optional data forwarded to the server command handler.
    * @returns The server-assigned message ID.
    */
-  send(payload?: unknown): Promise<{ id: string }>;
+  send(payload?: TPayload): Promise<{ id: string }>;
 
   /**
    * Fires the command and waits for the server to finish processing it.
@@ -41,7 +41,7 @@ export interface CommandRef {
    * @returns The message ID and final tree status once processing completes.
    * @throws If the server reports `message:failed`.
    */
-  sendAndWait(payload?: unknown): Promise<{ messageId: string; treeStatus: string }>;
+  sendAndWait(payload?: TPayload): Promise<{ messageId: string; treeStatus: string }>;
 }
 
 /**
@@ -57,7 +57,7 @@ export interface CommandRef {
  * @param name - The command name recognized by the server-side tree.
  * @returns A reactive handle for dispatching and tracking the command.
  */
-export function createCommand(name: string): CommandRef {
+export function createCommand<TPayload = unknown>(name: string): CommandRef<TPayload> {
   const client = getClient();
 
   let pending = $state(false);
@@ -108,7 +108,7 @@ export function createCommand(name: string): CommandRef {
     waitResolvers.clear();
   });
 
-  async function submitCommand(payload?: unknown): Promise<string> {
+  async function submitCommand(payload?: TPayload): Promise<string> {
     inflight += 1;
     pending = true;
     try {
@@ -127,11 +127,11 @@ export function createCommand(name: string): CommandRef {
     get pending() {
       return pending;
     },
-    async send(payload?: unknown): Promise<{ id: string }> {
+    async send(payload?: TPayload): Promise<{ id: string }> {
       const id = await submitCommand(payload);
       return { id };
     },
-    async sendAndWait(payload?: unknown): Promise<{ messageId: string; treeStatus: string }> {
+    async sendAndWait(payload?: TPayload): Promise<{ messageId: string; treeStatus: string }> {
       const id = await submitCommand(payload);
       return new Promise<{ messageId: string; treeStatus: string }>((resolve, reject) => {
         waitResolvers.set(id, { resolve, reject });

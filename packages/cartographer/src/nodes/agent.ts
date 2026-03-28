@@ -42,8 +42,8 @@ import { computeContentHash } from '../core/content-hash.js';
  * | `agent:response` | When the agent returns a successful final result |
  * | `agent:error` | When the agent returns an error result |
  */
-export class AgentNode extends BaseNode {
-  private config: AgentNodeConfig;
+export class AgentNode<TOutput> extends BaseNode {
+  private config: AgentNodeConfig<TOutput>;
   private readonly _sessionConfig: SessionConfig | null;
 
   /**
@@ -62,7 +62,7 @@ export class AgentNode extends BaseNode {
    *   context-aware function). See {@link AgentNodeConfig} for optional fields
    *   like `cache`, `mapResult`, `blackboardNamespace`, and `session`.
    */
-  constructor(config: AgentNodeConfig) {
+  constructor(config: AgentNodeConfig<TOutput>) {
     super(config.name, config.id);
     this.config = config;
     this._sessionConfig = !config.session ? null
@@ -266,7 +266,7 @@ export class AgentNode extends BaseNode {
 
       if (msg.type === 'result') {
         if (msg.subtype === 'success') {
-          return this.handleSuccess(msg.output, msg.cost, context);
+          return this.handleSuccess(msg.output as TOutput, msg.cost, context);
         }
 
         context.events.emit('agent:error', {
@@ -297,7 +297,7 @@ export class AgentNode extends BaseNode {
    * @param context - The current tick's tree context.
    * @returns The node status to propagate up the tree.
    */
-  private handleSuccess(output: unknown, cost: number | undefined, context: TreeContext): NodeStatus {
+  private handleSuccess(output: TOutput, cost: number | undefined, context: TreeContext): NodeStatus {
     context.events.emit('agent:response', {
       node: this,
       result: output,

@@ -127,8 +127,8 @@ export class CompositeBuilder {
    * `config` accepts all {@link AgentNodeConfig} fields except `name`,
    * which is provided as the first argument.
    */
-  agent(name: string, config: Omit<AgentNodeConfig, 'name'>): this {
-    this.children.push(new AgentNode({ name, ...config }));
+  agent<TOutput>(name: string, config: Omit<AgentNodeConfig<TOutput>, 'name'>): this {
+    this.children.push(new AgentNode<TOutput>({ name, ...config }));
     return this;
   }
 
@@ -389,8 +389,8 @@ export class SingleChildBuilder {
   }
 
   /** Add an {@link AgentNode} as the single child. */
-  agent(name: string, config: Omit<AgentNodeConfig, 'name'>): this {
-    this.child = new AgentNode({ name, ...config });
+  agent<TOutput>(name: string, config: Omit<AgentNodeConfig<TOutput>, 'name'>): this {
+    this.child = new AgentNode<TOutput>({ name, ...config });
     return this;
   }
 

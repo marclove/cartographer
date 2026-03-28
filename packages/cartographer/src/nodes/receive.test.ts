@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { receive } from './receive.js';
+import { describe, it, expect, expectTypeOf } from 'vitest';
+import { receive, ReceiveNode } from './receive.js';
+import type { ReceiveOptions } from './receive.js';
 import { NodeStatus } from '../types.js';
 import type { TreeContext } from '../types.js';
 import { EventEmitter } from '../core/event-emitter.js';
@@ -48,8 +49,8 @@ describe('ReceiveNode', () => {
   });
 
   it('calls mapPayload when action is present', async () => {
-    const node = receive('approve', {
-      mapPayload: (payload: any, blackboard) => {
+    const node = receive<{ decision: string }>('approve', {
+      mapPayload: (payload, blackboard) => {
         blackboard.set('review:decision', payload.decision);
       },
     });
@@ -80,5 +81,23 @@ describe('ReceiveNode', () => {
     const a = receive('approve');
     const b = receive('reject');
     expect(a.contentHash()).not.toBe(b.contentHash());
+  });
+});
+
+describe('ReceiveNode - type-level', () => {
+  it('mapPayload receives TPayload, not unknown', () => {
+    type Opts = ReceiveOptions<{ decision: string }>;
+    expectTypeOf<NonNullable<Opts['mapPayload']>>()
+      .parameter(0)
+      .toEqualTypeOf<{ decision: string }>();
+  });
+
+  it('receive factory returns ReceiveNode<TPayload>', () => {
+    const node = receive<{ decision: string }>('approve', {
+      mapPayload: (payload) => {
+        expectTypeOf(payload).toEqualTypeOf<{ decision: string }>();
+      },
+    });
+    expectTypeOf(node).toEqualTypeOf<ReceiveNode<{ decision: string }>>();
   });
 });

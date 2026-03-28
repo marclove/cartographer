@@ -108,7 +108,7 @@ describe('Abort Signal Integration', () => {
 
     const tree = new BehaviorTree({
       name: 'agent-abort-test',
-      root: new AgentNode({ name: 'agent', agent, prompt: 'Do work' }),
+      root: new AgentNode<unknown>({ name: 'agent', agent, prompt: 'Do work' }),
     });
 
     const tickPromise = tree.tick();

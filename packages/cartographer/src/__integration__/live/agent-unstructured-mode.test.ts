@@ -22,7 +22,7 @@ describe('Agent Unstructured Mode Integration', { timeout: 90_000 }, () => {
     const toolUseEvents = collectEvents(ctx, 'agent:tool_use');
     const responseEvents = collectEvents(ctx, 'agent:response');
 
-    const agent = new AgentNode({
+    const agent = new AgentNode<unknown>({
       name: 'mcp-agent',
       agent: new ClaudeSDKAgent({
         name: 'mcp-agent',
@@ -100,7 +100,7 @@ describe('Agent Unstructured Mode Integration', { timeout: 90_000 }, () => {
     stopLogging = createTreeLogger(ctx.events, { filePath: LOG_FILE, logBlackboard: true });
     const responseEvents = collectEvents(ctx, 'agent:response');
 
-    const agent = new AgentNode({
+    const agent = new AgentNode<unknown>({
       name: 'safety-check',
       agent: new ClaudeSDKAgent({
         name: 'safety-check',
@@ -146,7 +146,7 @@ describe('Agent Unstructured Mode Integration', { timeout: 90_000 }, () => {
       count: z.number(),
     });
 
-    const agent = new AgentNode({
+    const agent = new AgentNode<unknown>({
       name: 'cached-agent',
       agent: new ClaudeSDKAgent({
         name: 'cached-agent',

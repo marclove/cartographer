@@ -175,7 +175,7 @@ The `current` value is `null` until the first `tree:tick` SSE event arrives, and
 <script lang="ts">
   import { createCommand } from '@cartographer/svelte';
 
-  const approve = createCommand('approve');
+  const approve = createCommand<{ comment: string }>('approve');
 </script>
 
 <button onclick={() => approve.send({ comment: 'Ship it' })} disabled={approve.pending}>
@@ -188,8 +188,8 @@ The returned `CommandRef` has three members:
 | Member                  | Type                                               | Description                                                                                                                                                |
 | ----------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pending`               | `boolean`                                          | `true` while an HTTP request is in flight or a dispatched message hasn't received its `message:processed` / `message:failed` SSE event. Reactive.          |
-| `send(payload?)`        | `(unknown?) => Promise<{ id }>`                    | Fires the command and returns the server-assigned message ID. `pending` remains `true` until the SSE settlement event arrives.                             |
-| `sendAndWait(payload?)` | `(unknown?) => Promise<{ messageId, treeStatus }>` | Fires the command and waits for the server to finish processing. The promise resolves with the final tree status, or rejects if the server reports failure. |
+| `send(payload?)`        | `(TPayload?) => Promise<{ id }>`                   | Fires the command and returns the server-assigned message ID. `pending` remains `true` until the SSE settlement event arrives.                             |
+| `sendAndWait(payload?)` | `(TPayload?) => Promise<{ messageId, treeStatus }>` | Fires the command and waits for the server to finish processing. The promise resolves with the final tree status, or rejects if the server reports failure. |
 
 ### Fire-and-forget vs. await completion
 
@@ -201,7 +201,7 @@ Use `sendAndWait` when subsequent logic depends on the tree run finishing:
 <script lang="ts">
   import { createCommand } from '@cartographer/svelte';
 
-  const analyze = createCommand('analyze');
+  const analyze = createCommand<{ document: string }>('analyze');
   let result = $state<string | null>(null);
 
   async function runAnalysis() {
@@ -469,7 +469,7 @@ client.emit("snapshot", { blackboard: { status: "ready" } });
 | `getBlackboardSnapshot()`      | Function     | Reactive ref for the full blackboard object.                      |
 | `getConnectionStatus()`        | Function     | Reactive ref for SSE connection state.                            |
 | `getTreeStatus()`              | Function     | Reactive ref for the latest tree tick result.                     |
-| `createCommand(name)`          | Function     | Reactive command handle with `send`, `sendAndWait`, and `pending`. |
+| `createCommand<TPayload>(name)` | Function    | Reactive command handle with `send`, `sendAndWait`, and `pending`. `TPayload` defaults to `unknown`. |
 | `onClientEvent(name, handler)` | Function     | Subscribe to `notify` events.                                     |
 | `onTreeEvent(type, handler)`   | Function     | Subscribe to raw SSE event types.                                 |
 | `createMockClient()`           | Test utility | Mock client with `emit()` for simulating SSE events.              |

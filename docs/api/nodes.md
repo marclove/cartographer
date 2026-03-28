@@ -170,21 +170,38 @@ Leaf node that delegates prompt processing to a configured Agent. The Agent hand
 ### Constructor
 
 ```typescript
-new AgentNode(config: AgentNodeConfig)
+new AgentNode<TOutput>(config: AgentNodeConfig<TOutput>)
 ```
 
-### AgentNodeConfig
+The `TOutput` generic types the agent's structured output. It flows through to `mapResult` and blackboard writes, eliminating the need for casting. When using the builder, `TOutput` is inferred from the config:
 
-| Field                 | Type                                                    | Required | Default | Description                                                                                                                 |
-| --------------------- | ------------------------------------------------------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `id`                  | `string`                                                | No       | --      | Custom node identifier. Auto-generated UUID when omitted.                                                                   |
-| `name`                | `string`                                                | Yes      | --      | Node name                                                                                                                   |
-| `agent`               | `Agent`                                                 | Yes      | --      | The Agent instance used to process prompts. Configure model, tools, output format, and other provider options on the agent. |
-| `prompt`              | `string \| ((context: TreeContext) => string)`          | Yes      | --      | Prompt sent to the agent. Can be a static string or a function that builds the prompt from context.                         |
-| `mapResult`           | `(output: unknown, context: TreeContext) => NodeStatus` | No       | --      | Maps the agent output to a `NodeStatus`. When omitted, any successful response returns `SUCCESS`.                           |
-| `blackboardNamespace` | `string`                                                | No       | --      | When set, the auto-attached blackboard MCP server operates on a scoped namespace instead of the full blackboard.            |
-| `cache`               | `boolean`                                               | No       | `false` | When `true`, the node calls the agent once and returns the cached status on subsequent ticks. Cleared on `reset()`.         |
-| `session`             | `string \| SessionConfig`                               | No       | --      | Named session participation. Shorthand: `session: "triage"` equals `session: { name: "triage" }`. See [Sessions](../guide-agent-integration.md#sessions). |
+```typescript
+// TOutput inferred as unknown (no mapResult)
+b.agent("summarize", { agent, prompt: "..." });
+
+// TOutput inferred as { category: string; confidence: number }
+b.agent<{ category: string; confidence: number }>("classify", {
+  agent: classifyAgent,
+  prompt: "Classify this text.",
+  mapResult: (output) => {
+    // output is typed — no cast needed
+    return output.confidence > 0.8 ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
+  },
+});
+```
+
+### AgentNodeConfig\<TOutput\>
+
+| Field                 | Type                                                     | Required | Default | Description                                                                                                                 |
+| --------------------- | -------------------------------------------------------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `id`                  | `string`                                                 | No       | --      | Custom node identifier. Auto-generated UUID when omitted.                                                                   |
+| `name`                | `string`                                                 | Yes      | --      | Node name                                                                                                                   |
+| `agent`               | `Agent`                                                  | Yes      | --      | The Agent instance used to process prompts. Configure model, tools, output format, and other provider options on the agent. |
+| `prompt`              | `string \| ((context: TreeContext) => string)`           | Yes      | --      | Prompt sent to the agent. Can be a static string or a function that builds the prompt from context.                         |
+| `mapResult`           | `(output: TOutput, context: TreeContext) => NodeStatus`  | No       | --      | Maps the agent output to a `NodeStatus`. When omitted, any successful response returns `SUCCESS`.                           |
+| `blackboardNamespace` | `string`                                                 | No       | --      | When set, the auto-attached blackboard MCP server operates on a scoped namespace instead of the full blackboard.            |
+| `cache`               | `boolean`                                                | No       | `false` | When `true`, the node calls the agent once and returns the cached status on subsequent ticks. Cleared on `reset()`.         |
+| `session`             | `string \| SessionConfig`                                | No       | --      | Named session participation. Shorthand: `session: "triage"` equals `session: { name: "triage" }`. See [Sessions](../guide-agent-integration.md#sessions). |
 
 ### Behavior
 
@@ -219,7 +236,7 @@ const classifyAgent = new ClaudeSDKAgent({
   },
 });
 
-const classifier = new AgentNode({
+const classifier = new AgentNode<unknown>({
   name: "classify",
   agent: classifyAgent,
   prompt: "Classify the following text.",
@@ -233,7 +250,7 @@ const coderAgent = new ClaudeSDKAgent({
   maxTurns: 20,
 });
 
-const coder = new AgentNode({
+const coder = new AgentNode<unknown>({
   name: "implement-feature",
   agent: coderAgent,
   prompt: (ctx) => `Implement: ${ctx.blackboard.get<string>("task")}`,
@@ -253,14 +270,25 @@ Synchronous, non-reactive leaf node that receives and consumes inbound commands 
 ### Factory
 
 ```typescript
-const node = receive(name: string, options?: ReceiveOptions);
+const node = receive<TPayload>(name: string, options?: ReceiveOptions<TPayload>);
 ```
 
-### ReceiveOptions
+The `TPayload` generic types the command payload. When `mapPayload` is provided, TypeScript infers `TPayload` from its parameter type:
 
-| Field        | Type                                                 | Required | Description                                                 |
-| ------------ | ---------------------------------------------------- | -------- | ----------------------------------------------------------- |
-| `mapPayload` | `(payload: unknown, blackboard: Blackboard) => void` | No       | Callback to extract data from the consumed command payload. |
+```typescript
+// TPayload inferred as { feedback: string }
+const node = receive("request-revision", {
+  mapPayload: (payload: { feedback: string }, blackboard) => {
+    blackboard.set("revision:feedback", payload.feedback); // no cast needed
+  },
+});
+```
+
+### ReceiveOptions\<TPayload\>
+
+| Field        | Type                                                   | Required | Description                                                 |
+| ------------ | ------------------------------------------------------ | -------- | ----------------------------------------------------------- |
+| `mapPayload` | `(payload: TPayload, blackboard: Blackboard) => void`  | No       | Callback to extract data from the consumed command payload. |
 
 ### Behavior
 
@@ -281,7 +309,17 @@ Action node that sends structured data to connected clients via dual write (blac
 ### Factory
 
 ```typescript
-const node = notify(name: string, dataFn: (ctx: TreeContext) => unknown);
+const node = notify<TData>(name: string, dataFn: (ctx: TreeContext) => TData);
+```
+
+The `TData` generic is inferred from the return type of `dataFn`:
+
+```typescript
+// TData inferred as { findings: unknown; timestamp: number }
+const node = notify("ui:show_review", (ctx) => ({
+  findings: ctx.blackboard.get("analysis"),
+  timestamp: Date.now(),
+}));
 ```
 
 ### Behavior

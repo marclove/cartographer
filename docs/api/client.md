@@ -16,9 +16,9 @@ Creates a client connected to an `ActorServer` at the given URL. The optional `o
 
 ### Message Methods
 
-#### `command(name: string, payload?: unknown): Promise<SendResponse>`
+#### `command<T = unknown>(name: string, payload?: T): Promise<SendResponse>`
 
-Sends a command message. Shorthand for `POST /api/commands/:name`.
+Sends a command message. Shorthand for `POST /api/commands/:name`. The generic `T` is inferred from the payload argument when provided.
 
 #### `write(key: string, value: unknown): Promise<SendResponse>`
 
@@ -30,7 +30,7 @@ Sends any message type via `POST /api/messages`.
 
 All three methods return a `SendResponse` with `status: 'processing'` when the message is being processed immediately, or `status: 'queued'` with a `position` when the server is busy and the message was enqueued.
 
-#### `commandAndWait(name: string, payload?: unknown): Promise<{ messageId, treeStatus }>`
+#### `commandAndWait<T = unknown>(name: string, payload?: T): Promise<{ messageId, treeStatus }>`
 
 Sends a command and waits for the corresponding `message:processed` or `message:failed` event via SSE. Requires `connect()` to be called first.
 
@@ -44,7 +44,7 @@ Interrupts the currently processing message. Bypasses the lock. Returns `{ inter
 
 Clears the held state so the next tick processes normally. Returns `{ resumed: true }` if the tree was held, `{ resumed: false }` if not. Calls `POST /api/resume`.
 
-#### `interruptAndCommand(name: string, payload?: unknown): Promise<{ id: string }>`
+#### `interruptAndCommand<T = unknown>(name: string, payload?: T): Promise<{ id: string }>`
 
 Convenience method that interrupts the current processing, waits for the lock to release, then sends a new command. The command clears the held state implicitly.
 

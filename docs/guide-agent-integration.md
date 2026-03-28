@@ -46,11 +46,11 @@ For agent definitions in larger projects, extract them into a dedicated module (
 ## AgentNode Config
 
 ```typescript
-interface AgentNodeConfig {
+interface AgentNodeConfig<TOutput> {
   name: string;
   agent: Agent;
   prompt: string | ((context: TreeContext) => string);
-  mapResult?: (output: unknown, context: TreeContext) => NodeStatus;
+  mapResult?: (output: TOutput, context: TreeContext) => NodeStatus;
   blackboardNamespace?: string;
   cache?: boolean;
   session?: string | SessionConfig;
@@ -87,7 +87,7 @@ const researchAgent = new ClaudeSDKAgent({
   },
 });
 
-const researcher = new AgentNode({
+const researcher = new AgentNode<unknown>({
   name: "research-topic",
   agent: researchAgent,
   prompt: (ctx) => `Research the following topic and write a summary.
@@ -133,15 +133,15 @@ const classifyAgent = new ClaudeSDKAgent({
   },
 });
 
-const classifier = new AgentNode({
+const classifier = new AgentNode<{ category: string; confidence: number }>({
   name: "classify-intent",
   agent: classifyAgent,
   prompt: (ctx) => `Classify the following user message into one of the categories.
 
 Message: ${ctx.blackboard.get<string>("userMessage")}`,
   mapResult: (output, ctx) => {
-    const result = output as { category: string; confidence: number };
-    return result.confidence > 0.8 ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
+    // output is typed as { category: string; confidence: number } — no cast needed
+    return output.confidence > 0.8 ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
   },
 });
 ```

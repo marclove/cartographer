@@ -661,9 +661,9 @@ const node = receive("approve");
 The optional `mapPayload` callback extracts data from the command payload:
 
 ```typescript
-const node = receive("approve", {
+const node = receive<{ decision: string }>("approve", {
   mapPayload: (payload, blackboard) => {
-    blackboard.set("review:decision", (payload as any).decision);
+    blackboard.set("review:decision", payload.decision);
   },
 });
 ```

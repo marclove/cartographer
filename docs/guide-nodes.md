@@ -104,7 +104,7 @@ const classifyAgent = new ClaudeSDKAgent({
   effort: "low",
 });
 
-const classifier = new AgentNode({
+const classifier = new AgentNode<unknown>({
   name: "classify-intent",
   agent: classifyAgent,
   prompt: (ctx) => `Classify this text: ${ctx.blackboard.get<string>("input")}`,
@@ -139,12 +139,14 @@ The node extends `BaseNode` directly (not `ActionNode` or `ConditionNode`). This
 ### Optional payload mapping
 
 ```typescript
-const node = receive("approve", {
+const node = receive<{ decision: string }>("approve", {
   mapPayload: (payload, blackboard) => {
-    blackboard.set("review:decision", (payload as any).decision);
+    blackboard.set("review:decision", payload.decision);
   },
 });
 ```
+
+The `TPayload` generic types the `mapPayload` callback's first argument, eliminating the need for casting. TypeScript can also infer `TPayload` from the callback's parameter type annotation.
 
 The `mapPayload` callback runs after the action key is consumed, letting you extract and rewrite data before subsequent nodes access it.
 

@@ -128,7 +128,7 @@ const agent = new ClaudeSDKAgent({ name: "agent", model: "claude-sonnet-4-6" });
 
 const seq = new SequenceNode({
   name: "scoped",
-  children: [new AgentNode({ name: "agent", agent, prompt: "work" })],
+  children: [new AgentNode<unknown>({ name: "agent", agent, prompt: "work" })],
 });
 
 // Replace all overrides

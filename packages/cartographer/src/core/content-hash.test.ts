@@ -9,6 +9,9 @@ import { SelectorNode } from '../composites/selector.js';
 import { Inverter } from '../decorators/inverter.js';
 import { Retry } from '../decorators/retry.js';
 import { NodeStatus } from '../types.js';
+import { TestAgent } from '../agent/test-agent.js';
+
+const stubAgent = new TestAgent({ name: 'stub' });
 
 describe('computeContentHash', () => {
   it('produces deterministic output', () => {
@@ -49,8 +52,8 @@ describe('node contentHash', () => {
   });
 
   it('AgentNode includes prompt in hash', () => {
-    const a = new AgentNode({ name: 'agent', prompt: 'Do X' });
-    const b = new AgentNode({ name: 'agent', prompt: 'Do Y' });
+    const a = new AgentNode<unknown>({ name: 'agent', agent: stubAgent, prompt: 'Do X' });
+    const b = new AgentNode<unknown>({ name: 'agent', agent: stubAgent, prompt: 'Do Y' });
     expect(a.contentHash()).not.toBe(b.contentHash());
   });
 
@@ -96,7 +99,7 @@ describe('composite contentHash', () => {
       name: 'test',
       root: new SequenceNode({
         name: 'seq',
-        children: [new AgentNode({ name: 'agent', prompt })],
+        children: [new AgentNode<unknown>({ name: 'agent', agent: stubAgent, prompt })],
       }),
     });
     expect(makeTree('Do X').rootHash).not.toBe(makeTree('Do Y').rootHash);

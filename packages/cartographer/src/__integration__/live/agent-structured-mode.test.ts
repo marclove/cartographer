@@ -19,7 +19,7 @@ describe('Agent Structured Mode Integration', { timeout: 90_000 }, () => {
       confidence: z.number().min(0).max(1),
     });
 
-    const agent = new AgentNode({
+    const agent = new AgentNode<unknown>({
       name: 'sentiment-classifier',
       agent: new ClaudeSDKAgent({
         name: 'sentiment-classifier',

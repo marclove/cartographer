@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, expectTypeOf } from 'vitest';
 import { createCartographerClient, QueueFullError } from './index.js';
+import type { CartographerClient } from './types.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -240,5 +241,23 @@ describe('createCartographerClient — credentials', () => {
     await client.blackboard();
 
     expect(capturedInit?.credentials).toBe('include');
+  });
+});
+
+describe('CartographerClient - type-level', () => {
+  it('command() accepts a generic payload type', () => {
+    const client = {} as CartographerClient;
+    // When called with a typed payload, T is inferred
+    expectTypeOf(client.command<{ item: string }>).parameter(1).toEqualTypeOf<{ item: string } | undefined>();
+  });
+
+  it('commandAndWait() accepts a generic payload type', () => {
+    const client = {} as CartographerClient;
+    expectTypeOf(client.commandAndWait<{ item: string }>).parameter(1).toEqualTypeOf<{ item: string } | undefined>();
+  });
+
+  it('interruptAndCommand() accepts a generic payload type', () => {
+    const client = {} as CartographerClient;
+    expectTypeOf(client.interruptAndCommand<{ item: string }>).parameter(1).toEqualTypeOf<{ item: string } | undefined>();
   });
 });

@@ -60,13 +60,13 @@ export function useTreeStatus(): TreeStatusInfo | null {
 
 // ─── useCommand ───
 
-interface UseCommandReturn {
-  send: (payload?: unknown) => Promise<{ id: string }>;
-  sendAndWait: (payload?: unknown) => Promise<{ messageId: string; treeStatus: string }>;
+interface UseCommandReturn<TPayload = unknown> {
+  send: (payload?: TPayload) => Promise<{ id: string }>;
+  sendAndWait: (payload?: TPayload) => Promise<{ messageId: string; treeStatus: string }>;
   pending: boolean;
 }
 
-export function useCommand(name: string): UseCommandReturn {
+export function useCommand<TPayload = unknown>(name: string): UseCommandReturn<TPayload> {
   const { client } = useCartographerContext();
   const [pending, setPending] = useState(false);
   // IDs of sends that reached the server and are awaiting SSE completion events.
@@ -118,7 +118,7 @@ export function useCommand(name: string): UseCommandReturn {
   }, [client, clearIfDone]);
 
   const send = useCallback(
-    async (payload?: unknown): Promise<{ id: string }> => {
+    async (payload?: TPayload): Promise<{ id: string }> => {
       inflightRef.current += 1;
       setPending(true);
       try {
@@ -136,7 +136,7 @@ export function useCommand(name: string): UseCommandReturn {
   );
 
   const sendAndWait = useCallback(
-    async (payload?: unknown): Promise<{ messageId: string; treeStatus: string }> => {
+    async (payload?: TPayload): Promise<{ messageId: string; treeStatus: string }> => {
       inflightRef.current += 1;
       setPending(true);
       try {

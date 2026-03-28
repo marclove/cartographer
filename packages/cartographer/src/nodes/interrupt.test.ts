@@ -7,6 +7,9 @@ import { EventEmitter } from '../core/event-emitter.js';
 import { InMemoryBlackboard } from '../core/blackboard.js';
 import { SessionRegistry } from '../core/session-registry.js';
 import type { TreeEvents } from '../types.js';
+import { TestAgent } from '../agent/test-agent.js';
+
+const stubAgent = new TestAgent({ name: 'stub' });
 
 function createContext(): TreeContext {
   return {
@@ -76,8 +79,9 @@ describe('AgentNode.interrupt()', () => {
   it('aborts the active AbortController and clears inflight', async () => {
     // We can't easily test a real SDK call, but we can test the abort
     // controller and inflight mechanics by checking hasInflightWork
-    const node = new AgentNode({
+    const node = new AgentNode<unknown>({
       name: 'test-agent',
+      agent: stubAgent,
       prompt: 'test',
       cache: true,
     });
@@ -89,8 +93,9 @@ describe('AgentNode.interrupt()', () => {
 
   it('preserves cachedStatus across interrupt', async () => {
     // Create a node with caching enabled
-    const node = new AgentNode({
+    const node = new AgentNode<unknown>({
       name: 'cached-agent',
+      agent: stubAgent,
       prompt: 'test',
       cache: true,
     });

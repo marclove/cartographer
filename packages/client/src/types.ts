@@ -23,7 +23,7 @@ export interface SendResponse {
  */
 export interface CartographerClient {
   /** Send a command message. Returns immediately with the message ID. */
-  command(name: string, payload?: unknown): Promise<SendResponse>;
+  command<T = unknown>(name: string, payload?: T): Promise<SendResponse>;
   /** Write a value to the blackboard. Returns immediately with the message ID. */
   write(key: string, value: unknown): Promise<SendResponse>;
   /** Send any message type. Returns immediately with the message ID. */
@@ -33,7 +33,7 @@ export interface CartographerClient {
    * Resolves with the tree status on success, rejects on failure.
    * Requires {@link connect} to have been called first.
    */
-  commandAndWait(name: string, payload?: unknown): Promise<{ messageId: string; treeStatus: string }>;
+  commandAndWait<T = unknown>(name: string, payload?: T): Promise<{ messageId: string; treeStatus: string }>;
   /** Interrupt the currently processing message. Bypasses the lock. */
   interrupt(): Promise<{ interrupted: boolean; messageId?: string }>;
   /** Clear the held state so the next tick processes normally. */
@@ -47,7 +47,7 @@ export interface CartographerClient {
    * `message:failed`, or `message:interrupted` SSE event before sending. Requires {@link connect} when
    * processing is active.
    */
-  interruptAndCommand(name: string, payload?: unknown): Promise<SendResponse>;
+  interruptAndCommand<T = unknown>(name: string, payload?: T): Promise<SendResponse>;
   /** Returns the current blackboard state. */
   blackboard(): Promise<Record<string, unknown>>;
   /** Returns tree structure metadata. */
