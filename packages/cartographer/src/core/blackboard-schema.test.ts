@@ -81,3 +81,20 @@ describe('BlackboardSchema type-level', () => {
     expectTypeOf<Scopes>().toHaveProperty('analyst');
   });
 });
+
+describe('package exports', () => {
+  it('exports createBlackboardSchema from package index', async () => {
+    const mod = await import('../index.js');
+    expect(mod.createBlackboardSchema).toBeDefined();
+  });
+
+  it('exports createTypedBlackboard from package index', async () => {
+    const mod = await import('../index.js');
+    expect(mod.createTypedBlackboard).toBeDefined();
+  });
+
+  it('exports BlackboardValidationError from package index', async () => {
+    const mod = await import('../index.js');
+    expect(mod.BlackboardValidationError).toBeDefined();
+  });
+});

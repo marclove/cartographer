@@ -31,6 +31,9 @@ export type {
 // Core
 export { BehaviorTree } from './core/behavior-tree.js';
 export { InMemoryBlackboard } from './core/blackboard.js';
+export { createBlackboardSchema } from './core/blackboard-schema.js';
+export type { BlackboardSchema, BlackboardSchemaOptions } from './core/blackboard-schema.js';
+export { createTypedBlackboard, BlackboardValidationError } from './core/typed-blackboard.js';
 export { EventEmitter } from './core/event-emitter.js';
 export { SessionRegistry } from './core/session-registry.js';
 
